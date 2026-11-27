@@ -1,0 +1,95 @@
+[
+  {
+    "brand": "banco-altiplano",
+    "currency": "MXN $",
+    "account": "freelance",
+    "schedule": {
+      "every": "random",
+      "zone": "America/Mexico_City",
+      "perWeek": [
+        0.82,
+        1.45
+      ]
+    },
+    "templates": [
+      {
+        "weight": 70,
+        "subject": "Recibiste una transferencia SPEI por {amount}",
+        "text": "Abono recibido\n\nSe acreditó una transferencia SPEI en tu cuenta terminación 7721.\n\nImporte abonado: {amount}\nFecha y hora (centro de México): {date}, {time}\nInstitución emisora: {bank}\nConcepto: {concept}\nClave de rastreo: AT{ref}\n\nConsulta el nombre del ordenante y descarga el detalle del movimiento en la app.\n\nConsultar movimientos: https://bancoaltiplano.example/cuenta/movimientos\n\nTe enviamos este aviso porque activaste las notificaciones por correo de tu cuenta Banco Altiplano. No respondas a este mensaje.\n\nBanco Altiplano, S.A., Institución de Banca Múltiple · Av. de la Cantera 180, Guadalajara, Jalisco, C.P. 44630.",
+        "html": "<table role=\"presentation\" lang=\"es\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#fff;color:#874231;border-top:4px solid #874231;border-bottom:1px solid #e2e5e9;font-size:19px;font-weight:bold\">Banco Altiplano</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Abono recibido</h1><p style=\"margin:0 0 16px\">Se acreditó una transferencia SPEI en tu cuenta terminación 7721.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Importe abonado</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{amount}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Fecha y hora (centro de México)</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{date}, {time}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Institución emisora</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{bank}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Concepto</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{concept}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Clave de rastreo</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">AT{ref}</td></tr></table><p style=\"margin:0 0 16px\">Consulta el nombre del ordenante y descarga el detalle del movimiento en la app.</p><p style=\"margin:0\"><a style=\"color:#874231;text-decoration:underline\" href=\"https://bancoaltiplano.example/cuenta/movimientos\">Consultar movimientos</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">Te enviamos este aviso porque activaste las notificaciones por correo de tu cuenta Banco Altiplano. No respondas a este mensaje.<br>Banco Altiplano, S.A., Institución de Banca Múltiple · Av. de la Cantera 180, Guadalajara, Jalisco, C.P. 44630.</td></tr></table>",
+        "slots": {
+          "amount": {
+            "money": [
+              1850,
+              26800
+            ]
+          },
+          "ref": {
+            "int": [
+              10000000000000,
+              99999999999999
+            ]
+          },
+          "bank": [
+            "Banco Encino",
+            "Caja Puerto Norte",
+            "Banco Senda",
+            "Banco Caldera",
+            "Banco Horizonte del Centro",
+            "Banco Cobre",
+            "Banco Puerto Real",
+            "Caja Monte Azul",
+            "Banco Ciruelo",
+            "Banco Estero"
+          ],
+          "concept": [
+            "PAGO SERVICIOS",
+            "ANTICIPO DISEÑO",
+            "HONORARIOS",
+            "ABONO FACTURA",
+            "PAGO A PROVEEDOR",
+            "SERVICIOS CREATIVOS",
+            "LIQUIDACIÓN PROYECTO",
+            "PAGO DISEÑO",
+            "PAGO DE IGUALA",
+            "SERVICIOS PROFESIONALES",
+            "MANTENIMIENTO WEB",
+            "PAGO PARCIAL"
+          ]
+        }
+      },
+      {
+        "weight": 27,
+        "subject": "Tu estado de cuenta de Banco Altiplano está disponible",
+        "text": "Estado de cuenta disponible\n\nEl estado de cuenta más reciente de tu cuenta terminación 7721 ya se puede consultar.\n\nProducto: Cuenta Altiplano Digital\nFecha de aviso: {date}\n\nEn la app, selecciona la cuenta, elige Estados de cuenta y abre el periodo que quieras descargar. Por seguridad no adjuntamos el PDF a este correo.\n\nConsultar estados de cuenta: https://bancoaltiplano.example/cuenta/estados\n\nTe enviamos este aviso porque activaste las notificaciones por correo de tu cuenta Banco Altiplano. No respondas a este mensaje.\n\nBanco Altiplano, S.A., Institución de Banca Múltiple · Av. de la Cantera 180, Guadalajara, Jalisco, C.P. 44630.",
+        "html": "<table role=\"presentation\" lang=\"es\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#fff;color:#874231;border-top:4px solid #874231;border-bottom:1px solid #e2e5e9;font-size:19px;font-weight:bold\">Banco Altiplano</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Estado de cuenta disponible</h1><p style=\"margin:0 0 16px\">El estado de cuenta más reciente de tu cuenta terminación 7721 ya se puede consultar.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Producto</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">Cuenta Altiplano Digital</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Fecha de aviso</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{date}</td></tr></table><p style=\"margin:0 0 16px\">En la app, selecciona la cuenta, elige Estados de cuenta y abre el periodo que quieras descargar. Por seguridad no adjuntamos el PDF a este correo.</p><p style=\"margin:0\"><a style=\"color:#874231;text-decoration:underline\" href=\"https://bancoaltiplano.example/cuenta/estados\">Consultar estados de cuenta</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">Te enviamos este aviso porque activaste las notificaciones por correo de tu cuenta Banco Altiplano. No respondas a este mensaje.<br>Banco Altiplano, S.A., Institución de Banca Múltiple · Av. de la Cantera 180, Guadalajara, Jalisco, C.P. 44630.</td></tr></table>"
+      },
+      {
+        "weight": 3,
+        "subject": "Confirmación de transferencia enviada",
+        "text": "Transferencia enviada\n\nLa transferencia desde tu cuenta terminación 7721 se procesó correctamente.\n\nMonto enviado: {amount}\nFecha y hora (centro de México): {date}, {time}\nBeneficiario: Cuenta registrada •• {ending}\nClave de rastreo: AT{ref}\n\nSi no reconoces el movimiento, entra a la app y selecciona Ayuda en el detalle de la operación.\n\nTe enviamos este aviso porque activaste las notificaciones por correo de tu cuenta Banco Altiplano. No respondas a este mensaje.\n\nBanco Altiplano, S.A., Institución de Banca Múltiple · Av. de la Cantera 180, Guadalajara, Jalisco, C.P. 44630.",
+        "html": "<table role=\"presentation\" lang=\"es\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#fff;color:#874231;border-top:4px solid #874231;border-bottom:1px solid #e2e5e9;font-size:19px;font-weight:bold\">Banco Altiplano</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Transferencia enviada</h1><p style=\"margin:0 0 16px\">La transferencia desde tu cuenta terminación 7721 se procesó correctamente.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Monto enviado</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{amount}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Fecha y hora (centro de México)</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{date}, {time}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Beneficiario</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">Cuenta registrada •• {ending}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Clave de rastreo</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">AT{ref}</td></tr></table><p style=\"margin:0 0 16px\">Si no reconoces el movimiento, entra a la app y selecciona Ayuda en el detalle de la operación.</p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">Te enviamos este aviso porque activaste las notificaciones por correo de tu cuenta Banco Altiplano. No respondas a este mensaje.<br>Banco Altiplano, S.A., Institución de Banca Múltiple · Av. de la Cantera 180, Guadalajara, Jalisco, C.P. 44630.</td></tr></table>",
+        "slots": {
+          "amount": {
+            "money": [
+              390,
+              6900
+            ]
+          },
+          "ending": {
+            "int": [
+              1000,
+              9999
+            ]
+          },
+          "ref": {
+            "int": [
+              10000000000000,
+              99999999999999
+            ]
+          }
+        }
+      }
+    ]
+  }
+]

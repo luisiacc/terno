@@ -1,0 +1,144 @@
+[
+  {
+    "brand": "facturito",
+    "currency": "MXN $",
+    "account": "freelance",
+    "schedule": {
+      "every": "random",
+      "zone": "America/Mexico_City",
+      "perWeek": [
+        1.05,
+        1.65
+      ]
+    },
+    "templates": [
+      {
+        "weight": 91,
+        "subject": "CFDI LC-{ref} timbrado | copia para el emisor",
+        "text": "Tu factura se timbró correctamente\n\nTe enviamos el XML fiscal y la representación impresa en PDF del comprobante que emitiste.\n\nSerie y folio: LC-{ref}\nFecha de timbrado (centro de México): {date} a las {time}\nTipo: Ingreso · CFDI 4.0\nMoneda: MXN\nTotal con IVA: {total}\nFolio fiscal (UUID): {uuidStart}-A{uuidPart}-4{uuidVersion}-8{uuidVariant}-{uuidEnd}\n\nConserva el XML para tu contabilidad. Este envío es la copia para el emisor. Puedes reenviar el comprobante al receptor desde el panel.\n\nAbrir comprobante: https://timbrebolsillo.example/cfdi/LC-{ref}\n\nMensaje automático de tu cuenta de Timbre de Bolsillo. Para soporte, entra al centro de ayuda desde tu panel.\n\nTimbre de Bolsillo, S.A. de C.V. · Av. del Laurel 48, Guadalajara, Jalisco, C.P. 44160.",
+        "html": "<table role=\"presentation\" lang=\"es\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#214b80;color:#fff;font-size:19px;font-weight:bold\">Timbre de Bolsillo</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Tu factura se timbró correctamente</h1><p style=\"margin:0 0 16px\">Te enviamos el XML fiscal y la representación impresa en PDF del comprobante que emitiste.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Serie y folio</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">LC-{ref}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Fecha de timbrado (centro de México)</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{date} a las {time}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Tipo</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">Ingreso · CFDI 4.0</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Moneda</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">MXN</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Total con IVA</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{total}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Folio fiscal (UUID)</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{uuidStart}-A{uuidPart}-4{uuidVersion}-8{uuidVariant}-{uuidEnd}</td></tr></table><p style=\"margin:0 0 16px\">Conserva el XML para tu contabilidad. Este envío es la copia para el emisor. Puedes reenviar el comprobante al receptor desde el panel.</p><p style=\"margin:0\"><a style=\"color:#214b80;text-decoration:underline\" href=\"https://timbrebolsillo.example/cfdi/LC-{ref}\">Abrir comprobante</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">Mensaje automático de tu cuenta de Timbre de Bolsillo. Para soporte, entra al centro de ayuda desde tu panel.<br>Timbre de Bolsillo, S.A. de C.V. · Av. del Laurel 48, Guadalajara, Jalisco, C.P. 44160.</td></tr></table>",
+        "slots": {
+          "ref": {
+            "int": [
+              1000000,
+              9999999
+            ]
+          },
+          "total": {
+            "money": [
+              1900,
+              36700
+            ]
+          },
+          "uuidStart": {
+            "int": [
+              10000000,
+              99999999
+            ]
+          },
+          "uuidPart": {
+            "int": [
+              100,
+              999
+            ]
+          },
+          "uuidVersion": {
+            "int": [
+              100,
+              999
+            ]
+          },
+          "uuidVariant": {
+            "int": [
+              100,
+              999
+            ]
+          },
+          "uuidEnd": {
+            "int": [
+              100000000000,
+              999999999999
+            ]
+          }
+        },
+        "attachments": [
+          {
+            "filename": "LC-{ref}.xml",
+            "mime": "application/xml",
+            "size": 6281
+          },
+          {
+            "filename": "LC-{ref}.pdf",
+            "mime": "application/pdf",
+            "size": 41926
+          }
+        ]
+      },
+      {
+        "weight": 5,
+        "subject": "Acuse de cancelación disponible · LC-{ref}",
+        "text": "Cancelación confirmada\n\nEl SAT confirmó la cancelación del comprobante. Adjuntamos el acuse en XML.\n\nSerie y folio: LC-{ref}\nFolio fiscal (UUID): {uuidStart}-A{uuidPart}-4{uuidVersion}-8{uuidVariant}-{uuidEnd}\nFecha de confirmación: {date}\nEstado: Cancelado\n\nEl comprobante seguirá visible en el historial con el estado Cancelado. Comparte el acuse con el receptor si te lo solicita.\n\nConsultar cancelación: https://timbrebolsillo.example/cfdi/LC-{ref}/cancelacion\n\nMensaje automático de tu cuenta de Timbre de Bolsillo. Para soporte, entra al centro de ayuda desde tu panel.\n\nTimbre de Bolsillo, S.A. de C.V. · Av. del Laurel 48, Guadalajara, Jalisco, C.P. 44160.",
+        "html": "<table role=\"presentation\" lang=\"es\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#214b80;color:#fff;font-size:19px;font-weight:bold\">Timbre de Bolsillo</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Cancelación confirmada</h1><p style=\"margin:0 0 16px\">El SAT confirmó la cancelación del comprobante. Adjuntamos el acuse en XML.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Serie y folio</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">LC-{ref}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Folio fiscal (UUID)</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{uuidStart}-A{uuidPart}-4{uuidVersion}-8{uuidVariant}-{uuidEnd}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Fecha de confirmación</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{date}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Estado</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">Cancelado</td></tr></table><p style=\"margin:0 0 16px\">El comprobante seguirá visible en el historial con el estado Cancelado. Comparte el acuse con el receptor si te lo solicita.</p><p style=\"margin:0\"><a style=\"color:#214b80;text-decoration:underline\" href=\"https://timbrebolsillo.example/cfdi/LC-{ref}/cancelacion\">Consultar cancelación</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">Mensaje automático de tu cuenta de Timbre de Bolsillo. Para soporte, entra al centro de ayuda desde tu panel.<br>Timbre de Bolsillo, S.A. de C.V. · Av. del Laurel 48, Guadalajara, Jalisco, C.P. 44160.</td></tr></table>",
+        "slots": {
+          "ref": {
+            "int": [
+              1000000,
+              9999999
+            ]
+          },
+          "uuidStart": {
+            "int": [
+              10000000,
+              99999999
+            ]
+          },
+          "uuidPart": {
+            "int": [
+              100,
+              999
+            ]
+          },
+          "uuidVersion": {
+            "int": [
+              100,
+              999
+            ]
+          },
+          "uuidVariant": {
+            "int": [
+              100,
+              999
+            ]
+          },
+          "uuidEnd": {
+            "int": [
+              100000000000,
+              999999999999
+            ]
+          }
+        },
+        "attachments": [
+          {
+            "filename": "LC-{ref}-acuse.xml",
+            "mime": "application/xml",
+            "size": 2807
+          }
+        ]
+      },
+      {
+        "weight": 4,
+        "subject": "Te quedan {count} timbres",
+        "text": "Saldo de timbres bajo\n\nTu paquete está por agotarse. Cada comprobante que emites utiliza un timbre.\n\nTimbres disponibles al {date}: {count}\n\nSi compras otro paquete, los timbres nuevos se sumarán al saldo existente.\n\nConsultar saldo: https://timbrebolsillo.example/cuenta/timbres\n\nMensaje automático de tu cuenta de Timbre de Bolsillo. Para soporte, entra al centro de ayuda desde tu panel.\n\nTimbre de Bolsillo, S.A. de C.V. · Av. del Laurel 48, Guadalajara, Jalisco, C.P. 44160.",
+        "html": "<table role=\"presentation\" lang=\"es\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#214b80;color:#fff;font-size:19px;font-weight:bold\">Timbre de Bolsillo</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Saldo de timbres bajo</h1><p style=\"margin:0 0 16px\">Tu paquete está por agotarse. Cada comprobante que emites utiliza un timbre.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Timbres disponibles al {date}</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{count}</td></tr></table><p style=\"margin:0 0 16px\">Si compras otro paquete, los timbres nuevos se sumarán al saldo existente.</p><p style=\"margin:0\"><a style=\"color:#214b80;text-decoration:underline\" href=\"https://timbrebolsillo.example/cuenta/timbres\">Consultar saldo</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">Mensaje automático de tu cuenta de Timbre de Bolsillo. Para soporte, entra al centro de ayuda desde tu panel.<br>Timbre de Bolsillo, S.A. de C.V. · Av. del Laurel 48, Guadalajara, Jalisco, C.P. 44160.</td></tr></table>",
+        "slots": {
+          "count": {
+            "int": [
+              2,
+              5
+            ]
+          }
+        }
+      }
+    ]
+  }
+]

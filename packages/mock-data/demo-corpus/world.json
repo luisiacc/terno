@@ -1,0 +1,4743 @@
+{
+  "anchor": "2026-10-22T15:30:00Z",
+  "owner": {
+    "name": "Luis Cordero",
+    "bio": "Luis Cordero, 35, is a product designer from Guadalajara who has lived in London since 2020 (before that an MA in London in 2017-18 and two years back in Mexico). He joined Acme Studio in Clerkenwell in March 2022 and has been Lead Product Designer since May 2025, managing Hollie, Dev, Kasia and Gabriel and working closely with Marcus, Freya, Zainab and Jae under Priya Raman. In 2026 he leads the Holloway Museum website relaunch and has hired a junior designer who starts in November. He lives with his partner Niamh Gallagher, an audio producer from Cork, and their ginger cat Biscuit, adopted in May 2025. Luis and Niamh lived at Flat 3, 14 Albion Road, Stoke Newington until 27 June 2026 and now live at Flat B, 41 Mallory Road, Clapton. On the side he freelances in Spanish for Mexican clients (a coffee roaster, a boutique hotel in Oaxaca, a dental chain in Monterrey, a craft brewery, a nonprofit), invoicing through his Mexican RFC with his accountant Lupita Ibarra in Guadalajara; his UK accountant Martin Hale folds that income into his self assessment. He runs with Marshgate Runners, plays Thursday five-a-side at Mabley Green, is in a book club he rarely finishes the book for, and has an older sister, Daniela, in Toronto. His parents in Guadalajara use a family group chat, not email. At Acme he sends a short note when he has a decision. At home he leaves anything that needs a scanner until Saturday.",
+    "timezone": "Europe/London",
+    "style": {
+      "en": {
+        "register": "plain and friendly; short and warm at work, lowercase-ish and jokey with friends",
+        "length": "two to five lines; longer only for client recaps and feedback",
+        "greeting": "\"Hi Margaret,\" with clients, \"Hey\" or the name alone with the team, often none with friends",
+        "signoff": "\"Thanks, Luis\" at work, \"L\" or nothing with friends, \"x\" only with Niamh",
+        "signature": "Luis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example",
+        "quoting": "bottom",
+        "quirks": [
+          "signature only on Acme Studio; none on Personal and iCloud. Before 12 May 2025 the title in the Acme block is Senior Product Designer",
+          "at work, gives the decision or next step before the explanation",
+          "if he missed a deadline, gives the new date in the first sentence",
+          "British spellings; to friends, replies to the last question first"
+        ]
+      },
+      "es": {
+        "register": "cordial y preciso; de usted con clientes nuevos, de tú en cuanto el cliente tutea; muy suelto con Rodrigo y Ximena",
+        "length": "párrafos cortos, a veces una lista de entregables",
+        "greeting": "\"Hola, Ernesto:\" o \"Estimada Mtra. Herrera:\" con quien no conoce",
+        "signoff": "\"Saludos,\" o \"Un abrazo,\" según la confianza",
+        "signature": "Luis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418",
+        "quoting": "bottom",
+        "quirks": [
+          "firma con bloque de freelance en todos los correos de esta cuenta",
+          "escribe montos como $43,000 MXN + IVA",
+          "menciona la diferencia de horario con Londres al proponer llamadas",
+          "pasa al tú solo cuando el cliente lo hace primero"
+        ]
+      }
+    }
+  },
+  "accounts": [
+    {
+      "key": "personal",
+      "kind": "gmail",
+      "email": "luis.cordero@gmail.com",
+      "displayName": "Personal",
+      "ownerName": "Luis Cordero",
+      "color": "brown",
+      "lang": "en",
+      "weight": 0.36,
+      "folders": [
+        {
+          "key": "Label_11",
+          "path": [
+            "Family"
+          ],
+          "selectable": true,
+          "tags": [
+            "personal"
+          ]
+        },
+        {
+          "key": "Label_12",
+          "path": [
+            "Receipts"
+          ],
+          "selectable": true,
+          "tags": [
+            "receipt",
+            "bank"
+          ]
+        },
+        {
+          "key": "Label_13",
+          "path": [
+            "Receipts",
+            "Taxes 2026"
+          ],
+          "selectable": true,
+          "tags": [
+            "bank"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "acme",
+      "kind": "gmail",
+      "email": "luis@acme.example",
+      "displayName": "Acme Studio",
+      "ownerName": "Luis Cordero",
+      "color": "emerald",
+      "lang": "en",
+      "weight": 0.36,
+      "folders": [
+        {
+          "key": "Label_21",
+          "path": [
+            "Projects"
+          ],
+          "selectable": true,
+          "tags": [
+            "work"
+          ]
+        },
+        {
+          "key": "Label_22",
+          "path": [
+            "Projects",
+            "Website redesign"
+          ],
+          "selectable": true,
+          "tags": [
+            "client"
+          ]
+        },
+        {
+          "key": "Label_23",
+          "path": [
+            "Team"
+          ],
+          "selectable": true,
+          "tags": [
+            "calendar"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "freelance",
+      "kind": "imap",
+      "email": "hola@luiscordero.example",
+      "displayName": "Freelance",
+      "ownerName": "Luis Cordero",
+      "color": "amber",
+      "lang": "es",
+      "weight": 0.18,
+      "folders": [
+        {
+          "key": "Clientes antiguos",
+          "path": [
+            "Clientes antiguos"
+          ],
+          "selectable": true,
+          "tags": [
+            "client"
+          ]
+        },
+        {
+          "key": "Facturación",
+          "path": [
+            "Facturación"
+          ],
+          "selectable": false,
+          "tags": []
+        },
+        {
+          "key": "Facturación/2026",
+          "path": [
+            "Facturación",
+            "2026"
+          ],
+          "selectable": true,
+          "tags": [
+            "receipt"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "icloud",
+      "kind": "imap",
+      "email": "lccordero@icloud.com",
+      "displayName": "iCloud",
+      "ownerName": "Luis Cordero",
+      "color": "cyan",
+      "lang": "en",
+      "weight": 0.1,
+      "folders": [
+        {
+          "key": "Saved trips",
+          "path": [
+            "Saved trips"
+          ],
+          "selectable": true,
+          "tags": [
+            "travel"
+          ]
+        }
+      ]
+    }
+  ],
+  "categories": [
+    {
+      "name": "Receipts",
+      "color": "amber",
+      "tags": [
+        "receipt",
+        "bank"
+      ]
+    },
+    {
+      "name": "Clients",
+      "color": "emerald",
+      "tags": [
+        "client"
+      ]
+    },
+    {
+      "name": "Travel",
+      "color": "cyan",
+      "tags": [
+        "travel"
+      ]
+    },
+    {
+      "name": "Reading",
+      "color": "violet",
+      "tags": [
+        "newsletter"
+      ]
+    },
+    {
+      "name": "Dev",
+      "color": "brown",
+      "tags": [
+        "dev"
+      ]
+    }
+  ],
+  "timeline": [
+    {
+      "date": "2024-10-22",
+      "fact": "Start of the mail. Luis is a Senior Product Designer at Acme, living with Niamh at Flat 3, 14 Albion Road, Stoke Newington N16 (since 2023)."
+    },
+    {
+      "date": "2024-10-28",
+      "fact": "Freelance: Tueste Laja y Niebla hires him to redesign its coffee bags; Clínicas Diente de Sierra asks for signage for three clinics."
+    },
+    {
+      "date": "2024-11-04",
+      "fact": "The Albion Road boiler fails for the first time; no heating or hot water on and off until February 2025."
+    },
+    {
+      "date": "2024-12-19",
+      "fact": "Christmas in Guadalajara with his parents and Daniela, 19 December to 5 January. Mail goes quiet."
+    },
+    {
+      "date": "2025-01-24",
+      "fact": "Ski week in Les Arcs with Tom, Callum and Josh, 24-31 January. Josh ends up owing him £40."
+    },
+    {
+      "date": "2025-02-17",
+      "fact": "Peter Stavros replaces the Albion Road boiler after the third failure."
+    },
+    {
+      "date": "2025-03-06",
+      "fact": "His road bike is stolen outside 14 Albion Road; insurance claim with Halyard (iCloud address)."
+    },
+    {
+      "date": "2025-03-20",
+      "fact": "Shin splints; six physio sessions with Harriet Lowe until May."
+    },
+    {
+      "date": "2025-04-28",
+      "fact": "Files his Mexican annual tax return with Lupita Ibarra (deadline 30 April)."
+    },
+    {
+      "date": "2025-05-12",
+      "fact": "Promoted to Lead Product Designer at Acme; Hollie, Dev, Kasia and Gabriel report to him. Biscuit the cat arrives the same month."
+    },
+    {
+      "date": "2025-05-15",
+      "fact": "Felix Brandt visits from Berlin, 15-19 May, sleeping on the sofa."
+    },
+    {
+      "date": "2025-07-14",
+      "fact": "Off sick with flu, 14-18 July."
+    },
+    {
+      "date": "2025-08-16",
+      "fact": "Aisha and Oliver's wedding at Lower Hatherley Barn, Cotswolds; Luis is an usher."
+    },
+    {
+      "date": "2025-08-26",
+      "fact": "Acme wins Tandem City; Luis leads design."
+    },
+    {
+      "date": "2025-09-18",
+      "fact": "Lisbon with Niamh, 18-23 September, at Blue Swallow Guesthouse; days out with Rita."
+    },
+    {
+      "date": "2025-10-13",
+      "fact": "Kestrel Pay app redesign starts; runs to April 2026."
+    },
+    {
+      "date": "2025-11-06",
+      "fact": "Acme's 2025 offsite in Margate, 6-7 November. Nikhil is in London the same week."
+    },
+    {
+      "date": "2025-11-20",
+      "fact": "Freelance: Casa Ocotillo's new website goes live; maintenance retainer from December."
+    },
+    {
+      "date": "2025-12-20",
+      "fact": "Christmas in Cork with Niamh's family, 20 December to 2 January. Mail goes quiet."
+    },
+    {
+      "date": "2026-01-12",
+      "fact": "Acme wins the Holloway Museum website relaunch; Clínicas Diente de Sierra starts negotiating a retainer with him."
+    },
+    {
+      "date": "2026-02-09",
+      "fact": "Luis starts leading the Holloway Museum relaunch, launch planned for 1 October 2026."
+    },
+    {
+      "date": "2026-03-02",
+      "fact": "Niamh starts at Lowtide Audio after leaving Pellam & Rook on 27 February. Clínicas Diente de Sierra's retainer signed 16 March."
+    },
+    {
+      "date": "2026-04-14",
+      "fact": "Mexico for Daniela's wedding, 14-27 April (wedding Saturday 18 April at Hacienda Los Siete Capulines). Mail goes quiet; Luis meets Lupita in Guadalajara on 22 April; she files the return on 29 April after he is back in London."
+    },
+    {
+      "date": "2026-05-29",
+      "fact": "Gives notice on Albion Road; they find Flat B, 41 Mallory Road, Clapton on 6 June."
+    },
+    {
+      "date": "2026-06-09",
+      "fact": "Freelance: Tueste Laja y Niebla approves the rebrand quote ($86,000 MXN + IVA)."
+    },
+    {
+      "date": "2026-06-27",
+      "fact": "Moves to Flat B, 41 Mallory Road, Clapton E5, with Tariq's van."
+    },
+    {
+      "date": "2026-08-03",
+      "fact": "Holiday in the Scottish Highlands with Niamh, 3-14 August. Mail goes quiet."
+    },
+    {
+      "date": "2026-09-02",
+      "fact": "Damp patch appears on the Mallory Road bathroom ceiling."
+    },
+    {
+      "date": "2026-09-07",
+      "fact": "Acme opens the junior designer role; Luis runs the hire."
+    },
+    {
+      "date": "2026-09-15",
+      "fact": "Freelance: invoices Tueste Laja y Niebla for the balance, due 15 October. He delivered production PDFs on 12 September."
+    },
+    {
+      "date": "2026-10-01",
+      "fact": "Holloway launch moves from 1 October to 12 November. Luis accepts the Margins talk (3 December)."
+    },
+    {
+      "date": "2026-10-12",
+      "fact": "Marcus tells Luis he's leaving Acme; last day 18 December."
+    },
+    {
+      "date": "2026-10-14",
+      "fact": "Ellie Ngata accepts the junior designer offer; starts 16 November."
+    },
+    {
+      "date": "2026-10-22",
+      "fact": "Anchor: Thursday afternoon. Ahead: offsite 5-6 November, Holloway launch 12 November, Jo's surprise 40th 14 November, the Marshgate Half 15 November, Ellie's first day 16 November."
+    }
+  ],
+  "people": [
+    {
+      "id": "niamh-gallagher",
+      "name": "Niamh Gallagher",
+      "email": "niamh.gallagher@proton.me",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "partner",
+      "style": {
+        "register": "dry and familiar; gives the household context in half a sentence",
+        "length": "one to three lines",
+        "greeting": "none",
+        "signoff": "x",
+        "signature": null,
+        "quoting": "top",
+        "quirks": [
+          "often starts lowercase on her phone",
+          "adds a separate PS for the thing Luis is likely to miss"
+        ]
+      },
+      "facts": [
+        "from Cork, in London since 2017; together with Luis since 2021",
+        "audio producer: left the publisher Pellam & Rook on 27 February 2026 and started at Lowtide Audio, a podcast company in Bethnal Green, on 2 March 2026",
+        "lives with Luis: Flat 3, 14 Albion Road, Stoke Newington N16 until 27 June 2026, then Flat B, 41 Mallory Road, Clapton E5",
+        "vegetarian; keeps the household bills spreadsheet and splits everything 50/50 through their joint account",
+        "adopted Biscuit, a ginger cat, with Luis in May 2025"
+      ]
+    },
+    {
+      "id": "daniela-cordero",
+      "name": "Daniela Cordero",
+      "email": "daniela.cordero@outlook.com",
+      "lang": "en",
+      "timezone": "America/Toronto",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "older sister",
+      "style": {
+        "register": "affectionate, bossy big sister",
+        "length": "long: several paragraphs, numbered to-dos when planning",
+        "greeting": "Lu,",
+        "signoff": "Love, Dani",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "ALL-CAPS words for emphasis",
+          "numbered lists for to-dos"
+        ]
+      },
+      "facts": [
+        "38, hospital project manager in Toronto since 2015",
+        "married Marc Tremblay on Saturday 18 April 2026 at Hacienda Los Siete Capulines, outside Guadalajara",
+        "Luis designed the invitations and gave a toast in English and Spanish",
+        "their parents live in Chapalita, Guadalajara, and mostly use a family group chat",
+        "writes to Luis in English, always has"
+      ]
+    },
+    {
+      "id": "marc-tremblay",
+      "name": "Marc Tremblay",
+      "email": "marc.tremblay@gmail.com",
+      "lang": "en",
+      "timezone": "America/Toronto",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "sister's husband",
+      "style": {
+        "register": "practical, gives the answer before the small talk",
+        "length": "one or two lines",
+        "greeting": "Hey Luis",
+        "signoff": "M.",
+        "signature": null,
+        "quoting": "top",
+        "quirks": [
+          "rounds off logistics with one concrete detail: a transfer reference, a pickup time or a cell in the sheet"
+        ]
+      },
+      "facts": [
+        "from Sherbrooke, Quebec; data analyst at a Toronto credit union",
+        "kept the wedding budget spreadsheet; paid Luis back CA$640 for the invitation printing in March 2026",
+        "learning Spanish, badly, by his own account"
+      ]
+    },
+    {
+      "id": "bernadette-gallagher",
+      "name": "Bernadette Gallagher",
+      "email": "bernie.gallagher@hotmail.com",
+      "lang": "en",
+      "timezone": "Europe/Dublin",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "Niamh's mother",
+      "style": {
+        "register": "fond, chatty, a bit formal on email",
+        "length": "long, one sentence per line",
+        "greeting": "Dear Luis,",
+        "signoff": "Love, Bernie x",
+        "signature": null,
+        "quoting": "top",
+        "quirks": [
+          "each sentence on its own line",
+          "puts the question she most wants answered after her signoff"
+        ]
+      },
+      "facts": [
+        "retired primary teacher in Douglas, Cork; husband Dermot doesn't do email",
+        "hosted Christmas 2025 (Luis and Niamh in Cork 20 December to 2 January)",
+        "posts a Christmas pudding to London every November",
+        "planning Christmas 2026 in Cork and keeps asking which flights they've booked"
+      ]
+    },
+    {
+      "id": "mateo-cordero",
+      "name": "Mateo Cordero",
+      "email": "mateocordero.arq@gmail.com",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "cousin",
+      "style": {
+        "register": "casual student asking a favour; tracks dates better than plans",
+        "length": "two or three lines",
+        "greeting": "hey Luis",
+        "signoff": "none",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "writes train times as 18.42",
+          "breaks the message after the question"
+        ]
+      },
+      "facts": [
+        "24, son of Luis's uncle in Zapopan",
+        "MArch student in Edinburgh since September 2025",
+        "sleeps on Luis's sofa when he's in London; still has the spare duvet from February 2026"
+      ]
+    },
+    {
+      "id": "tom-ashworth",
+      "name": "Tom Ashworth",
+      "email": "tomashworth@gmail.com",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "best mate",
+      "style": {
+        "register": "banter, very casual",
+        "length": "one line",
+        "greeting": "none",
+        "signoff": "none",
+        "signature": null,
+        "quoting": "none",
+        "quirks": [
+          "no capitals, no full stops",
+          "calls everyone mate"
+        ]
+      },
+      "facts": [
+        "sound engineer, lives in Dalston with his partner Kemi and daughter Ivy (born March 2024)",
+        "co-organised the Les Arcs ski trip in January 2025",
+        "helping Ben with Jo's surprise 40th",
+        "plays Thursday five-a-side with Luis"
+      ]
+    },
+    {
+      "id": "kwame-mensah",
+      "name": "Kwame Mensah",
+      "email": "kwame.mensah@yahoo.com",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "five-a-side organiser",
+      "style": {
+        "register": "upbeat organiser",
+        "length": "short roll calls",
+        "greeting": "Evening all,",
+        "signoff": "K",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "starts with whether the game is on",
+          "marks free slots with an underscore and puts the pitch number last"
+        ]
+      },
+      "facts": [
+        "runs Thursday 7pm five-a-side at Mabley Green, pitch 3",
+        "£6.50 for a walk-on or £45 for the eight autumn 2026 fixtures, due by 1 October; Luis hasn't paid it yet",
+        "drives the 254 bus; can't play when he's on late shift"
+      ]
+    },
+    {
+      "id": "callum-reid",
+      "name": "Callum Reid",
+      "email": "callum.reid@outlook.com",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "friend from five-a-side",
+      "style": {
+        "register": "understates setbacks; sounds much the same about football as work",
+        "length": "short paragraph",
+        "greeting": "Alright Luis",
+        "signoff": "Callum",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "puts the joke in a second sentence, after the practical answer"
+        ]
+      },
+      "facts": [
+        "from Dundee, lives in Walthamstow",
+        "teaches secondary maths in Leyton",
+        "went on the Les Arcs ski trip",
+        "partner Priti is due in February 2027"
+      ]
+    },
+    {
+      "id": "joanna-kowalczyk",
+      "name": "Joanna Kowalczyk",
+      "email": "jo.kowalczyk@gmail.com",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "close friend",
+      "style": {
+        "register": "chatty and attentive to the person she is writing to",
+        "length": "medium",
+        "greeting": "Hiya Luis,",
+        "signoff": "Jo x",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "follows an opener with a reference to the last time they met",
+          "makes a concrete suggestion before asking a question"
+        ]
+      },
+      "facts": [
+        "turns 40 on 14 November 2026 and thinks she's having a quiet dinner",
+        "born in Wroclaw, moved to Leeds at nine",
+        "community pharmacist in Leyton",
+        "married to Ben Hartley; they live in Leyton"
+      ]
+    },
+    {
+      "id": "ben-hartley",
+      "name": "Ben Hartley",
+      "email": "ben.hartley83@gmail.com",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "friend, Jo's husband",
+      "style": {
+        "register": "treats plans as provisional until someone pays or books",
+        "length": "long, bullet lists",
+        "greeting": "Hi all,",
+        "signoff": "Cheers, Ben",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "puts options on separate lines with prices alongside",
+          "adds one forwardable line with time and place on group plans"
+        ]
+      },
+      "facts": [
+        "throwing Jo's surprise 40th: Saturday 14 November 2026, upstairs at The Eel & Anchor, Clapton, from 7pm",
+        "asked Luis to design the invite (sent 2 October) and a photo slideshow; Luis promised the slideshow by 7 November",
+        "collecting £25 a head towards a Krakow weekend for Jo",
+        "civil engineer at a rail contractor"
+      ]
+    },
+    {
+      "id": "ifeoma-nwosu",
+      "name": "Ifeoma Nwosu",
+      "email": "ife.nwosu@gmail.com",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "friend, hosts the book club",
+      "style": {
+        "register": "warm and efficient",
+        "length": "two or three lines",
+        "greeting": "Hi lovely people",
+        "signoff": "Ife",
+        "signature": null,
+        "quoting": "top",
+        "quirks": [
+          "answers the question in the first line",
+          "gives availability as a window between shifts"
+        ]
+      },
+      "facts": [
+        "A&E registrar, works nights on rotation",
+        "hosts the Tuesday Book Club, first Tuesday of the month, usually at her flat in Stoke Newington; Hamish is hosting in November 2026",
+        "Niamh's closest friend in London"
+      ]
+    },
+    {
+      "id": "hamish-fairweather",
+      "name": "Hamish Fairweather",
+      "email": "hamish.fairweather@proton.me",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "book club member",
+      "style": {
+        "register": "formal, literary, kindly",
+        "length": "long, with digressions",
+        "greeting": "Dear all,",
+        "signoff": "Yours, Hamish Fairweather",
+        "signature": null,
+        "quoting": "none",
+        "quirks": [
+          "two spaces after full stops",
+          "signs with his full name"
+        ]
+      },
+      "facts": [
+        "71, retired English teacher, born in Edinburgh",
+        "hosting the November 2026 book club at his house in Highbury",
+        "thinks every book is too long except Trollope"
+      ]
+    },
+    {
+      "id": "mei-lin-chou",
+      "name": "Mei Lin Chou",
+      "email": "meilin.chou@icloud.com",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "book club member",
+      "style": {
+        "register": "brisk",
+        "length": "one or two lines",
+        "greeting": "none",
+        "signoff": "M",
+        "signature": null,
+        "quoting": "top",
+        "quirks": [
+          "bullet lists",
+          "no greeting"
+        ]
+      },
+      "facts": [
+        "data scientist, born in Taichung",
+        "keeps the book club's list of picks and who chose them",
+        "Luis owes her his December pick by the 3 November meeting"
+      ]
+    },
+    {
+      "id": "sunita-varma",
+      "name": "Sunita Varma",
+      "email": "sunita.varma@hey.com",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "book club member",
+      "style": {
+        "register": "polite but plain when asking for something back",
+        "length": "short paragraph",
+        "greeting": "Hi Luis,",
+        "signoff": "Best, Sunita",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "offers two ways to hand something over, then leaves the choice to Luis"
+        ]
+      },
+      "facts": [
+        "employment solicitor, from Leicester",
+        "lends books with her name pencilled inside the cover",
+        "lent Luis a copy of a 600-page novel in March 2026 and would like it back"
+      ]
+    },
+    {
+      "id": "gareth-pugh",
+      "name": "Gareth Pugh",
+      "email": "gareth@marshgaterunners.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "running club secretary",
+      "org": "marshgate-runners",
+      "style": {
+        "register": "friendly but official",
+        "length": "long club notices",
+        "greeting": "Hi all,",
+        "signoff": "Thanks, Gareth",
+        "signature": "Gareth Pugh\nClub Secretary, Marshgate Runners\nmarshgaterunners.example | Tuesdays & Thursdays 6.45pm, Marshgate Lane gates",
+        "quoting": "bottom",
+        "quirks": [
+          "separates information for runners and marshals; puts route changes above general notices"
+        ]
+      },
+      "facts": [
+        "from Swansea, retired civil servant",
+        "race director of the Marshgate Half, Sunday 15 November 2026, 9am start",
+        "asked Luis to design the finisher medal (artwork due 23 October 2026 to the manufacturer) and to marshal at mile 9"
+      ]
+    },
+    {
+      "id": "bea-collins",
+      "name": "Bea Collins",
+      "email": "bea.runs@gmail.com",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "run leader at the club",
+      "org": "marshgate-runners",
+      "style": {
+        "register": "encouraging; talks in splits and landmarks",
+        "length": "one or two lines",
+        "greeting": "none",
+        "signoff": "bea",
+        "signature": null,
+        "quoting": "top",
+        "quirks": [
+          "leads training replies with the actual pace or distance",
+          "answers in fragments separated by slashes if writing from a run"
+        ]
+      },
+      "facts": [
+        "leads Tuesday intervals",
+        "paced Luis to 1:44 at the 2025 Marshgate Half",
+        "physio student at weekends"
+      ]
+    },
+    {
+      "id": "olivia-marsh",
+      "name": "Olivia Marsh",
+      "email": "olivia.marsh@haldenpryce.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "property manager at the letting agent (Albion Road)",
+      "org": "halden-pryce",
+      "style": {
+        "register": "formal, corporate",
+        "length": "medium",
+        "greeting": "Dear Luis,",
+        "signoff": "Kind regards,",
+        "signature": "Olivia Marsh\nSenior Property Manager\nHalden & Pryce Lettings | 112 Stoke Newington Church Street, London N16 0LA\nT: 020 7946 0312\nThis email and any attachments are confidential and intended solely for the addressee.",
+        "quoting": "top",
+        "quirks": []
+      },
+      "facts": [
+        "managed Flat 3, 14 Albion Road for the landlord Peter Stavros",
+        "handled the boiler saga winter 2024-25 and agreed a £150 rent reduction for December 2024",
+        "proposed deducting £340 from the £2,300 deposit in July 2026 (carpet clean £190, scratched door from the cat £150); in dispute via the deposit scheme"
+      ]
+    },
+    {
+      "id": "darren-kirby",
+      "name": "Darren Kirby",
+      "email": "maintenance@haldenpryce.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "maintenance coordinator at the letting agent",
+      "org": "halden-pryce",
+      "style": {
+        "register": "blunt",
+        "length": "one or two lines",
+        "greeting": "none",
+        "signoff": "Regards Darren",
+        "signature": "Darren Kirby | Maintenance | Halden & Pryce Lettings",
+        "quoting": "top",
+        "quirks": [
+          "the odd typo",
+          "no greeting"
+        ]
+      },
+      "facts": [
+        "sent three engineers for the Albion Road boiler between November 2024 and February 2025",
+        "always gives a four-hour window, usually 8–12"
+      ]
+    },
+    {
+      "id": "peter-stavros",
+      "name": "Peter Stavros",
+      "email": "p.stavros@yahoo.com",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "former landlord (Albion Road)",
+      "style": {
+        "register": "old-fashioned, abrupt",
+        "length": "two lines",
+        "greeting": "LUIS",
+        "signoff": "PETER",
+        "signature": null,
+        "quoting": "none",
+        "quirks": [
+          "writes in capitals"
+        ]
+      },
+      "facts": [
+        "68, Greek Cypriot, owns three flats on Albion Road",
+        "replaced the boiler in February 2025 after the third failure",
+        "sided with the agency on the carpet clean"
+      ]
+    },
+    {
+      "id": "imogen-barnes",
+      "name": "Imogen Barnes",
+      "email": "imogen@barnesarchitects.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "landlord at Mallory Road",
+      "style": {
+        "register": "friendly, apologetic, slow",
+        "length": "medium",
+        "greeting": "Hi Luis,",
+        "signoff": "Best, Imogen",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "gives the contractor’s name when she has it; says when she can next chase"
+        ]
+      },
+      "facts": [
+        "architect living in Brighton; lets Flat B, 41 Mallory Road directly, £1,950 a month",
+        "damp patch on the bathroom ceiling since 2 September 2026; promised a roofer 'next week' twice, then on 21 October booked Gary the roofer for Thursday 5 November",
+        "rent due on the 27th"
+      ]
+    },
+    {
+      "id": "agnieszka-nowak",
+      "name": "Agnieszka Nowak",
+      "email": "aga.nowak@gmail.com",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "old neighbour, Flat 2, 14 Albion Road",
+      "style": {
+        "register": "kind, practical",
+        "length": "two or three lines",
+        "greeting": "Hi Luis",
+        "signoff": "Aga",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "starts parcel messages with where she left it",
+          "uses short closing questions, for example Are you in tonight?"
+        ]
+      },
+      "facts": [
+        "nurse, lives with her son Kuba",
+        "still takes in parcels addressed to Luis at Albion Road and texts or emails when one comes"
+      ]
+    },
+    {
+      "id": "desmond-clarke",
+      "name": "Desmond Clarke",
+      "email": "des.clarke@hotmail.com",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "downstairs neighbour, Flat A, 41 Mallory Road",
+      "style": {
+        "register": "chatty, neighbourly",
+        "length": "long, no paragraph breaks",
+        "greeting": "Morning Luis",
+        "signoff": "Des",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "gives the order he noticed things in, in one paragraph",
+          "asks a practical question at the end"
+        ]
+      },
+      "facts": [
+        "74, retired bus mechanic, born in Kingston, Jamaica",
+        "the damp in Luis's bathroom shows through to his hallway too",
+        "keeps a spare key for Luis and Niamh",
+        "grows chillies in the front garden"
+      ]
+    },
+    {
+      "id": "kerry-simmonds",
+      "name": "Kerry Simmonds",
+      "email": "reception@whitlockcutdental.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "dentist's receptionist",
+      "org": "wilton-dental",
+      "style": {
+        "register": "polite, scripted",
+        "length": "short",
+        "greeting": "Dear Mr Cordero,",
+        "signoff": "Kind regards,",
+        "signature": "Kerry Simmonds\nReception, Whitlock Cut Dental\n8 Wilton Way, London E8 1BG | 020 7946 0745\nPlease give 48 hours' notice of cancellations or a £35 fee applies.",
+        "quoting": "bottom",
+        "quirks": []
+      },
+      "facts": [
+        "Luis's crown on the lower left molar was fitted 23 March 2026",
+        "his next hygienist appointment is Tuesday 10 November 2026 at 08:40",
+        "check-ups every six months"
+      ]
+    },
+    {
+      "id": "emma-pike",
+      "name": "Emma Pike",
+      "email": "emma@lauristonvets.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "vet receptionist",
+      "style": {
+        "register": "offers choices and makes booking easy",
+        "length": "short",
+        "greeting": "Hi Luis,",
+        "signoff": "Emma",
+        "signature": "Emma Pike | Lauriston Vets | 020 7946 0168",
+        "quoting": "bottom",
+        "quirks": [
+          "gives two appointment times, then the reply she needs to hold one"
+        ]
+      },
+      "facts": [
+        "Biscuit's annual booster is due in November 2026",
+        "Biscuit had a tooth out in January 2026 (£410)"
+      ]
+    },
+    {
+      "id": "harriet-lowe",
+      "name": "Harriet Lowe",
+      "email": "harriet@dalstonstepclinic.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "physio",
+      "style": {
+        "register": "encouraging, clinical",
+        "length": "medium, exercises as a list",
+        "greeting": "Hi Luis,",
+        "signoff": "Harriet",
+        "signature": "Harriet Lowe MCSP\nDalston Step Clinic, Dalston",
+        "quoting": "bottom",
+        "quirks": [
+          "asks when pain starts in a run and when it wears off",
+          "puts sets, reps and the condition for stopping on separate lines"
+        ]
+      },
+      "facts": [
+        "treated Luis's shin splints March to May 2025 (six sessions, £55 each)",
+        "told him to keep weekly mileage under 40 km"
+      ]
+    },
+    {
+      "id": "martin-hale",
+      "name": "Martin Hale",
+      "email": "martin@halenavarino.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "UK accountant (self assessment)",
+      "style": {
+        "register": "formal, thorough",
+        "length": "long",
+        "greeting": "Dear Luis,",
+        "signoff": "Kind regards,",
+        "signature": "Martin Hale FCA\nHale Navarino Accountancy\n3 Navarino Mews, London E8 | 020 7946 0921",
+        "quoting": "bottom",
+        "quirks": []
+      },
+      "facts": [
+        "does Luis's UK self assessment every year, fee £420 + VAT",
+        "needs Luis's Mexican freelance income for 2025-26 in pounds, with the invoices and evidence of tax paid in Mexico, to check what foreign tax credit applies",
+        "asked for everything by 31 October 2026; the online deadline is 31 January 2027"
+      ]
+    },
+    {
+      "id": "marta-silva",
+      "name": "Marta Silva",
+      "email": "martasilva.limpeza@gmail.com",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "cleaner",
+      "style": {
+        "register": "direct and matter-of-fact about practical arrangements",
+        "length": "one or two lines",
+        "greeting": "Hi Luis",
+        "signoff": "Marta",
+        "signature": null,
+        "quoting": "top",
+        "quirks": [
+          "answers with a date and arrival time",
+          "names the room or task in question"
+        ]
+      },
+      "facts": [
+        "from Belo Horizonte; cleans every other Friday, 3 hours, £16 an hour",
+        "started cleaning the Mallory Road flat on 10 July 2026; has a key"
+      ]
+    },
+    {
+      "id": "josh-whitaker",
+      "name": "Josh Whitaker",
+      "email": "josh.whitaker@gmail.com",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "friend from the ski trip",
+      "style": {
+        "register": "jokey, scattered",
+        "length": "medium",
+        "greeting": "LUIS",
+        "signoff": "J",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "lol",
+          "the odd typo"
+        ]
+      },
+      "facts": [
+        "product manager at a startup, lives in Brixton",
+        "has owed Luis £40 since the January 2025 Les Arcs ski trip (his share of the chalet cleaning fee)",
+        "always promises to pay 'this weekend'"
+      ]
+    },
+    {
+      "id": "aisha-rahman",
+      "name": "Aisha Rahman",
+      "email": "aisha.rahman@gmail.com",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "friend; married Oliver Grant in August 2025",
+      "style": {
+        "register": "warm, remembers who did what",
+        "length": "long",
+        "greeting": "Hi lovely,",
+        "signoff": "Aisha x",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "writes one paragraph per person or favour",
+          "in thank-yous she names a small thing the person did on the day"
+        ]
+      },
+      "facts": [
+        "married Oliver Grant on 16 August 2025 at Lower Hatherley Barn in the Cotswolds; Luis was an usher",
+        "worked with Luis at his first London job",
+        "expecting their first baby in March 2027"
+      ]
+    },
+    {
+      "id": "oliver-grant",
+      "name": "Oliver Grant",
+      "email": "olly.grant@outlook.com",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "friend; Aisha's husband",
+      "style": {
+        "register": "laconic",
+        "length": "one line",
+        "greeting": "none",
+        "signoff": "O",
+        "signature": null,
+        "quoting": "top",
+        "quirks": [
+          "uses just one sentence, often a correction to the group plan"
+        ]
+      },
+      "facts": [
+        "solicitor in the City",
+        "made Luis and Tom wear matching mustard ties at the wedding"
+      ]
+    },
+    {
+      "id": "chloe-bennett",
+      "name": "Chloe Bennett",
+      "email": "chloe.bennett@yahoo.com",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "Niamh's friend from university",
+      "style": {
+        "register": "chatty; folds personal plans into news about trains and work",
+        "length": "medium",
+        "greeting": "Hi both!",
+        "signoff": "Chlo x",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "ends with a direct “are you two in?” question",
+          "puts arrival or departure times in parentheses"
+        ]
+      },
+      "facts": [
+        "lives in Bristol, comes to London once a month",
+        "organised Niamh's leaving drinks from Pellam & Rook in February 2026",
+        "stays in their spare room when she visits"
+      ]
+    },
+    {
+      "id": "tariq-hussain",
+      "name": "Tariq Hussain",
+      "email": "tariq.sparks@gmail.com",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "personal"
+      ],
+      "relationship": "friend from five-a-side",
+      "style": {
+        "register": "helpful, quick",
+        "length": "one or two lines",
+        "greeting": "alright",
+        "signoff": "T",
+        "signature": null,
+        "quoting": "none",
+        "quirks": [
+          "no punctuation",
+          "the odd typo"
+        ]
+      },
+      "facts": [
+        "electrician; lent Luis his van for the move on 27 June 2026",
+        "did the electrical safety check at Mallory Road"
+      ]
+    },
+    {
+      "id": "rita-valente",
+      "name": "Rita Valente",
+      "email": "rita.valente@proton.me",
+      "lang": "en",
+      "timezone": "Europe/Lisbon",
+      "accounts": [
+        "icloud",
+        "personal"
+      ],
+      "relationship": "old friend, ex-Acme colleague in Lisbon",
+      "style": {
+        "register": "warm, slightly formal English",
+        "length": "medium",
+        "greeting": "Hi Luis,",
+        "signoff": "Love, Rita",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "gives one precise local landmark instead of street-by-street directions"
+        ]
+      },
+      "facts": [
+        "designed at Acme 2019 to 2022, then moved home to Lisbon; now freelance illustrator",
+        "showed Luis and Niamh around Lisbon in September 2025 and took them to her aunt's in Cacilhas",
+        "part of the old Bermondsey friend group",
+        "has a dog called Tremoco"
+      ]
+    },
+    {
+      "id": "felix-brandt",
+      "name": "Felix Brandt",
+      "email": "post@felixbrandt.example",
+      "lang": "en",
+      "timezone": "Europe/Berlin",
+      "accounts": [
+        "icloud"
+      ],
+      "relationship": "old university friend (MA in London, 2017-2018)",
+      "style": {
+        "register": "affectionate; writes as if the recipient has just sat down beside him",
+        "length": "long, five or six paragraphs",
+        "greeting": "Dear Luis,",
+        "signoff": "Love, Felix",
+        "signature": null,
+        "quoting": "none",
+        "quirks": [
+          "starts with a small observation from his desk or kitchen",
+          "gets to the reason for writing one paragraph later"
+        ]
+      },
+      "facts": [
+        "shared a studio desk with Luis on their MA in London, 2017-2018",
+        "type designer in Berlin-Neukolln, has a daughter Lotte (born 2023)",
+        "visited London 15-19 May 2025 and slept on the Albion Road sofa",
+        "writes about twice a year, always long"
+      ]
+    },
+    {
+      "id": "nikhil-mehta",
+      "name": "Nikhil Mehta",
+      "email": "nikhil.mehta@gmail.com",
+      "lang": "en",
+      "timezone": "America/New_York",
+      "accounts": [
+        "icloud"
+      ],
+      "relationship": "old flatmate from Bermondsey, now in New York",
+      "style": {
+        "register": "quick, upbeat",
+        "length": "short",
+        "greeting": "Yo Luis",
+        "signoff": "Nik",
+        "signature": null,
+        "quoting": "top",
+        "quirks": [
+          "gives London time first when he asks about a call"
+        ]
+      },
+      "facts": [
+        "flatmate at 9 Keetons Road, Bermondsey, 2020-2023",
+        "moved to Brooklyn in 2023 for a fintech job",
+        "in London 6-12 November 2025 for work; they met at the Bermondsey lot's pub quiz"
+      ]
+    },
+    {
+      "id": "hayley-brooks",
+      "name": "Hayley Brooks",
+      "email": "hayleybrooks@me.com",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "icloud"
+      ],
+      "relationship": "old friend, organiser of the Bermondsey lot",
+      "style": {
+        "register": "organiser, cheerful",
+        "length": "long, with options to vote on",
+        "greeting": "Hello my lovelies",
+        "signoff": "H xx",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "bullet lists",
+          "exclamation marks"
+        ]
+      },
+      "facts": [
+        "primary school deputy head in Peckham",
+        "organising the Bermondsey lot's ten-year reunion: a weekend in a cottage in Norfolk, either 4-6 or 11-13 December 2026; Luis’s vote is due 25 October; the £60 deposit is due once she confirms the date",
+        "keeps the group's shared photo album"
+      ]
+    },
+    {
+      "id": "andrei-popescu",
+      "name": "Andrei Popescu",
+      "email": "andrei.popescu@yahoo.com",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "icloud"
+      ],
+      "relationship": "old friend from the Bermondsey lot",
+      "style": {
+        "register": "deadpan",
+        "length": "one line",
+        "greeting": "none",
+        "signoff": "none",
+        "signature": null,
+        "quoting": "top",
+        "quirks": [
+          "no greeting",
+          "no sign-off"
+        ]
+      },
+      "facts": [
+        "from Cluj, software tester in Canary Wharf",
+        "replies-all to everything with one line",
+        "voted for the 4-6 December reunion weekend"
+      ]
+    },
+    {
+      "id": "clara-moreau",
+      "name": "Clara Moreau",
+      "email": "clara.moreau@proton.me",
+      "lang": "en",
+      "timezone": "Europe/Paris",
+      "accounts": [
+        "icloud"
+      ],
+      "relationship": "old friend from the Bermondsey lot, now in Paris",
+      "style": {
+        "register": "thoughtful",
+        "length": "medium",
+        "greeting": "Hi Luis!",
+        "signoff": "Clara x",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "distinguishes dates she can travel from dates she can leave work early"
+        ]
+      },
+      "facts": [
+        "moved back to Paris in 2024, works for a theatre",
+        "can only do the 11-13 December reunion weekend"
+      ]
+    },
+    {
+      "id": "graham-petts",
+      "name": "Graham Petts",
+      "email": "graham.petts@outlook.com",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "icloud"
+      ],
+      "relationship": "old landlord (Bermondsey flat)",
+      "style": {
+        "register": "gruff, transactional",
+        "length": "two or three lines",
+        "greeting": "Luis",
+        "signoff": "G Petts",
+        "signature": null,
+        "quoting": "top",
+        "quirks": [
+          "uses no full stops",
+          "names the item in the subject and asks when it will be collected"
+        ]
+      },
+      "facts": [
+        "owned 9 Keetons Road, Bermondsey; returned £1,620 of the £1,800 deposit in January 2025 after the final tenant left in October 2024; kept £180 over a stained mattress",
+        "still gets the odd letter for Luis and asks him to update his address"
+      ]
+    },
+    {
+      "id": "lorraine-whitby",
+      "name": "Lorraine Whitby",
+      "email": "lorraine.whitby@halyardinsurance.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "icloud"
+      ],
+      "relationship": "claims handler at his contents insurer",
+      "org": "halyard",
+      "style": {
+        "register": "formal, procedural",
+        "length": "medium",
+        "greeting": "Dear Mr Cordero,",
+        "signoff": "Yours sincerely,",
+        "signature": "Lorraine Whitby\nClaims Handler, Halyard Insurance\nClaims: claims@halyardinsurance.example (Mon-Fri 8am-6pm)\nPlease quote your claim reference in the subject line.",
+        "quoting": "bottom",
+        "quirks": [
+          "lists only missing evidence; keeps the claim reference in the subject"
+        ]
+      },
+      "facts": [
+        "handled claim HAL-2025-118734 for Luis's road bike stolen outside 14 Albion Road on 6 March 2025",
+        "paid £780 minus the £100 excess on 12 June 2025",
+        "the contents policy renews every 1 December"
+      ]
+    },
+    {
+      "id": "joana-ferreira",
+      "name": "Joana Ferreira",
+      "email": "reservas@blueswallowguesthouse.example",
+      "lang": "en",
+      "timezone": "Europe/Lisbon",
+      "accounts": [
+        "icloud"
+      ],
+      "relationship": "host at the Lisbon guesthouse",
+      "org": "casa-azulejos",
+      "style": {
+        "register": "hospitable, a little formal",
+        "length": "short",
+        "greeting": "Dear Mr. Luis,",
+        "signoff": "Best regards, Joana",
+        "signature": "Joana Ferreira\nBlue Swallow Guesthouse | Bairro Alto, Lisbon",
+        "quoting": "bottom",
+        "quirks": []
+      },
+      "facts": [
+        "Luis and Niamh stayed in the Blue Room 18-23 September 2025",
+        "checked in late at 23:10 after a delayed flight; Joana waited up"
+      ]
+    },
+    {
+      "id": "bec-thornton",
+      "name": "Bec Thornton",
+      "email": "bec.thornton@outlook.com",
+      "lang": "en",
+      "timezone": "Australia/Sydney",
+      "accounts": [
+        "icloud"
+      ],
+      "relationship": "old friend from his first London job, now in Sydney",
+      "style": {
+        "register": "conversational, brings one long story to a practical point",
+        "length": "long",
+        "greeting": "Hey Luis,",
+        "signoff": "Bec x",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "places the actual question in a short final paragraph",
+          "mentions both local and London dates if they differ"
+        ]
+      },
+      "facts": [
+        "went home to Sydney in 2022, works in UX at a university",
+        "was in London 8-21 July 2026 and had dinner with Luis and Niamh on 14 July",
+        "always writes at what is the middle of the night in London"
+      ]
+    },
+    {
+      "id": "priya-raman",
+      "name": "Priya Raman",
+      "email": "priya@acme.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "his manager, Design Director at Acme",
+      "org": "acme",
+      "style": {
+        "register": "clear, kind, decisive",
+        "length": "medium, decisions as bullets",
+        "greeting": "Hi Luis,",
+        "signoff": "P",
+        "signature": "Priya Raman\nDesign Director, Acme Studio\nacme.example",
+        "quoting": "bottom",
+        "quirks": [
+          "bullet lists for decisions"
+        ]
+      },
+      "facts": [
+        "Design Director; Luis's manager since he joined in March 2022",
+        "promoted Luis to Lead Product Designer in May 2025",
+        "on leave 26 October to 30 October 2026 (half term with her two boys)",
+        "wants the junior designer's onboarding plan from Luis before the offsite"
+      ]
+    },
+    {
+      "id": "jonathan-ellery",
+      "name": "Jonathan Veyland",
+      "email": "jonathan@acme.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "Acme's founder and managing director",
+      "org": "acme",
+      "style": {
+        "register": "leads with one concrete thing the studio shipped, then says what it changes",
+        "length": "long all-staff notes",
+        "greeting": "Hi everyone,",
+        "signoff": "Jonathan",
+        "signature": "Jonathan Veyland\nFounder & Managing Director\nAcme Studio | 3rd floor, 48 Turnmill Street, London EC1M 5RR\n+44 20 7946 0500\nFor Acme Studio project correspondence only.",
+        "quoting": "bottom",
+        "quirks": [
+          "quotes a figure or a client comment before making a general point"
+        ]
+      },
+      "facts": [
+        "founded Acme in 2014; about 40 people now",
+        "opens the offsite on Thursday 5 November 2026 with a 'state of the studio' talk",
+        "presented the Holloway Museum pitch in January 2026 with Fiona and Luis"
+      ]
+    },
+    {
+      "id": "hollie-tran",
+      "name": "Hollie Tran",
+      "email": "hollie@acme.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "product designer on his team",
+      "org": "acme",
+      "style": {
+        "register": "quick, mildly irreverent, useful in a review",
+        "length": "one or two lines",
+        "greeting": "none",
+        "signoff": "h",
+        "signature": null,
+        "quoting": "top",
+        "quirks": [
+          "starts lowercase",
+          "names the screen and what she noticed in it before suggesting a change"
+        ]
+      },
+      "facts": [
+        "product designer since 2023, reports to Luis",
+        "sat on the junior designer interview panel",
+        "runs the studio's Friday crit"
+      ]
+    },
+    {
+      "id": "marcus-adeyemi",
+      "name": "Marcus Adeyemi",
+      "email": "marcus@acme.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "senior designer on his team",
+      "org": "acme",
+      "style": {
+        "register": "thoughtful, thorough",
+        "length": "long",
+        "greeting": "Hey Luis,",
+        "signoff": "Marcus",
+        "signature": "Marcus Adeyemi\nSenior Product Designer, Acme Studio\nacme.example",
+        "quoting": "bottom",
+        "quirks": [
+          "starts with the trade-off that led to the decision",
+          "ends handovers with whom to ask about the parts he does not own"
+        ]
+      },
+      "facts": [
+        "leads design on the Pennywort Grocers loyalty app",
+        "told Luis on 12 October 2026 he's leaving; last day Friday 18 December 2026 (joining a games studio)",
+        "owes Luis a written handover of Pennywort by 27 November",
+        "leaving drinks planned for Thursday 17 December"
+      ]
+    },
+    {
+      "id": "freya-lindgren",
+      "name": "Freya Lindgren",
+      "email": "freya@acme.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "UX researcher",
+      "org": "acme",
+      "style": {
+        "register": "careful, evidence first",
+        "length": "long, findings numbered",
+        "greeting": "Hi Luis,",
+        "signoff": "Freya",
+        "signature": "Freya Lindgren\nSenior UX Researcher, Acme Studio\nacme.example",
+        "quoting": "bottom",
+        "quirks": [
+          "numbered findings"
+        ]
+      },
+      "facts": [
+        "Swedish, from Malmo",
+        "ran the Tandem City e-bike unlock study (12 sessions, 13-16 October 2026); the readout is due 28 October",
+        "ran Kestrel Pay's diary study in late 2025"
+      ]
+    },
+    {
+      "id": "dev-malhotra",
+      "name": "Dev Malhotra",
+      "email": "dev@acme.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "interaction designer on his team",
+      "org": "acme",
+      "style": {
+        "register": "tentative about unfinished work, decisive about defects he can reproduce",
+        "length": "short",
+        "greeting": "Hi Luis",
+        "signoff": "Thanks, Dev",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "ends a review request with one thing he wants tested"
+        ]
+      },
+      "facts": [
+        "joined Acme in February 2025 as a junior; Luis mentors him",
+        "works on Pennywort's checkout",
+        "books a desk crit with Luis every other Wednesday"
+      ]
+    },
+    {
+      "id": "zainab-bello",
+      "name": "Zainab Bello",
+      "email": "zainab@acme.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "content designer",
+      "org": "acme",
+      "style": {
+        "register": "crisp, precise about words",
+        "length": "short paragraph",
+        "greeting": "Hi Luis,",
+        "signoff": "Z",
+        "signature": "Zainab Bello\nContent Designer, Acme Studio\nacme.example",
+        "quoting": "bottom",
+        "quirks": []
+      },
+      "facts": [
+        "owns the Holloway Museum content migration plan; the museum missed its 18 September copy deadline and still owes 130 entries at the anchor",
+        "edits the Brightwell annual report text",
+        "hates the word 'seamless'"
+      ]
+    },
+    {
+      "id": "kasia-zielinska",
+      "name": "Kasia Zielinska",
+      "email": "kasia@acme.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "visual designer on his team",
+      "org": "acme",
+      "style": {
+        "register": "direct",
+        "length": "two or three lines",
+        "greeting": "Luis -",
+        "signoff": "K.",
+        "signature": null,
+        "quoting": "top",
+        "quirks": []
+      },
+      "facts": [
+        "visual designer, from Gdansk",
+        "laying out the Brightwell Trust annual report for print with Fold & Bind",
+        "keeper of the Acme design system's colour tokens"
+      ]
+    },
+    {
+      "id": "jae-cho",
+      "name": "Jae Cho",
+      "email": "jae@acme.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "product designer",
+      "org": "acme",
+      "style": {
+        "register": "laid-back",
+        "length": "short",
+        "greeting": "none on internal replies, name alone otherwise",
+        "signoff": "Jae",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "sends the recommendation on line one and the strongest objection on line two"
+        ]
+      },
+      "facts": [
+        "Korean-Canadian, from Vancouver, in London since 2021",
+        "works on Kestrel Pay",
+        "organises the studio's lunchtime table tennis"
+      ]
+    },
+    {
+      "id": "gabriel-santos",
+      "name": "Gabriel Santos",
+      "email": "gabriel@acme.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "prototyper and motion designer",
+      "org": "acme",
+      "style": {
+        "register": "enthusiastic",
+        "length": "medium",
+        "greeting": "Hey Luis!",
+        "signoff": "Gabi",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "sends links to prototypes",
+          "one emoji at most"
+        ]
+      },
+      "facts": [
+        "from Curitiba, Brazil",
+        "built the Tandem City e-bike unlock prototype",
+        "teaching himself the cavaquinho"
+      ]
+    },
+    {
+      "id": "lauren-gage",
+      "name": "Lauren Gage",
+      "email": "lauren@acme.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "design ops manager",
+      "org": "acme",
+      "style": {
+        "register": "efficient, friendly",
+        "length": "short, checklists",
+        "greeting": "Hi Luis,",
+        "signoff": "Lauren",
+        "signature": "Lauren Gage\nDesign Operations, Acme Studio\nacme.example",
+        "quoting": "bottom",
+        "quirks": [
+          "checklists"
+        ]
+      },
+      "facts": [
+        "runs design tool licences and the hiring pipeline admin",
+        "booked the junior designer interviews in September 2026",
+        "needs Luis to confirm the new starter's tool seats"
+      ]
+    },
+    {
+      "id": "ellie-ngata",
+      "name": "Ellie Ngata",
+      "email": "ellie.ngata@gmail.com",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "the junior designer he hired",
+      "style": {
+        "register": "polite, excited, careful",
+        "length": "medium",
+        "greeting": "Hi Luis,",
+        "signoff": "Best wishes, Ellie",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": []
+      },
+      "facts": [
+        "New Zealander from Wellington, in London since 2025, graduated from a design course in 2024",
+        "interviewed 29 September and 6 October 2026; accepted the offer (£34,000) on 14 October",
+        "starts Monday 16 November 2026 and gets ellie@acme.example then",
+        "asked whether she can come to the offsite; nobody has answered yet"
+      ]
+    },
+    {
+      "id": "rhys-morgan",
+      "name": "Rhys Morgan",
+      "email": "rhys@acme.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "head of engineering",
+      "org": "acme",
+      "style": {
+        "register": "terse, technical",
+        "length": "one or two lines",
+        "greeting": "none",
+        "signoff": "R",
+        "signature": null,
+        "quoting": "top",
+        "quirks": [
+          "no greeting"
+        ]
+      },
+      "facts": [
+        "from Cardiff",
+        "worries about the Holloway CMS migration more than anyone",
+        "says no to launches on a Friday"
+      ]
+    },
+    {
+      "id": "anil-joshi",
+      "name": "Anil Joshi",
+      "email": "anil@acme.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "front-end developer",
+      "org": "acme",
+      "style": {
+        "register": "friendly, precise",
+        "length": "medium, code in backticks",
+        "greeting": "Hi Luis,",
+        "signoff": "Anil",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "bullet lists"
+        ]
+      },
+      "facts": [
+        "builds the Holloway Museum site",
+        "maintains the Acme design system's component library"
+      ]
+    },
+    {
+      "id": "kate-sutherland",
+      "name": "Kate Sutherland",
+      "email": "kate@acme.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "back-end engineer",
+      "org": "acme",
+      "style": {
+        "register": "matter-of-fact",
+        "length": "short",
+        "greeting": "Hi",
+        "signoff": "Kate",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "begins with whether the API or just the client changes",
+          "names the failure case she can test"
+        ]
+      },
+      "facts": [
+        "from Aberdeen",
+        "on the Tandem City project",
+        "triathlete, often in the office at 7am"
+      ]
+    },
+    {
+      "id": "natasha-whyte",
+      "name": "Natasha Whyte",
+      "email": "natasha@acme.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "studio operations manager",
+      "org": "acme",
+      "style": {
+        "register": "brisk, all logistics",
+        "length": "medium, times and places bolded in caps",
+        "greeting": "Hi all,",
+        "signoff": "Tash",
+        "signature": "Natasha Whyte\nStudio Operations Manager, Acme Studio\nacme.example",
+        "quoting": "bottom",
+        "quirks": [
+          "ALL-CAPS for deadlines"
+        ]
+      },
+      "facts": [
+        "organising the team offsite at Merefurrow Farm, Kent, 5-6 November 2026: coach from Farringdon 8:30 on the 5th",
+        "needs dietary requirements and room shares by 23 October",
+        "organised the 2025 offsite in Margate"
+      ]
+    },
+    {
+      "id": "philippa-dunn",
+      "name": "Philippa Dunn",
+      "email": "philippa@acme.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "finance manager",
+      "org": "acme",
+      "style": {
+        "register": "polite but firm",
+        "length": "short",
+        "greeting": "Hi Luis,",
+        "signoff": "Many thanks, Philippa",
+        "signature": "Philippa Dunn\nFinance Manager, Acme Studio\nacme.example",
+        "quoting": "bottom",
+        "quirks": [
+          "leads with the date and amount",
+          "specifies whether a receipt or an invoice is needed"
+        ]
+      },
+      "facts": [
+        "chases expense receipts on the 25th of each month",
+        "still missing Luis's receipt for the Kestrel client dinner on 9 October 2026 (£186.40)",
+        "approves vendor invoices over £2,000"
+      ]
+    },
+    {
+      "id": "shona-mcleod",
+      "name": "Shona McLeod",
+      "email": "shona@acme.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "People partner (HR)",
+      "org": "acme",
+      "style": {
+        "register": "warm, careful",
+        "length": "medium",
+        "greeting": "Hi Luis,",
+        "signoff": "Best, Shona",
+        "signature": "Shona McLeod\nPeople Partner, Acme Studio\nPronouns: she/her",
+        "quoting": "bottom",
+        "quirks": [
+          "puts the action a recipient needs to take in its own sentence",
+          "moves any private follow-up to a smaller recipient list"
+        ]
+      },
+      "facts": [
+        "ran the junior designer hire's paperwork; sent Ellie's contract 15 October 2026",
+        "handles Marcus's exit interview",
+        "runs annual reviews in April"
+      ]
+    },
+    {
+      "id": "fiona-achterberg",
+      "name": "Fiona Achterberg",
+      "email": "fiona@acme.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "client director",
+      "org": "acme",
+      "style": {
+        "register": "commercial, upbeat",
+        "length": "medium",
+        "greeting": "Hi team,",
+        "signoff": "F",
+        "signature": "Fiona Achterberg\nClient Director, Acme Studio\nacme.example",
+        "quoting": "top",
+        "quirks": [
+          "top-posts everything"
+        ]
+      },
+      "facts": [
+        "Dutch, from Utrecht",
+        "owns the Holloway Museum and Kestrel Pay accounts",
+        "negotiating Kestrel's phase 2 statement of work (initially £118,000; revised offer £104,000 for 12 weeks on 13 October, decision expected by the end of October 2026)"
+      ]
+    },
+    {
+      "id": "sam-whitfield",
+      "name": "Sam Whitfield",
+      "email": "sam@acme.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "delivery lead",
+      "org": "acme",
+      "style": {
+        "register": "calm, structured",
+        "length": "medium, dated lists",
+        "greeting": "Hi all,",
+        "signoff": "Sam",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "dated lists"
+        ]
+      },
+      "facts": [
+        "runs the Holloway Museum and Pennywort timelines",
+        "moved the Holloway launch from 1 October to 12 November 2026",
+        "uses they/them"
+      ]
+    },
+    {
+      "id": "jake-pemberton",
+      "name": "Jake Pemberton",
+      "email": "it@acme.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "IT support",
+      "org": "acme",
+      "style": {
+        "register": "terse",
+        "length": "one line",
+        "greeting": "none",
+        "signoff": "Jake",
+        "signature": null,
+        "quoting": "top",
+        "quirks": [
+          "no greeting"
+        ]
+      },
+      "facts": [
+        "sets up laptops: needs a week's notice for a new starter",
+        "replaced Luis's laptop in August 2025"
+      ]
+    },
+    {
+      "id": "margaret-okafor",
+      "name": "Margaret Okafor",
+      "email": "m.okafor@hollowaymuseum.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "client: Head of Digital, Holloway Museum of Making",
+      "org": "holloway",
+      "style": {
+        "register": "formal, thorough, worried",
+        "length": "long on external recaps; opens with the date the board needs confirmed",
+        "greeting": "Dear Luis,",
+        "signoff": "With best wishes,",
+        "signature": "Margaret Okafor\nHead of Digital\nHolloway Museum of Making | 30 Seven Sisters Road, London N7\nPlease direct collection enquiries to collections@hollowaymuseum.example.",
+        "quoting": "bottom",
+        "quirks": [
+          "numbered points"
+        ]
+      },
+      "facts": [
+        "leads the museum's website relaunch with Acme",
+        "her team's copy was due 18 September 2026; she sent 210 of 340 entries on 14 October and promised the last 130 by 23 October",
+        "the board's open evening is 19 November 2026, so the 12 November launch can't slip again"
+      ]
+    },
+    {
+      "id": "ian-ferris",
+      "name": "Ian Ferris",
+      "email": "ian.ferris@hollowaymuseum.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "client: IT contractor at the Holloway Museum",
+      "org": "holloway",
+      "style": {
+        "register": "laconic, defensive",
+        "length": "one or two lines",
+        "greeting": "none",
+        "signoff": "Ian",
+        "signature": null,
+        "quoting": "top",
+        "quirks": [
+          "responds with “Access:” or “Export:” above the relevant status; answers just the item he can move"
+        ]
+      },
+      "facts": [
+        "controls the museum's DNS and the old CMS",
+        "still hasn't given Acme the DNS access asked for on 2 October 2026"
+      ]
+    },
+    {
+      "id": "arjun-sethi",
+      "name": "Arjun Sethi",
+      "email": "arjun@kestrelpay.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "client: Chief Product Officer, Kestrel Pay",
+      "org": "kestrel",
+      "style": {
+        "register": "terse executive",
+        "length": "one or two lines",
+        "greeting": "none",
+        "signoff": "A",
+        "signature": null,
+        "quoting": "top",
+        "quirks": [
+          "puts his decision or price ceiling first",
+          "asks a separate question only when the answer would change his decision"
+        ]
+      },
+      "facts": [
+        "CPO of Kestrel Pay, a small-business payments app",
+        "ran the app redesign with Acme, October 2025 to April 2026",
+        "promised a decision on phase 2 'by end of October'"
+      ]
+    },
+    {
+      "id": "lena-hofmann",
+      "name": "Lena Hofmann",
+      "email": "lena@kestrelpay.example",
+      "lang": "en",
+      "timezone": "Europe/Berlin",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "client: brand lead, Kestrel Pay (Berlin office)",
+      "org": "kestrel",
+      "style": {
+        "register": "precise, friendly",
+        "length": "medium",
+        "greeting": "Hi Luis,",
+        "signoff": "Best, Lena",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "refers to exact artwork filenames and says which version supersedes the other"
+        ]
+      },
+      "facts": [
+        "works from Kestrel's Berlin office",
+        "licensed the Strandholt Type typeface for the brand in March 2026"
+      ]
+    },
+    {
+      "id": "steve-barlow",
+      "name": "Steve Barlow",
+      "email": "steve.barlow@pennywort.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "client: Head of E-commerce, Pennywort Grocers",
+      "org": "pennywort",
+      "style": {
+        "register": "blunt Yorkshire, impatient",
+        "length": "short",
+        "greeting": "Morning,",
+        "signoff": "Steve",
+        "signature": "Steve Barlow | Head of E-commerce | Pennywort Grocers\nPennywort House, Kirkstall Road, Leeds LS4\nM: 07700 900 662",
+        "quoting": "top",
+        "quirks": [
+          "opens with the cost or delivery date he needs confirmed",
+          "uses caps to flag the one figure that changed"
+        ]
+      },
+      "facts": [
+        "based in Leeds; Pennywort has 62 shops in the north",
+        "the loyalty app beta goes to 2,000 customers on 1 December 2026",
+        "unhappy that Marcus is leaving mid-project"
+      ]
+    },
+    {
+      "id": "chiara-russo",
+      "name": "Chiara Russo",
+      "email": "chiara@tandemcity.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "client: product manager, Tandem City bike share",
+      "org": "tandem",
+      "style": {
+        "register": "warm, fast, practical",
+        "length": "medium",
+        "greeting": "Hi Luis!",
+        "signoff": "Thanks, Chiara",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "gives the operational consequence before her preference"
+        ]
+      },
+      "facts": [
+        "from Turin; product manager for Tandem City's app",
+        "waiting on the e-bike unlock study readout (due 28 October 2026)",
+        "Acme won Tandem City's work in August 2025"
+      ]
+    },
+    {
+      "id": "dan-whelan",
+      "name": "Dan Whelan",
+      "email": "dan.whelan@tandemcity.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "client: operations lead, Tandem City",
+      "org": "tandem",
+      "style": {
+        "register": "plain, practical",
+        "length": "short",
+        "greeting": "Hi Luis",
+        "signoff": "Dan",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "describes problems from the rider’s side of the dock",
+          "calls out which dock or handset he used"
+        ]
+      },
+      "facts": [
+        "runs the docking stations and the e-bike fleet (1,400 bikes)",
+        "wants the unlock flow to work with gloves on"
+      ]
+    },
+    {
+      "id": "helen-ashby",
+      "name": "Helen Ashby",
+      "email": "helen.ashby@brightwelltrust.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "client: communications director, Brightwell Trust",
+      "org": "brightwell",
+      "style": {
+        "register": "warm, grateful, long",
+        "length": "long",
+        "greeting": "Dear Luis,",
+        "signoff": "Warmly, Helen",
+        "signature": "Helen Ashby\nDirector of Communications\nBrightwell Trust - every child a reader\nFor press enquiries: press@brightwelltrust.example",
+        "quoting": "bottom",
+        "quirks": [
+          "names who has approved which proof and who still needs to see it"
+        ]
+      },
+      "facts": [
+        "Acme rebuilt Brightwell's website from October 2024 to March 2025",
+        "the 2026 annual report (32 pages, 1,500 copies) goes to print with Fold & Bind; she still has to sign off the final proof",
+        "the report launches at their supporters' evening on 26 November 2026"
+      ]
+    },
+    {
+      "id": "terry-nolan",
+      "name": "Terry Nolan",
+      "email": "terry@foldandbind.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "account manager at the print shop",
+      "org": "fold-bind",
+      "style": {
+        "register": "gruff, trade talk",
+        "length": "one or two lines",
+        "greeting": "none",
+        "signoff": "Terry",
+        "signature": "Terry Nolan\nFold & Bind Print | Unit 7, Bow Industrial Park, E3\n020 7946 0277",
+        "quoting": "top",
+        "quirks": [
+          "gives size, stock and delivery as separate fragments"
+        ]
+      },
+      "facts": [
+        "printed the 2024 Brightwell report and is checking stock for its 2026 edition",
+        "reprinted 2024's covers free after the wrong Pantone",
+        "needs final PDFs by 30 October 2026 to deliver by 20 November"
+      ]
+    },
+    {
+      "id": "ingrid-solberg",
+      "name": "Ingrid Solberg",
+      "email": "licensing@strandholttype.example",
+      "lang": "en",
+      "timezone": "Europe/Oslo",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "licensing at the type foundry",
+      "org": "kerning-house",
+      "style": {
+        "register": "courteous, exact",
+        "length": "medium",
+        "greeting": "Dear Luis,",
+        "signoff": "Best regards, Ingrid",
+        "signature": "Ingrid Solberg\nLicensing, Strandholt Type Type Foundry\nstrandholttype.example",
+        "quoting": "bottom",
+        "quirks": []
+      },
+      "facts": [
+        "sold Kestrel Pay a web and app licence for the Fjell typeface in March 2026",
+        "chases licence renewals on the anniversary"
+      ]
+    },
+    {
+      "id": "jade-morris",
+      "name": "Jade Morris",
+      "email": "jade@brindleandpan.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "events manager at the caterer",
+      "org": "saltbox",
+      "style": {
+        "register": "upbeat but exact about changes she can accommodate",
+        "length": "medium",
+        "greeting": "Hi Luis!",
+        "signoff": "Thanks, Jade",
+        "signature": "Jade Morris | Events | Brindle & Pan Catering\nbrindleandpan.example | 07700 900 815",
+        "quoting": "bottom",
+        "quirks": [
+          "puts headcount, diet changes and cost on separate lines when confirming an order"
+        ]
+      },
+      "facts": [
+        "catering the offsite's Thursday dinner (38 covers, £42 a head)",
+        "needs final numbers and dietary list by 26 October 2026"
+      ]
+    },
+    {
+      "id": "rupert-ashdown",
+      "name": "Rupert Ashdown",
+      "email": "rupert@merefurrowfarm.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "owner of the offsite venue",
+      "org": "ashcombe",
+      "style": {
+        "register": "old-school, courteous",
+        "length": "medium",
+        "greeting": "Dear Luis,",
+        "signoff": "With kind regards, Rupert Ashdown",
+        "signature": null,
+        "quoting": "none",
+        "quirks": [
+          "writes times in words in a personal note, but uses the 24-hour clock in his room schedules"
+        ]
+      },
+      "facts": [
+        "owns Merefurrow Farm near Faversham, Kent: a converted barn and 14 bedrooms",
+        "the balance of £6,400 for the offsite is due 29 October 2026"
+      ]
+    },
+    {
+      "id": "callie-fraser",
+      "name": "Callie Fraser",
+      "email": "callie@northlighttalent.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "recruiter who ran the junior hire",
+      "org": "northlight",
+      "style": {
+        "register": "upbeat, persuasive",
+        "length": "medium",
+        "greeting": "Hi Luis,",
+        "signoff": "Speak soon, Callie",
+        "signature": "Callie Fraser\nSenior Consultant, Northlight Talent\n+44 7700 900 231",
+        "quoting": "bottom",
+        "quirks": [
+          "leads with a candidate’s availability or notice period",
+          "offers two short slots for a call"
+        ]
+      },
+      "facts": [
+        "sourced Ellie Ngata; her fee is 15% of first-year salary, invoiced on the start date",
+        "also tried to recruit Luis himself in 2024"
+      ]
+    },
+    {
+      "id": "duncan-shaw",
+      "name": "Duncan Shaw",
+      "email": "duncan.shaw@harlowsearch.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "recruiter who keeps pitching him a job",
+      "style": {
+        "register": "persistent, flattering",
+        "length": "medium",
+        "greeting": "Hi Luis,",
+        "signoff": "Best, Duncan",
+        "signature": "Duncan Shaw | Partner, Harlow Search\n+44 7700 900 508",
+        "quoting": "bottom",
+        "quirks": [
+          "starts follow-ups by naming what changed: reporting line, pay range or remit",
+          "reuses the previous thread even after a long gap"
+        ]
+      },
+      "facts": [
+        "pitching a Head of Design role at an unnamed Series B fintech, 'up to £115k'",
+        "first tried Luis in September 2025; since 11 August 2026 has written again and again (the Head of Design role, then a Principal Designer role, then a parental leave cover); Luis has only answered to turn him down: not right now on 10 September 2026, no again on 1 October"
+      ]
+    },
+    {
+      "id": "yasmin-farouk",
+      "name": "Yasmin Farouk",
+      "email": "yasmin@marginsconf.example",
+      "lang": "en",
+      "timezone": "Europe/London",
+      "accounts": [
+        "acme"
+      ],
+      "relationship": "organiser of the Margins conference",
+      "org": "margins",
+      "style": {
+        "register": "friendly, organised",
+        "length": "medium, dates as a list",
+        "greeting": "Hi Luis,",
+        "signoff": "Thanks so much, Yasmin",
+        "signature": "Yasmin Farouk\nProgramme Lead, Margins - a conference about the edges of design\nmarginsconf.example",
+        "quoting": "bottom",
+        "quirks": [
+          "dates as a list"
+        ]
+      },
+      "facts": [
+        "invited Luis on 24 September 2026 to talk at Margins on 3 December 2026 (25 minutes, at the Red Lion Rooms, Holborn)",
+        "Luis accepted on 1 October",
+        "needs his talk title, a 60-word bio and a headshot by 23 October; slides by 13 November"
+      ]
+    },
+    {
+      "id": "ernesto-villasenor",
+      "name": "Ernesto Villaseñor",
+      "email": "ernesto@lajayniebla.example",
+      "lang": "es",
+      "timezone": "America/Mexico_City",
+      "accounts": [
+        "freelance"
+      ],
+      "relationship": "cliente: dueño de Tueste Laja y Niebla",
+      "org": "barranca",
+      "style": {
+        "register": "cordial, de tú, algo evasivo con los pagos",
+        "length": "corto",
+        "greeting": "Qué tal Luis,",
+        "signoff": "Saludos, Ernesto",
+        "signature": null,
+        "quoting": "top",
+        "quirks": [
+          "confirma el trabajo en una frase; en temas de pagos suele dar la semana y dejar el día a Emilio"
+        ]
+      },
+      "facts": [
+        "dueño de Tueste Laja y Niebla, tostador de especialidad en Guadalajara con dos cafeterías (Av. Chapultepec y Providencia)",
+        "le encargó a Luis el empaque en 2024 y pagó puntual; el rebrand de 2026 es otra historia",
+        "aprobó la cotización del rebrand el 9 de junio de 2026: $86,000 MXN + IVA, 50% anticipo y 50% contra entrega",
+        "el segundo pago ($43,000 + IVA) venció el 15 de octubre de 2026 y sigue pendiente; dijo el 20 de octubre que 'la próxima semana' sale"
+      ]
+    },
+    {
+      "id": "mariana-gomez",
+      "name": "Mariana Gómez",
+      "email": "mariana@lajayniebla.example",
+      "lang": "es",
+      "timezone": "America/Mexico_City",
+      "accounts": [
+        "freelance"
+      ],
+      "relationship": "cliente: marketing en Tueste Laja y Niebla",
+      "org": "barranca",
+      "style": {
+        "register": "cercana, habla como quien tiene a la imprenta esperando",
+        "length": "medio",
+        "greeting": "¡Hola Luis!",
+        "signoff": "Gracias, Mariana",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "dice si el archivo va en bolsa, menú o letrero",
+          "nombra a la persona que recibe el archivo después de ella"
+        ]
+      },
+      "facts": [
+        "coordina redes y punto de venta en Tueste Laja y Niebla",
+        "organizó la sesión de fotos con Ximena Lara el 28 de agosto de 2026",
+        "quiere los archivos editables del nuevo logo para la imprenta de las bolsas"
+      ]
+    },
+    {
+      "id": "emilio-cardenas",
+      "name": "Emilio Cárdenas",
+      "email": "administracion@lajayniebla.example",
+      "lang": "es",
+      "timezone": "America/Mexico_City",
+      "accounts": [
+        "freelance"
+      ],
+      "relationship": "cliente: administración de Tueste Laja y Niebla",
+      "org": "barranca",
+      "style": {
+        "register": "formal, seco",
+        "length": "una o dos líneas",
+        "greeting": "Buen día,",
+        "signoff": "Atte. C.P. Emilio Cárdenas",
+        "signature": "C.P. Emilio Cárdenas Ruelas\nAdministración y Finanzas | Tueste Laja y Niebla S.A. de C.V.\nadministracion@lajayniebla.example",
+        "quoting": "top",
+        "quirks": []
+      },
+      "facts": [
+        "contador interno de Tueste Laja y Niebla; él programa los pagos los viernes",
+        "pidió que Luis reenviara el CFDI de la segunda factura el 16 de octubre; Luis conserva el correo del 15 de septiembre con el PDF y el XML adjuntos"
+      ]
+    },
+    {
+      "id": "sofia-mendoza",
+      "name": "Sofía Mendoza",
+      "email": "sofia@casaocotillo.example",
+      "lang": "es",
+      "timezone": "America/Mexico_City",
+      "accounts": [
+        "freelance"
+      ],
+      "relationship": "cliente: dueña del Hotel Casa Ocotillo",
+      "org": "ocotillo",
+      "style": {
+        "register": "formal, cálida, de usted al principio",
+        "length": "largo",
+        "greeting": "Estimado Luis:",
+        "signoff": "Un saludo afectuoso, Sofía Mendoza",
+        "signature": "Sofía Mendoza Alcalá\nDirectora | Hotel Casa Ocotillo\nCalle de García Vigil 512, Centro, Oaxaca",
+        "quoting": "bottom",
+        "quirks": []
+      },
+      "facts": [
+        "abrió Casa Ocotillo, 14 habitaciones en el centro de Oaxaca, en 2023",
+        "Luis le hizo el sitio web con reservaciones (febrero a noviembre de 2025); pasaron al tú en mayo de 2025",
+        "le paga a Luis un mantenimiento de $4,500 MXN al mes desde diciembre de 2025"
+      ]
+    },
+    {
+      "id": "jorge-perez",
+      "name": "Jorge Antonio Pérez",
+      "email": "gerencia@casaocotillo.example",
+      "lang": "es",
+      "timezone": "America/Mexico_City",
+      "accounts": [
+        "freelance"
+      ],
+      "relationship": "cliente: gerente del Hotel Casa Ocotillo",
+      "org": "ocotillo",
+      "style": {
+        "register": "práctico, directo",
+        "length": "corto",
+        "greeting": "Luis buenas tardes",
+        "signoff": "Jorge",
+        "signature": null,
+        "quoting": "top",
+        "quirks": [
+          "sin signos de puntuación al inicio",
+          "alguna falta de ortografía"
+        ]
+      },
+      "facts": [
+        "gerente operativo; reporta fallas del motor de reservaciones",
+        "cambia las tarifas de temporada alta (Guelaguetza en julio, Día de Muertos)"
+      ]
+    },
+    {
+      "id": "renata-aguilar",
+      "name": "Renata Aguilar",
+      "email": "marketing@casaocotillo.example",
+      "lang": "es",
+      "timezone": "America/Mexico_City",
+      "accounts": [
+        "freelance"
+      ],
+      "relationship": "cliente: marketing del Hotel Casa Ocotillo",
+      "org": "ocotillo",
+      "style": {
+        "register": "moderna, rápida",
+        "length": "corto, con viñetas",
+        "greeting": "Hola Luis",
+        "signoff": "Rena",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "pega la frase actual y debajo la que quiere publicar",
+          "indica la fecha en que hay que quitar el aviso"
+        ]
+      },
+      "facts": [
+        "entró a Casa Ocotillo en enero de 2026",
+        "pide cambios pequeños al sitio cada mes"
+      ]
+    },
+    {
+      "id": "hector-garza",
+      "name": "Dr. Héctor Garza",
+      "email": "hgarza@dientedesierra.example",
+      "lang": "es",
+      "timezone": "America/Monterrey",
+      "accounts": [
+        "freelance"
+      ],
+      "relationship": "cliente: director de Clínicas Diente de Sierra",
+      "org": "odonto",
+      "style": {
+        "register": "seco, ejecutivo, de usted",
+        "length": "una línea",
+        "greeting": "Luis:",
+        "signoff": "HG",
+        "signature": null,
+        "quoting": "top",
+        "quirks": [
+          "da su visto bueno en la primera línea y pide una sola corrección si hace falta"
+        ]
+      },
+      "facts": [
+        "dirige Clínicas Diente de Sierra, seis clínicas dentales en Monterrey",
+        "firmó con Luis una iguala de $22,000 MXN + IVA al mes en marzo de 2026, por doce meses",
+        "inaugura la séptima clínica en San Pedro Garza García el 21 de noviembre de 2026"
+      ]
+    },
+    {
+      "id": "paola-trevino",
+      "name": "Paola Treviño",
+      "email": "paola.trevino@dientedesierra.example",
+      "lang": "es",
+      "timezone": "America/Monterrey",
+      "accounts": [
+        "freelance"
+      ],
+      "relationship": "cliente: coordinadora de marketing de Clínicas Diente de Sierra",
+      "org": "odonto",
+      "style": {
+        "register": "detallista, amable, de tú",
+        "length": "largo, con listas",
+        "greeting": "Hola Luis, ¿cómo estás?",
+        "signoff": "Gracias, Paola",
+        "signature": "Paola Treviño\nCoordinación de Marketing | Clínicas Diente de Sierra\npaola.trevino@dientedesierra.example",
+        "quoting": "bottom",
+        "quirks": [
+          "separa en “ya quedó” y “falta visto bueno”",
+          "pone el tamaño o formato junto a cada pieza"
+        ]
+      },
+      "facts": [
+        "lleva el día a día de la iguala",
+        "necesita la campaña de apertura de San Pedro (lona, volantes, posts) para el 6 de noviembre de 2026",
+        "su jefe es el Dr. Garza; ella negocia, él firma"
+      ]
+    },
+    {
+      "id": "diego-arreola",
+      "name": "Diego Arreola",
+      "email": "diego@lobogris.example",
+      "lang": "es",
+      "timezone": "America/Mexico_City",
+      "accounts": [
+        "freelance"
+      ],
+      "relationship": "cliente: cofundador de Cervecería Lobo Gris",
+      "org": "lobogris",
+      "style": {
+        "register": "muy informal, cuate",
+        "length": "una o dos líneas",
+        "greeting": "qué onda luis",
+        "signoff": "abrazo",
+        "signature": null,
+        "quoting": "none",
+        "quirks": [
+          "todo en minúsculas",
+          "un emoji",
+          "sin puntos"
+        ]
+      },
+      "facts": [
+        "cofundador de Lobo Gris, cervecería artesanal en Querétaro",
+        "Luis les hizo la marca en 2025",
+        "la edición de Día de Muertos 'Ofrenda' sale el 31 de octubre de 2026"
+      ]
+    },
+    {
+      "id": "samuel-ortega",
+      "name": "Samuel Ortega",
+      "email": "samuel@lobogris.example",
+      "lang": "es",
+      "timezone": "America/Mexico_City",
+      "accounts": [
+        "freelance"
+      ],
+      "relationship": "cliente: maestro cervecero de Lobo Gris",
+      "org": "lobogris",
+      "style": {
+        "register": "técnico, amable",
+        "length": "medio",
+        "greeting": "Hola Luis",
+        "signoff": "Sam",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "da la cifra y la unidad en la misma línea",
+          "cuando corrige un dato explica qué lote midió"
+        ]
+      },
+      "facts": [
+        "maestro cervecero; define los datos de las etiquetas (IBU, ABV, ingredientes)",
+        "la Ofrenda es una stout de cempasúchil y cacao, 7.2% ABV"
+      ]
+    },
+    {
+      "id": "fernanda-rios",
+      "name": "Fernanda Ríos",
+      "email": "admin@lobogris.example",
+      "lang": "es",
+      "timezone": "America/Mexico_City",
+      "accounts": [
+        "freelance"
+      ],
+      "relationship": "cliente: administración de Lobo Gris",
+      "org": "lobogris",
+      "style": {
+        "register": "ordenada, cordial",
+        "length": "corto",
+        "greeting": "Hola Luis, buen día",
+        "signoff": "Saludos, Fer",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "pone el folio en la primera línea y confirma si ya programó el pago",
+          "pide juntos el PDF y el XML"
+        ]
+      },
+      "facts": [
+        "paga las facturas en una semana",
+        "le falta a Luis mandarle el CFDI de agosto de 2026 corregido (uso CFDI G03, no S01)"
+      ]
+    },
+    {
+      "id": "lucia-herrera",
+      "name": "Lucía Herrera",
+      "email": "lherrera@semillaviva.example",
+      "lang": "es",
+      "timezone": "America/Mexico_City",
+      "accounts": [
+        "freelance"
+      ],
+      "relationship": "cliente: directora de Fundación Semilla Viva",
+      "org": "semilla",
+      "style": {
+        "register": "formal, cálida, de usted",
+        "length": "largo",
+        "greeting": "Estimado Luis:",
+        "signoff": "Con aprecio, Lucía Herrera",
+        "signature": "Mtra. Lucía Herrera Domínguez\nDirectora General | Fundación Semilla Viva A.C.\nHuertos escolares en la Ciudad de México",
+        "quoting": "bottom",
+        "quirks": []
+      },
+      "facts": [
+        "la fundación instala huertos en 38 escuelas públicas de la CDMX",
+        "Luis hizo su página de donativos en 2025 con tarifa de ONG",
+        "le pidió el informe anual 2026 (24 páginas) para el 1 de diciembre; ella aprueba el texto y Andrea promete entregarlo el 30 de octubre"
+      ]
+    },
+    {
+      "id": "ivan-castillo",
+      "name": "Iván Castillo",
+      "email": "ivan@semillaviva.example",
+      "lang": "es",
+      "timezone": "America/Mexico_City",
+      "accounts": [
+        "freelance"
+      ],
+      "relationship": "cliente: coordinador de proyectos de Semilla Viva",
+      "org": "semilla",
+      "style": {
+        "register": "relajado, de tú",
+        "length": "medio",
+        "greeting": "Hola Luis!",
+        "signoff": "Iván",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "nombra la escuela y el turno cuando manda fotos",
+          "corrige un enlace en un segundo correo de una sola línea"
+        ]
+      },
+      "facts": [
+        "manda las fotos agrupadas por escuela y turno; Iván comprueba los permisos antes de publicar",
+        "coordinó con Rodrigo la página de donativos"
+      ]
+    },
+    {
+      "id": "guadalupe-ibarra",
+      "name": "Guadalupe Ibarra",
+      "email": "gibarra@ibarracontadores.example",
+      "lang": "es",
+      "timezone": "America/Mexico_City",
+      "accounts": [
+        "freelance"
+      ],
+      "relationship": "su contadora",
+      "org": "ibarra",
+      "style": {
+        "register": "familiar y firme; explica qué le impide presentar el trámite",
+        "length": "medio, con pendientes numerados",
+        "greeting": "Luis, buenos días:",
+        "signoff": "Saludos, Lupita Ibarra",
+        "signature": "C.P. Guadalupe Ibarra Solís\nIbarra Contadores | Av. Américas 1500, Guadalajara\ngibarra@ibarracontadores.example",
+        "quoting": "bottom",
+        "quirks": [
+          "separa lo que ya tiene de lo que falta",
+          "incluye la fecha de corte de cada estado de cuenta"
+        ]
+      },
+      "facts": [
+        "lleva desde 2019 las facturas mexicanas de Luis y prepara sus declaraciones en México",
+        "prepara sus declaraciones mensuales con los estados de cuenta que Luis le manda",
+        "le pidió los estados de cuenta de julio a septiembre de 2026 y Luis prometió mandarlos el viernes 16 de octubre; no los ha mandado",
+        "cobra $2,800 MXN al mes"
+      ]
+    },
+    {
+      "id": "brenda-salas",
+      "name": "Brenda Salas",
+      "email": "asistente@ibarracontadores.example",
+      "lang": "es",
+      "timezone": "America/Mexico_City",
+      "accounts": [
+        "freelance"
+      ],
+      "relationship": "asistente de su contadora",
+      "org": "ibarra",
+      "style": {
+        "register": "amable, de usted",
+        "length": "una o dos líneas",
+        "greeting": "Buenas tardes Sr. Cordero",
+        "signoff": "Saludos cordiales",
+        "signature": "Brenda Salas | Asistente | Ibarra Contadores",
+        "quoting": "bottom",
+        "quirks": []
+      },
+      "facts": [
+        "manda los acuses del SAT y los recordatorios de pago",
+        "lo trata de usted aunque Lupita lo tutea"
+      ]
+    },
+    {
+      "id": "rodrigo-elizondo",
+      "name": "Rodrigo Elizondo",
+      "email": "rodrigo@elizondo.example",
+      "lang": "es",
+      "timezone": "America/Monterrey",
+      "accounts": [
+        "freelance"
+      ],
+      "relationship": "desarrollador con quien colabora",
+      "style": {
+        "register": "compa, técnico, rápido",
+        "length": "corto",
+        "greeting": "Luis!",
+        "signoff": "R",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "sin saludo cuando responde rápido"
+        ]
+      },
+      "facts": [
+        "desarrollador web en Monterrey; programó los sitios de Casa Ocotillo y Semilla Viva",
+        "cobra por hora ($650 MXN) y factura directo al cliente",
+        "se va de paternidad en diciembre de 2026"
+      ]
+    },
+    {
+      "id": "ximena-lara",
+      "name": "Ximena Lara",
+      "email": "hola@ximenalara.example",
+      "lang": "es",
+      "timezone": "America/Mexico_City",
+      "accounts": [
+        "freelance"
+      ],
+      "relationship": "fotógrafa con quien colabora",
+      "style": {
+        "register": "creativa, informal",
+        "length": "medio",
+        "greeting": "Hola Luisito",
+        "signoff": "X",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "se refiere a las tomas por el número de la hoja de contacto",
+          "distingue fotos elegidas, retoques y archivos finales"
+        ]
+      },
+      "facts": [
+        "fotógrafa de producto en Guadalajara",
+        "hizo la sesión de Tueste Laja y Niebla el 28 de agosto de 2026 y ya cobró"
+      ]
+    },
+    {
+      "id": "andrea-solis",
+      "name": "Andrea Solís",
+      "email": "andrea@andreasolis.example",
+      "lang": "es",
+      "timezone": "America/Mexico_City",
+      "accounts": [
+        "freelance"
+      ],
+      "relationship": "redactora con quien colabora",
+      "style": {
+        "register": "ingeniosa, precisa",
+        "length": "medio",
+        "greeting": "Hola Luis,",
+        "signoff": "Andrea",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": [
+          "pega la frase original seguida de su versión y el motivo del cambio",
+          "pregunta de quién viene una cita antes de darla por buena"
+        ]
+      },
+      "facts": [
+        "redactora; escribió los textos del rebrand de Tueste Laja y Niebla",
+        "revisa el informe de Semilla Viva"
+      ]
+    },
+    {
+      "id": "alejandra-fuentes",
+      "name": "Alejandra Fuentes",
+      "email": "ale@quemadelpatio.example",
+      "lang": "es",
+      "timezone": "America/Mexico_City",
+      "accounts": [
+        "freelance"
+      ],
+      "relationship": "prospecto: Quema del Patio",
+      "org": "barrorojo",
+      "style": {
+        "register": "entusiasta, de usted al principio",
+        "length": "medio",
+        "greeting": "Buenas tardes, Luis:",
+        "signoff": "Saludos, Alejandra",
+        "signature": null,
+        "quoting": "bottom",
+        "quirks": []
+      },
+      "facts": [
+        "tiene Quema del Patio, tienda en línea de cerámica de Puebla",
+        "escribió el 8 de octubre de 2026; videollamada el 14 de octubre",
+        "Luis prometió mandarle cotización de tienda en línea a más tardar el 23 de octubre"
+      ]
+    },
+    {
+      "id": "ricardo-sandoval",
+      "name": "Ricardo Sandoval",
+      "email": "direccion@patiodelfresno.example",
+      "lang": "es",
+      "timezone": "America/Mexico_City",
+      "accounts": [
+        "freelance"
+      ],
+      "relationship": "prospecto: Escuela Montessori Patio del Fresno",
+      "org": "arboleda",
+      "style": {
+        "register": "formal, cuidadoso",
+        "length": "largo",
+        "greeting": "Estimado Sr. Cordero:",
+        "signoff": "Atentamente, Ricardo Sandoval",
+        "signature": "Lic. Ricardo Sandoval Peña\nDirector | Escuela Montessori Patio del Fresno\nCoyoacán, CDMX",
+        "quoting": "bottom",
+        "quirks": [
+          "separa lo que él puede decidir de lo que le toca al consejo escolar"
+        ]
+      },
+      "facts": [
+        "pidió cotización de identidad y sitio en mayo de 2026",
+        "decidió no seguir en junio de 2026 por presupuesto; dijo que volvería a escribir en 2027"
+      ]
+    }
+  ],
+  "orgs": [
+    {
+      "id": "acme",
+      "name": "Acme Studio",
+      "domain": "acme.example",
+      "kind": "design and product studio",
+      "lang": "en",
+      "about": "About 40 people on the 3rd floor of 48 Turnmill Street, Clerkenwell. Founded 2014 by Jonathan Veyland. Designers, researchers, engineers and producers working for clients in finance, culture, retail, transport and charity."
+    },
+    {
+      "id": "holloway",
+      "name": "Holloway Museum of Making",
+      "domain": "hollowaymuseum.example",
+      "kind": "museum",
+      "lang": "en",
+      "about": "Small charity museum of crafts and manufacturing on Seven Sisters Road. Acme is relaunching its website and online collection (340 objects); launch moved from 1 October to 12 November 2026."
+    },
+    {
+      "id": "kestrel",
+      "name": "Kestrel Pay",
+      "domain": "kestrelpay.example",
+      "kind": "fintech",
+      "lang": "en",
+      "about": "Payments and invoicing app for small businesses, 60 staff in London and Berlin. Acme redesigned its app October 2025 to April 2026; a phase 2 statement of work is under negotiation."
+    },
+    {
+      "id": "pennywort",
+      "name": "Pennywort Grocers",
+      "domain": "pennywort.example",
+      "kind": "grocery chain",
+      "lang": "en",
+      "about": "Family-owned chain of 62 grocery shops across Yorkshire and the North East, head office in Leeds. Acme designs its first loyalty app; beta on 1 December 2026."
+    },
+    {
+      "id": "tandem",
+      "name": "Tandem City",
+      "domain": "tandemcity.example",
+      "kind": "bike share",
+      "lang": "en",
+      "about": "London bike share with 1,400 e-bikes and 300 docks in Hackney, Islington and Camden. Acme has designed its app since August 2025."
+    },
+    {
+      "id": "brightwell",
+      "name": "Brightwell Trust",
+      "domain": "brightwelltrust.example",
+      "kind": "children's literacy charity",
+      "lang": "en",
+      "about": "Charity that runs reading volunteers in 120 primary schools. Acme rebuilt its website (2024-25) and designs its annual report."
+    },
+    {
+      "id": "fold-bind",
+      "name": "Fold & Bind Print",
+      "domain": "foldandbind.example",
+      "kind": "print shop",
+      "lang": "en",
+      "about": "Litho and digital printer in Bow, East London. Acme's go-to for reports and posters."
+    },
+    {
+      "id": "kerning-house",
+      "name": "Strandholt Type Type Foundry",
+      "domain": "strandholttype.example",
+      "kind": "type foundry",
+      "lang": "en",
+      "about": "Independent type foundry in Oslo and London. Makes the Fjell and Brenna families; sends a monthly newsletter."
+    },
+    {
+      "id": "saltbox",
+      "name": "Brindle & Pan Catering",
+      "domain": "brindleandpan.example",
+      "kind": "catering company",
+      "lang": "en",
+      "about": "Event caterer in Hackney Wick; does Acme's parties and the offsite dinner."
+    },
+    {
+      "id": "ashcombe",
+      "name": "Merefurrow Farm",
+      "domain": "merefurrowfarm.example",
+      "kind": "event venue",
+      "lang": "en",
+      "about": "Converted barn and farmhouse near Faversham, Kent, 14 bedrooms. Venue of Acme's offsite, 5-6 November 2026."
+    },
+    {
+      "id": "northlight",
+      "name": "Northlight Talent",
+      "domain": "northlighttalent.example",
+      "kind": "design recruitment agency",
+      "lang": "en",
+      "about": "Recruitment agency for designers in London. Ran Acme's junior designer search in September 2026."
+    },
+    {
+      "id": "margins",
+      "name": "Margins",
+      "domain": "marginsconf.example",
+      "kind": "design conference",
+      "lang": "en",
+      "about": "One-day conference about the edges of design, held each December in Holborn. Luis speaks on 3 December 2026."
+    },
+    {
+      "id": "halden-pryce",
+      "name": "Halden & Pryce Lettings",
+      "domain": "haldenpryce.example",
+      "kind": "letting agency",
+      "lang": "en",
+      "about": "Letting agent on Stoke Newington Church Street that managed Flat 3, 14 Albion Road for the landlord."
+    },
+    {
+      "id": "marshgate-runners",
+      "name": "Marshgate Runners",
+      "domain": "marshgaterunners.example",
+      "kind": "running club",
+      "lang": "en",
+      "about": "Friendly running club of about 180 members, Tuesday and Thursday evenings from the Marshgate Lane gates. Organises the Marshgate Half every November."
+    },
+    {
+      "id": "wilton-dental",
+      "name": "Whitlock Cut Dental",
+      "domain": "whitlockcutdental.example",
+      "kind": "dental practice",
+      "lang": "en",
+      "about": "NHS and private dental practice on Wilton Way, Hackney. Luis's dentist since 2023."
+    },
+    {
+      "id": "halyard",
+      "name": "Halyard Insurance",
+      "domain": "halyardinsurance.example",
+      "kind": "insurer",
+      "lang": "en",
+      "about": "Home and contents insurer. Luis's contents policy renews 1 December."
+    },
+    {
+      "id": "casa-azulejos",
+      "name": "Blue Swallow Guesthouse",
+      "domain": "blueswallowguesthouse.example",
+      "kind": "guesthouse",
+      "lang": "en",
+      "about": "Six-room guesthouse in Bairro Alto, Lisbon, where Luis and Niamh stayed in September 2025."
+    },
+    {
+      "id": "barranca",
+      "name": "Tueste Laja y Niebla",
+      "domain": "lajayniebla.example",
+      "kind": "tostador de café",
+      "lang": "es",
+      "about": "Tostador de especialidad en Guadalajara con dos cafeterías. Luis rediseñó su empaque (2024-25) y su marca (2026)."
+    },
+    {
+      "id": "ocotillo",
+      "name": "Hotel Casa Ocotillo",
+      "domain": "casaocotillo.example",
+      "kind": "hotel boutique",
+      "lang": "es",
+      "about": "Hotel boutique de 14 habitaciones en el centro de Oaxaca. Luis hizo su sitio web y lo mantiene."
+    },
+    {
+      "id": "odonto",
+      "name": "Clínicas Diente de Sierra",
+      "domain": "dientedesierra.example",
+      "kind": "cadena de clínicas dentales",
+      "lang": "es",
+      "about": "Seis clínicas dentales en Monterrey, la séptima abre en San Pedro en noviembre de 2026. Luis tiene una iguala mensual con ellos."
+    },
+    {
+      "id": "lobogris",
+      "name": "Cervecería Lobo Gris",
+      "domain": "lobogris.example",
+      "kind": "cervecería artesanal",
+      "lang": "es",
+      "about": "Cervecería artesanal de Querétaro. Luis hizo su marca y diseña sus etiquetas de temporada."
+    },
+    {
+      "id": "semilla",
+      "name": "Fundación Semilla Viva",
+      "domain": "semillaviva.example",
+      "kind": "organización sin fines de lucro",
+      "lang": "es",
+      "about": "Asociación civil que instala huertos escolares en la Ciudad de México."
+    },
+    {
+      "id": "ibarra",
+      "name": "Ibarra Contadores",
+      "domain": "ibarracontadores.example",
+      "kind": "despacho contable",
+      "lang": "es",
+      "about": "Despacho contable en Guadalajara; lleva la contabilidad y las declaraciones de Luis."
+    },
+    {
+      "id": "barrorojo",
+      "name": "Quema del Patio",
+      "domain": "quemadelpatio.example",
+      "kind": "tienda de cerámica en línea",
+      "lang": "es",
+      "about": "Tienda en línea de cerámica de talleres de Puebla. Prospecto de octubre de 2026."
+    },
+    {
+      "id": "arboleda",
+      "name": "Escuela Montessori Patio del Fresno",
+      "domain": "patiodelfresno.example",
+      "kind": "escuela",
+      "lang": "es",
+      "about": "Escuela Montessori en Coyoacán. Prospecto de 2026 que no siguió."
+    }
+  ],
+  "brands": [
+    {
+      "id": "grid-and-gutter",
+      "name": "Grid & Gutter",
+      "domain": "gridandgutter.example",
+      "fromName": "Grid & Gutter",
+      "fromEmail": "hello@gridandgutter.example",
+      "kind": "newsletter",
+      "lang": "en",
+      "accounts": [
+        "acme"
+      ],
+      "tag": "newsletter",
+      "listId": "weekly.gridandgutter.example",
+      "about": "Weekly design newsletter: five links and one long read on interface and graphic design.",
+      "cadence": "Tuesdays at 07:00 London"
+    },
+    {
+      "id": "compile-weekly",
+      "name": "Compile Weekly",
+      "domain": "compileweekly.example",
+      "fromName": "Compile Weekly",
+      "fromEmail": "issue@compileweekly.example",
+      "kind": "newsletter",
+      "lang": "en",
+      "accounts": [
+        "acme"
+      ],
+      "tag": "newsletter",
+      "listId": "list.compileweekly.example",
+      "about": "Front-end and web platform news for people who build interfaces.",
+      "cadence": "Thursdays at 06:30 London"
+    },
+    {
+      "id": "shipwright",
+      "name": "Shipwright",
+      "domain": "shipwrightweekly.example",
+      "fromName": "Shipwright by Nadia Kerr",
+      "fromEmail": "nadia@shipwrightweekly.example",
+      "kind": "newsletter",
+      "lang": "en",
+      "accounts": [
+        "acme"
+      ],
+      "tag": "newsletter",
+      "listId": "shipwrightweekly.example",
+      "about": "Product management essays and a weekly 'decision of the week'.",
+      "cadence": "Sundays at 18:00 London"
+    },
+    {
+      "id": "research-room",
+      "name": "The Research Room",
+      "domain": "researchroom.example",
+      "fromName": "The Research Room",
+      "fromEmail": "notes@researchroom.example",
+      "kind": "newsletter",
+      "lang": "en",
+      "accounts": [
+        "acme"
+      ],
+      "tag": "newsletter",
+      "listId": "notes.researchroom.example",
+      "about": "UX research methods, recruiting tips and job listings.",
+      "cadence": "every other Wednesday"
+    },
+    {
+      "id": "plain-sight",
+      "name": "Plain Sight",
+      "domain": "plainsight.example",
+      "fromName": "Plain Sight",
+      "fromEmail": "fortnightly@plainsight.example",
+      "kind": "newsletter",
+      "lang": "en",
+      "accounts": [
+        "acme"
+      ],
+      "tag": "newsletter",
+      "listId": "fortnightly.plainsight.example",
+      "about": "Accessibility news and one worked example per issue.",
+      "cadence": "every other Monday at 08:00"
+    },
+    {
+      "id": "kerning-house-notes",
+      "name": "Strandholt Type Notes",
+      "domain": "strandholttype.example",
+      "fromName": "Strandholt Type Type Foundry",
+      "fromEmail": "notes@strandholttype.example",
+      "kind": "newsletter",
+      "lang": "en",
+      "accounts": [
+        "acme"
+      ],
+      "tag": "newsletter",
+      "listId": "notes.strandholttype.example",
+      "about": "The type foundry's newsletter: new releases, specimens, a discount code now and then.",
+      "cadence": "monthly, first Thursday"
+    },
+    {
+      "id": "e5-dispatch",
+      "name": "E5 Dispatch",
+      "domain": "e5dispatch.example",
+      "fromName": "E5 Dispatch",
+      "fromEmail": "editor@e5dispatch.example",
+      "kind": "newsletter",
+      "lang": "en",
+      "accounts": [
+        "personal"
+      ],
+      "tag": "newsletter",
+      "listId": "weekly.e5dispatch.example",
+      "about": "Local newsletter for Clapton and Hackney: openings, council plans, markets, the odd planning row. Luis subscribed after the move.",
+      "cadence": "Fridays at 07:00 London, since July 2026"
+    },
+    {
+      "id": "brine-and-crumb",
+      "name": "Brine & Crumb",
+      "domain": "brineandcrumb.example",
+      "fromName": "Brine & Crumb",
+      "fromEmail": "kitchen@brineandcrumb.example",
+      "kind": "newsletter",
+      "lang": "en",
+      "accounts": [
+        "personal"
+      ],
+      "tag": "newsletter",
+      "listId": "kitchen.brineandcrumb.example",
+      "about": "Food newsletter with one weeknight recipe and one weekend project.",
+      "cadence": "Saturdays at 08:00"
+    },
+    {
+      "id": "long-run-sunday",
+      "name": "Long Run Sunday",
+      "domain": "longrunsunday.example",
+      "fromName": "Long Run Sunday",
+      "fromEmail": "coach@longrunsunday.example",
+      "kind": "newsletter",
+      "lang": "en",
+      "accounts": [
+        "personal"
+      ],
+      "tag": "newsletter",
+      "listId": "coach.longrunsunday.example",
+      "about": "Running newsletter: training blocks, race reviews, shoe reviews.",
+      "cadence": "Sundays at 06:00"
+    },
+    {
+      "id": "pound-sense",
+      "name": "Pound Sense",
+      "domain": "poundsense.example",
+      "fromName": "Pound Sense",
+      "fromEmail": "weekly@poundsense.example",
+      "kind": "newsletter",
+      "lang": "en",
+      "accounts": [
+        "personal"
+      ],
+      "tag": "newsletter",
+      "listId": "weekly.poundsense.example",
+      "about": "Personal finance for UK renters: savings rates, ISA deadlines, energy prices.",
+      "cadence": "Wednesdays at 12:00"
+    },
+    {
+      "id": "slow-shelf",
+      "name": "The Slow Shelf",
+      "domain": "slowshelf.example",
+      "fromName": "The Slow Shelf",
+      "fromEmail": "letters@slowshelf.example",
+      "kind": "newsletter",
+      "lang": "en",
+      "accounts": [
+        "personal"
+      ],
+      "tag": "newsletter",
+      "listId": "letters.slowshelf.example",
+      "about": "Book newsletter from an independent bookshop in Stoke Newington; the book club picks from it.",
+      "cadence": "monthly, around the 10th"
+    },
+    {
+      "id": "second-reel",
+      "name": "Second Reel",
+      "domain": "secondreel.example",
+      "fromName": "Second Reel",
+      "fromEmail": "listings@secondreel.example",
+      "kind": "newsletter",
+      "lang": "en",
+      "accounts": [
+        "personal"
+      ],
+      "tag": "newsletter",
+      "listId": "listings.secondreel.example",
+      "about": "Weekly London repertory cinema listings.",
+      "cadence": "Mondays at 09:00"
+    },
+    {
+      "id": "window-seat",
+      "name": "Window Seat",
+      "domain": "windowseat.example",
+      "fromName": "Window Seat",
+      "fromEmail": "dispatch@windowseat.example",
+      "kind": "newsletter",
+      "lang": "en",
+      "accounts": [
+        "icloud"
+      ],
+      "tag": "newsletter",
+      "listId": "dispatch.windowseat.example",
+      "about": "Travel newsletter: cheap-flight alerts from London and one city guide.",
+      "cadence": "Thursdays"
+    },
+    {
+      "id": "contact-sheet",
+      "name": "Contact Sheet",
+      "domain": "contactsheet.example",
+      "fromName": "Contact Sheet",
+      "fromEmail": "hello@contactsheet.example",
+      "kind": "newsletter",
+      "lang": "en",
+      "accounts": [
+        "icloud"
+      ],
+      "tag": "newsletter",
+      "listId": "hello.contactsheet.example",
+      "about": "Film photography newsletter from his MA days; he never unsubscribed.",
+      "cadence": "monthly, irregular"
+    },
+    {
+      "id": "diseno-en-corto",
+      "name": "Diseño en Corto",
+      "domain": "disenoencorto.example",
+      "fromName": "Diseño en Corto",
+      "fromEmail": "boletin@disenoencorto.example",
+      "kind": "newsletter",
+      "lang": "es",
+      "accounts": [
+        "freelance"
+      ],
+      "tag": "newsletter",
+      "listId": "boletin.disenoencorto.example",
+      "about": "Boletín mexicano de diseño gráfico y de producto: proyectos locales, convocatorias, vacantes.",
+      "cadence": "martes a las 08:00 de la Ciudad de México"
+    },
+    {
+      "id": "pyme-al-dia",
+      "name": "Pyme al Día",
+      "domain": "pymealdia.example",
+      "fromName": "Pyme al Día",
+      "fromEmail": "boletin@pymealdia.example",
+      "kind": "newsletter",
+      "lang": "es",
+      "accounts": [
+        "freelance"
+      ],
+      "tag": "newsletter",
+      "listId": "boletin.pymealdia.example",
+      "about": "Boletín fiscal y de negocios para personas físicas y pymes: cambios del SAT, RESICO, fechas límite.",
+      "cadence": "quincenal, los días 1 y 15"
+    },
+    {
+      "id": "fernbank",
+      "name": "Fernbank",
+      "domain": "fernbank.example",
+      "fromName": "Fernbank",
+      "fromEmail": "alerts@fernbank.example",
+      "kind": "bank",
+      "lang": "en",
+      "accounts": [
+        "personal"
+      ],
+      "tag": "bank",
+      "about": "Luis's UK current account and the joint account with Niamh: statements, payment alerts, standing order for rent.",
+      "cadence": "monthly statement on the 4th; alerts as they happen"
+    },
+    {
+      "id": "corvid-card",
+      "name": "Corvid Card",
+      "domain": "corvidcard.example",
+      "fromName": "Corvid Card",
+      "fromEmail": "statements@corvidcard.example",
+      "kind": "card",
+      "lang": "en",
+      "accounts": [
+        "personal"
+      ],
+      "tag": "bank",
+      "about": "Credit card: statements, payment reminders, a fraud check now and then.",
+      "cadence": "statement on the 18th, reminder five days before the due date"
+    },
+    {
+      "id": "banco-altiplano",
+      "name": "Banco Altiplano",
+      "domain": "bancoaltiplano.example",
+      "fromName": "Banco Altiplano",
+      "fromEmail": "notificaciones@bancoaltiplano.example",
+      "kind": "bank",
+      "lang": "es",
+      "accounts": [
+        "freelance"
+      ],
+      "tag": "bank",
+      "about": "Cuenta de Luis en México donde recibe los pagos de sus clientes: avisos de transferencias SPEI recibidas y estados de cuenta.",
+      "cadence": "estado de cuenta mensual el día 5; normalmente entre dos y cinco avisos de abonos de clientes al mes"
+    },
+    {
+      "id": "facturito",
+      "name": "Timbre de Bolsillo",
+      "domain": "timbrebolsillo.example",
+      "fromName": "Timbre de Bolsillo",
+      "fromEmail": "cfdi@timbrebolsillo.example",
+      "kind": "receipt",
+      "lang": "es",
+      "accounts": [
+        "freelance"
+      ],
+      "tag": "receipt",
+      "about": "Plataforma de facturación electrónica: copia de cada CFDI que Luis emite, acuses de cancelación, recordatorio de timbres.",
+      "cadence": "una copia por cada factura, normalmente de 3 a 6 al mes; acuse aparte sólo al cancelar"
+    },
+    {
+      "id": "halyard-policy",
+      "name": "Halyard Insurance",
+      "domain": "halyardinsurance.example",
+      "fromName": "Halyard Insurance",
+      "fromEmail": "policies@halyardinsurance.example",
+      "kind": "bank",
+      "lang": "en",
+      "accounts": [
+        "icloud"
+      ],
+      "tag": "bank",
+      "about": "Contents insurance renewals and policy documents.",
+      "cadence": "yearly renewal notice in late October, before 1 December"
+    },
+    {
+      "id": "kerbside",
+      "name": "Side Street Rides",
+      "domain": "sidestreetrides.example",
+      "fromName": "Side Street Rides",
+      "fromEmail": "receipts@sidestreetrides.example",
+      "kind": "receipt",
+      "lang": "en",
+      "accounts": [
+        "personal"
+      ],
+      "tag": "receipt",
+      "about": "Ride-share app. Receipts carry the route, the driver's first name and the fare. An occasional offer or driver-rating prompt comes from the same sender, without a fare or line items.",
+      "cadence": "2-4 receipts a week in active London stretches; often none during trips. Occasional offers or rating requests from the same address."
+    },
+    {
+      "id": "forkful",
+      "name": "Sidecar Suppers",
+      "domain": "sidecarsuppers.example",
+      "fromName": "Sidecar Suppers",
+      "fromEmail": "orders@sidecarsuppers.example",
+      "kind": "receipt",
+      "lang": "en",
+      "accounts": [
+        "personal"
+      ],
+      "tag": "receipt",
+      "about": "Food delivery: order confirmations and receipts, plus occasional discounts for people who have not ordered recently.",
+      "cadence": "after each order, usually once a week at home; a discount only after a few weeks without an order"
+    },
+    {
+      "id": "hearth-goods",
+      "name": "Lark & Lintel Home",
+      "domain": "larkandlintel.example",
+      "fromName": "Lark & Lintel Home",
+      "fromEmail": "orders@larkandlintel.example",
+      "kind": "receipt",
+      "lang": "en",
+      "accounts": [
+        "personal"
+      ],
+      "tag": "receipt",
+      "about": "Online homewares shop: bought curtains, a rug and shelves for Mallory Road.",
+      "cadence": "with each order; most in June and July 2026"
+    },
+    {
+      "id": "paperback-lane",
+      "name": "Paperback Lane",
+      "domain": "paperbacklane.example",
+      "fromName": "Paperback Lane",
+      "fromEmail": "orders@paperbacklane.example",
+      "kind": "receipt",
+      "lang": "en",
+      "accounts": [
+        "personal"
+      ],
+      "tag": "receipt",
+      "about": "Online bookshop: order and dispatch emails for book club picks.",
+      "cadence": "once or twice a month"
+    },
+    {
+      "id": "swiftdrop",
+      "name": "Crate Finch",
+      "domain": "cratefinch.example",
+      "fromName": "Crate Finch Parcels",
+      "fromEmail": "tracking@cratefinch.example",
+      "kind": "shipping",
+      "lang": "en",
+      "accounts": [
+        "personal",
+        "icloud"
+      ],
+      "tag": "shipping",
+      "about": "Parcel carrier: 'arriving today', 'we missed you', 'left with neighbour'.",
+      "cadence": "2-3 messages per parcel, 1-3 parcels a month across both addresses, with most going to Personal"
+    },
+    {
+      "id": "albatross-air",
+      "name": "Puffin Vale Air",
+      "domain": "puffinvaleair.example",
+      "fromName": "Puffin Vale Air",
+      "fromEmail": "bookings@puffinvaleair.example",
+      "kind": "travel",
+      "lang": "en",
+      "accounts": [
+        "icloud",
+        "personal"
+      ],
+      "tag": "travel",
+      "about": "Airline: bookings, check-in reminders and boarding passes. Luis booked Lisbon in 2025 and Guadalajara via Mexico City in April 2026. He is considering flights to Cork for December 2026.",
+      "cadence": "around each trip: booking, 24h check-in, changes"
+    },
+    {
+      "id": "meridian-rail",
+      "name": "Tollwick Rail",
+      "domain": "tollwickrail.example",
+      "fromName": "Tollwick Rail",
+      "fromEmail": "tickets@tollwickrail.example",
+      "kind": "travel",
+      "lang": "en",
+      "accounts": [
+        "personal",
+        "icloud"
+      ],
+      "tag": "travel",
+      "about": "Train operator: e-tickets and delay repay.",
+      "cadence": "1-3 bookings a month across both addresses, mostly to Personal; delay claims only on affected journeys"
+    },
+    {
+      "id": "nightjar-stays",
+      "name": "Nightjar Stays",
+      "domain": "nightjarstays.example",
+      "fromName": "Nightjar Stays",
+      "fromEmail": "reservations@nightjarstays.example",
+      "kind": "travel",
+      "lang": "en",
+      "accounts": [
+        "icloud"
+      ],
+      "tag": "travel",
+      "about": "Hotel booking site: confirmations, reminders and review requests.",
+      "cadence": "one confirmation, one check-in note and one review request per stay; one deals email per month"
+    },
+    {
+      "id": "coderiver",
+      "name": "Branch Ferries",
+      "domain": "branchferries.example",
+      "fromName": "Branch Ferries",
+      "fromEmail": "notifications@branchferries.example",
+      "kind": "dev",
+      "lang": "en",
+      "accounts": [
+        "acme"
+      ],
+      "tag": "dev",
+      "about": "Code host: review requests and comments on the Holloway and design-system repositories.",
+      "cadence": "5-10 review or mention emails in a working week, concentrated around design system work in 2025 and Holloway build and launch prep in 2026"
+    },
+    {
+      "id": "cairn",
+      "name": "Rafter Board",
+      "domain": "rafterboard.example",
+      "fromName": "Rafter Board",
+      "fromEmail": "notify@rafterboard.example",
+      "kind": "tool",
+      "lang": "en",
+      "accounts": [
+        "acme"
+      ],
+      "tag": "work",
+      "about": "Project tool Acme uses: task assignments, due-date reminders, a daily digest.",
+      "cadence": "08:00 digest on weekdays with assigned work; 1-3 direct mentions a week"
+    },
+    {
+      "id": "vellum",
+      "name": "Ternfold Proofs",
+      "domain": "ternfoldproofs.example",
+      "fromName": "Ternfold Proofs",
+      "fromEmail": "comments@ternfoldproofs.example",
+      "kind": "tool",
+      "lang": "en",
+      "accounts": [
+        "acme"
+      ],
+      "tag": "work",
+      "about": "Design tool: comment notifications and file shares from Acme's team and clients.",
+      "cadence": "one grouped notice per active file when mentioned or asked to review; usually 3-8 a week, with more on review days"
+    },
+    {
+      "id": "agendo",
+      "name": "Minute Latch",
+      "domain": "minutelatch.example",
+      "fromName": "Minute Latch",
+      "fromEmail": "invites@minutelatch.example",
+      "kind": "tool",
+      "lang": "en",
+      "accounts": [
+        "acme"
+      ],
+      "tag": "calendar",
+      "about": "Scheduling tool: interview bookings and client call invitations with calendar files.",
+      "cadence": "usually 1-2 bookings or changes a week; up to one per interview in September 2026, fewer after the offer"
+    },
+    {
+      "id": "kite-mobile",
+      "name": "Rovenet Mobile",
+      "domain": "rovenetmobile.example",
+      "fromName": "Rovenet Mobile",
+      "fromEmail": "bills@rovenetmobile.example",
+      "kind": "telecom",
+      "lang": "en",
+      "accounts": [
+        "personal"
+      ],
+      "tag": "receipt",
+      "about": "Mobile carrier: monthly bill (£18), roaming notices.",
+      "cadence": "monthly on the 9th"
+    },
+    {
+      "id": "ampere-energy",
+      "name": "Marlow Amp Supply",
+      "domain": "marlowamp.example",
+      "fromName": "Marlow Amp Supply",
+      "fromEmail": "hello@marlowamp.example",
+      "kind": "utility",
+      "lang": "en",
+      "accounts": [
+        "personal"
+      ],
+      "tag": "receipt",
+      "about": "Energy supplier at Mallory Road since June 2026 (before that the Albion Road account, closed with a final bill in July 2026).",
+      "cadence": "monthly bill on the 2nd; meter reading reminders"
+    },
+    {
+      "id": "plinth-gym",
+      "name": "Plinth Gym",
+      "domain": "plinthgym.example",
+      "fromName": "Plinth Gym",
+      "fromEmail": "members@plinthgym.example",
+      "kind": "receipt",
+      "lang": "en",
+      "accounts": [
+        "personal"
+      ],
+      "tag": "receipt",
+      "about": "Gym in Hackney Central: class bookings and the monthly £39 membership receipt.",
+      "cadence": "monthly on the 1st plus class confirmations"
+    },
+    {
+      "id": "reelhouse",
+      "name": "Back Booth Cinema",
+      "domain": "backboothcinema.example",
+      "fromName": "Back Booth Cinema",
+      "fromEmail": "account@backboothcinema.example",
+      "kind": "receipt",
+      "lang": "en",
+      "accounts": [
+        "personal"
+      ],
+      "tag": "receipt",
+      "about": "Streaming service with a monthly receipt, new listings and occasional reminders about saved films.",
+      "cadence": "receipt on the 12th; one listings email a month, a separate reminder only when a saved film is due to leave"
+    },
+    {
+      "id": "stride-log",
+      "name": "Stride Log",
+      "domain": "stridelog.example",
+      "fromName": "Stride Log",
+      "fromEmail": "kudos@stridelog.example",
+      "kind": "social",
+      "lang": "en",
+      "accounts": [
+        "personal"
+      ],
+      "tag": "personal",
+      "about": "Running app: kudos and comments from club members, monthly summary.",
+      "cadence": "one grouped notice after a club session if there are comments or kudos, at most twice a week; one monthly summary"
+    },
+    {
+      "id": "lockstep",
+      "name": "Pin & Latch",
+      "domain": "pinandlatch.example",
+      "fromName": "Pin & Latch Security",
+      "fromEmail": "security@pinandlatch.example",
+      "kind": "security",
+      "lang": "en",
+      "accounts": [
+        "personal",
+        "icloud"
+      ],
+      "tag": "personal",
+      "about": "Password manager: new sign-in alerts and breach reports.",
+      "cadence": "rare: a new-device alert now and then"
+    },
+    {
+      "id": "northcote-outfitters",
+      "name": "Northcote Outfitters",
+      "domain": "northcoteoutfitters.example",
+      "fromName": "Northcote Outfitters",
+      "fromEmail": "offers@northcoteoutfitters.example",
+      "kind": "promo",
+      "lang": "en",
+      "accounts": [
+        "personal"
+      ],
+      "tag": "promo",
+      "listId": "offers.northcoteoutfitters.example",
+      "about": "Outdoor clothing shop; he bought a rain jacket once in 2024.",
+      "cadence": "twice a month since the 2024 purchase; up to twice a week in the November sale"
+    },
+    {
+      "id": "copper-kettle",
+      "name": "Copper Kettle Rewards",
+      "domain": "copperkettle.example",
+      "fromName": "Copper Kettle",
+      "fromEmail": "rewards@copperkettle.example",
+      "kind": "promo",
+      "lang": "en",
+      "accounts": [
+        "icloud"
+      ],
+      "tag": "promo",
+      "listId": "rewards.copperkettle.example",
+      "about": "Coffee chain loyalty programme signed up to with the old iCloud address.",
+      "cadence": "weekly, Mondays"
+    }
+  ],
+  "storylines": [
+    {
+      "id": "acme-junior-hire",
+      "account": "acme",
+      "title": "Hiring a junior designer",
+      "summary": "7 Sep 2026: Priya approves a junior product designer role (£32-35k) and asks Luis to run it. 9 Sep: Callie Fraser at Northlight sends 11 CVs; Luis shortlists five. 22-25 Sep: Lauren books first interviews through Minute Latch; Hollie sits on the panel. 29 Sep: Ellie Ngata's first interview; 6 Oct: portfolio task review, she's the clear pick. 9 Oct: offer at £34,000. 14 Oct: Ellie accepts; 15 Oct Shona sends the contract. Open at the anchor: Jake needs a week's notice for her laptop (Luis hasn't sent the starter form); Lauren needs tool seats confirmed; Priya wants Luis's onboarding plan before the offsite; Ellie asked on 19 Oct whether she can join the offsite and nobody has answered; Callie's invoice (15% of salary) lands on 16 Nov, her first day.",
+      "people": [
+        "priya-raman",
+        "lauren-gage",
+        "callie-fraser",
+        "shona-mcleod",
+        "hollie-tran",
+        "ellie-ngata",
+        "jake-pemberton"
+      ],
+      "from": "2026-09-07",
+      "to": "2026-11-16"
+    },
+    {
+      "id": "acme-offsite-2026",
+      "account": "acme",
+      "title": "Team offsite at Merefurrow Farm",
+      "summary": "1 Sep 2026: Natasha announces the offsite, Thursday 5 to Friday 6 November at Merefurrow Farm near Faversham. 15 Sep: deposit paid; Rupert sends the room plan (28 beds in 14 shared rooms at the farm; the remaining 10 are at the village inn). 2 Oct: agenda draft; Jonathan opens with 'state of the studio', Luis is asked to run a 90-minute design-critique workshop on Friday morning. 16 Oct: Natasha asks everyone for dietary needs and room shares BY 23 OCTOBER; Luis hasn't replied. Jade needs the final headcount and dietary list by 26 Oct (38 provisional covers, £42 each); the £6,400 balance is due to Rupert on 29 Oct; Philippa is responsible for paying it. Coach leaves Farringdon at 8:30 on the 5th.",
+      "people": [
+        "natasha-whyte",
+        "jade-morris",
+        "rupert-ashdown",
+        "priya-raman",
+        "jonathan-ellery",
+        "philippa-dunn"
+      ],
+      "from": "2026-09-01",
+      "to": "2026-11-06"
+    },
+    {
+      "id": "holloway-relaunch",
+      "account": "acme",
+      "title": "Holloway Museum website relaunch",
+      "summary": "9 Feb 2026: kickoff at the museum; launch set for 1 October. March-May: discovery, new collection pages, design signed off 29 May. June-August: Anil builds; Zainab writes the content migration plan for 340 objects. 18 Sep: the museum's collection copy is due and doesn't come. 24 Sep: Sam and Luis tell Margaret 1 October can't hold; 1 Oct: new date Thursday 12 November, agreed by Margaret in writing. 2 Oct: Rhys asks Ian Ferris for DNS access and the old CMS export; still not given at the anchor despite two chasers. 14 Oct: Margaret sends copy for 210 of 340 objects, promises the remaining 130 by 23 Oct. If they miss that date, Margaret needs to approve holding unpublished records out of the November launch. The board's open evening on 19 November is the real deadline. Luis owes Margaret a revised launch checklist by Friday 23 October.",
+      "people": [
+        "margaret-okafor",
+        "ian-ferris",
+        "fiona-achterberg",
+        "sam-whitfield",
+        "rhys-morgan",
+        "anil-joshi",
+        "zainab-bello"
+      ],
+      "from": "2026-02-09",
+      "to": "2026-11-19"
+    },
+    {
+      "id": "marcus-leaving",
+      "account": "acme",
+      "title": "Marcus is leaving",
+      "summary": "12 Oct 2026: Marcus tells Luis, then Priya, he's leaving for a games studio; last day 18 December. 13 Oct: Priya asks Luis to plan the Pennywort handover (Dev to step up, Luis to cover reviews). 15 Oct: Steve Barlow hears and writes, unhappy, asking for a call. 19 Oct: Shona books the exit interview for 10 December. Marcus promised a written handover by 27 November. Dev shadows the November reviews and owns design queries from the December beta. Leaving drinks pencilled for Thursday 17 December; Hollie is collecting for a gift. Luis hasn't yet replied to Steve with a date for the call.",
+      "people": [
+        "marcus-adeyemi",
+        "priya-raman",
+        "shona-mcleod",
+        "steve-barlow",
+        "dev-malhotra",
+        "hollie-tran"
+      ],
+      "from": "2026-10-12",
+      "to": "2026-12-18"
+    },
+    {
+      "id": "margins-talk",
+      "account": "acme",
+      "title": "Speaking at Margins",
+      "summary": "24 Sep 2026: Yasmin invites Luis to give a 25-minute talk at Margins on Thursday 3 December at the Red Lion Rooms, Holborn; fee £300 plus a ticket. 25 Sep: Priya says yes, Acme will cover his day. 1 Oct: Luis accepts with a working title, 'Designing for the last 10 metres'. 8 Oct: Yasmin asks for final title, 60-word bio and headshot by 23 October; slides by 13 November; a tech check on 30 November. At the anchor Luis hasn't sent the final title, bio or headshot. Gabriel offered to take the headshot at 12:30 on Friday 23 October at the studio. Yasmin needs printable material for the programme, which closes that day.",
+      "people": [
+        "yasmin-farouk",
+        "priya-raman",
+        "gabriel-santos"
+      ],
+      "from": "2026-09-24",
+      "to": "2026-12-03"
+    },
+    {
+      "id": "pennywort-loyalty-app",
+      "account": "acme",
+      "title": "Pennywort loyalty app",
+      "summary": "1 Jun 2026: kickoff in Leeds; a points card in an app for 62 shops. July: Freya runs six in-store interviews in Harrogate and Durham. August: Marcus's designs approved; Dev takes checkout. 21 Sep: Steve asks for a 'scan and go' feature that wasn't in scope; Sam writes a change request (£14,500, still unsigned). Beta to 2,000 customers on 1 December. Live at the anchor: the change request, Marcus's exit, and Steve's request for a call with Luis.",
+      "people": [
+        "steve-barlow",
+        "marcus-adeyemi",
+        "dev-malhotra",
+        "sam-whitfield",
+        "freya-lindgren"
+      ],
+      "from": "2026-06-01",
+      "to": "2026-12-01"
+    },
+    {
+      "id": "tandem-ebike-unlock",
+      "account": "acme",
+      "title": "Tandem City e-bike unlock flow",
+      "summary": "10 Aug 2026: Chiara asks Acme to fix the e-bike unlock (14% of unlock attempts fail at the dock). The first retainer expires on 25 August; Chiara signs a three-month extension before it lapses. September: Gabriel prototypes a tap-to-unlock flow; Dan insists it works with gloves on. 13-16 Oct: Freya runs 12 street sessions in Hackney. The readout is promised to Chiara for Wednesday 28 October; Kate needs to know by then whether the API changes. Chiara can approve the build on 28 October. If she signs off, build starts 9 November, with a 20 November pilot at six Hackney docks.",
+      "people": [
+        "chiara-russo",
+        "dan-whelan",
+        "gabriel-santos",
+        "freya-lindgren",
+        "kate-sutherland"
+      ],
+      "from": "2026-08-10",
+      "to": "2026-11-20"
+    },
+    {
+      "id": "kestrel-phase-two",
+      "account": "acme",
+      "title": "Kestrel Pay phase 2 negotiation",
+      "summary": "3 Sep 2026: Arjun asks Fiona for a proposal for phase 2 (recurring invoices and multi-currency settlement). 18 Sep: Fiona and Luis send a statement of work: 14 weeks, £118,000. 9 Oct: client dinner at the Railway Arch Dining Room in Bermondsey (Luis paid, £186.40; Philippa still wants the receipt). 13 Oct: Arjun pushes for £95,000; Fiona offers 12 weeks at £104,000. Arjun promised a decision 'by end of October'. Jae is pencilled in; Priya can't confirm the team until the answer.",
+      "people": [
+        "arjun-sethi",
+        "lena-hofmann",
+        "fiona-achterberg",
+        "priya-raman",
+        "jae-cho",
+        "philippa-dunn"
+      ],
+      "from": "2026-09-03",
+      "to": "2026-10-30"
+    },
+    {
+      "id": "brightwell-annual-report",
+      "account": "acme",
+      "title": "Brightwell Trust annual report",
+      "summary": "18 Aug 2026: Helen sends the brief: 32 pages, 1,500 copies, launch at the supporters' evening on 26 November. September: Zainab edits the text; Kasia lays it out. 12 Oct: first proof to Helen; she wants a different cover photo. 20 Oct: second proof sent; Helen hasn't signed off. Terry needs final PDFs by 30 October to deliver by 20 November, and warns that uncoated stock is short this autumn.",
+      "people": [
+        "helen-ashby",
+        "terry-nolan",
+        "kasia-zielinska",
+        "zainab-bello"
+      ],
+      "from": "2026-08-18",
+      "to": "2026-11-26"
+    },
+    {
+      "id": "holloway-pitch",
+      "account": "acme",
+      "title": "Winning the Holloway Museum",
+      "summary": "17 Nov 2025: the museum's tender arrives. 1 Dec: Luis and Fiona submit; 15 Dec: shortlisted. 7 Jan 2026: pitch at the museum (Jonathan, Fiona, Luis). 12 Jan: Margaret writes to say Acme won, budget £146,000.",
+      "people": [
+        "margaret-okafor",
+        "fiona-achterberg",
+        "jonathan-ellery",
+        "priya-raman"
+      ],
+      "from": "2025-11-17",
+      "to": "2026-01-12"
+    },
+    {
+      "id": "kestrel-app-redesign",
+      "account": "acme",
+      "title": "Kestrel Pay app redesign",
+      "summary": "13 Oct 2025: kickoff. November-December: Freya's diary study with 18 small-business owners. January 2026: new navigation and invoicing designs; Arjun rejects the first dashboard. February: Lena brings in the Fjell typeface. 24 April 2026: the redesigned app ships; app marketplace rating goes from 3.9 to 4.5 by June.",
+      "people": [
+        "arjun-sethi",
+        "lena-hofmann",
+        "freya-lindgren",
+        "gabriel-santos",
+        "jae-cho",
+        "rhys-morgan"
+      ],
+      "from": "2025-10-13",
+      "to": "2026-04-24"
+    },
+    {
+      "id": "kerning-house-license",
+      "account": "acme",
+      "title": "Font licence for Kestrel",
+      "summary": "16 Feb 2026: Lena wants Fjell for the Kestrel rebrand. Luis gets a quote from Ingrid: £4,800 for web and app, up to 250k monthly users. Philippa questions who pays (Kestrel does, through Acme). 20 Mar: licence issued in Kestrel's name. Renewal due March 2027.",
+      "people": [
+        "ingrid-solberg",
+        "lena-hofmann",
+        "philippa-dunn"
+      ],
+      "from": "2026-02-16",
+      "to": "2026-03-20"
+    },
+    {
+      "id": "promotion-2025",
+      "account": "acme",
+      "title": "Promotion to Lead Product Designer",
+      "summary": "24 Mar 2025: Priya tells Luis she's putting him forward. April: he writes a case; Shona arranges the panel on 23 April. 6 May: offer letter, salary £68,000 to £76,000. 12 May: announced to the studio; four designers move to report to him.",
+      "people": [
+        "priya-raman",
+        "shona-mcleod",
+        "jonathan-ellery"
+      ],
+      "from": "2025-03-24",
+      "to": "2025-05-12"
+    },
+    {
+      "id": "annual-review-2026",
+      "account": "acme",
+      "title": "Annual review 2026",
+      "summary": "1 Apr 2026: Shona opens reviews. Luis writes his self-review in Guadalajara the week of the wedding, late. 30 Apr: review with Priya; goals: ship Holloway, hire a junior, speak once in public. 8 May: 4% raise confirmed.",
+      "people": [
+        "priya-raman",
+        "shona-mcleod"
+      ],
+      "from": "2026-04-01",
+      "to": "2026-05-08"
+    },
+    {
+      "id": "tandem-city-pitch",
+      "account": "acme",
+      "title": "Pitching Tandem City",
+      "summary": "16 Jun 2025: Chiara gets in touch after seeing Acme's Brightwell work. July: two workshops; Gabriel builds a clickable concept for finding a docked e-bike. 26 Aug 2025: Tandem City signs a year's retainer.",
+      "people": [
+        "chiara-russo",
+        "dan-whelan",
+        "fiona-achterberg",
+        "gabriel-santos"
+      ],
+      "from": "2025-06-16",
+      "to": "2025-08-26"
+    },
+    {
+      "id": "brightwell-website",
+      "account": "acme",
+      "title": "Brightwell Trust website rebuild",
+      "summary": "October 2024: in build. 11 Nov 2024: Fold & Bind prints the 2024 report with the wrong Pantone on the cover; Terry reprints the covers free by 22 Nov. January 2025: content freeze; Helen's trustees ask for a donate button on every page. 14 March 2025: new site live.",
+      "people": [
+        "helen-ashby",
+        "zainab-bello",
+        "anil-joshi",
+        "terry-nolan"
+      ],
+      "from": "2024-10-22",
+      "to": "2025-03-14"
+    },
+    {
+      "id": "design-system-v2",
+      "account": "acme",
+      "title": "Acme design system v2",
+      "summary": "June 2025: Luis proposes rebuilding the studio's shared design system. Kasia owns colour tokens, Anil the component library. September: the dark theme breaks contrast on three clients' palettes. 12 Dec 2025: v2 released at the studio's Christmas show-and-tell.",
+      "people": [
+        "kasia-zielinska",
+        "anil-joshi",
+        "kate-sutherland",
+        "lauren-gage"
+      ],
+      "from": "2025-06-02",
+      "to": "2025-12-12"
+    },
+    {
+      "id": "acme-offsite-2025",
+      "account": "acme",
+      "title": "Offsite in Margate",
+      "summary": "29 Sep 2025: Natasha books a hotel on the Margate seafront for 6-7 November. Luis runs a session on design reviews that goes well; the karaoke goes less well. 7 Nov: the train home is cancelled and everyone gets a coach.",
+      "people": [
+        "natasha-whyte",
+        "jonathan-ellery",
+        "priya-raman"
+      ],
+      "from": "2025-09-29",
+      "to": "2025-11-07"
+    },
+    {
+      "id": "duncan-recruiter",
+      "account": "acme",
+      "title": "A recruiter who won't take no",
+      "summary": "11 Aug 2026: Duncan Shaw writes about a Head of Design role at a Series B fintech, 'up to £115k'. 26 Aug and 8 Sep: follow-ups. 10 Sep: Luis replies 'not right now, thanks'. 29 Sep: Duncan writes again with 'a slightly different role'; Luis leaves it unanswered.",
+      "people": [
+        "duncan-shaw"
+      ],
+      "from": "2026-08-11",
+      "to": "2026-09-29"
+    },
+    {
+      "id": "expenses-2025",
+      "account": "acme",
+      "title": "Missing expense receipts",
+      "summary": "20 Jun 2025: Philippa finds three of Luis's expenses without receipts (two rides home after late nights preparing the Tandem pitch and a team lunch). He finds two; the third, a £23.80 ride, is written off on 25 July.",
+      "people": [
+        "philippa-dunn"
+      ],
+      "from": "2025-06-20",
+      "to": "2025-07-25"
+    },
+    {
+      "id": "jo-surprise-40th",
+      "account": "personal",
+      "title": "Jo's surprise 40th",
+      "summary": "20 Sep 2026: Ben starts a planning thread without Jo for her surprise party, Saturday 14 November, upstairs at The Eel & Anchor, Clapton, from 7pm; she thinks it's dinner for four. 2 Oct: Luis designs the invite. 8 Oct: Ben asks for £25 each towards a Krakow weekend; Luis hasn't paid. 12 Oct: Luis promises a photo slideshow by 7 November and asks everyone for photos; Ifeoma and Tom send some. 18 Oct: Jo emails Niamh, copying Luis, to check they're still free for dinner on the 14th. Ben is the fourth person Jo expects; Niamh is getting her to the pub.",
+      "people": [
+        "ben-hartley",
+        "tom-ashworth",
+        "ifeoma-nwosu",
+        "callum-reid",
+        "joanna-kowalczyk",
+        "niamh-gallagher"
+      ],
+      "from": "2026-09-20",
+      "to": "2026-11-14"
+    },
+    {
+      "id": "marshgate-half-2026",
+      "account": "personal",
+      "title": "The Marshgate Half 2026",
+      "summary": "6 Jul 2026: Gareth asks Luis to design the finisher medal. August: sketches. 28 Sep: Gareth approves the third design (a heron over the marshes). The artwork is due to the manufacturer on 23 October, and Luis still owes the final vector file. 5 Oct: marshal rota; Luis is at mile 9 from 8:30. Race Sunday 15 November, 9am start. Bea is pacing the 1:45 group.",
+      "people": [
+        "gareth-pugh",
+        "bea-collins"
+      ],
+      "from": "2026-07-06",
+      "to": "2026-11-15"
+    },
+    {
+      "id": "mallory-road-damp",
+      "account": "personal",
+      "title": "Damp in the Mallory Road bathroom",
+      "summary": "2 Sep 2026: a brown patch spreads on the bathroom ceiling of Flat B, 41 Mallory Road. 3 Sep: Luis emails Imogen with photos. 10 Sep: she says a roofer will come 'next week'. 22 Sep: Desmond reports the stain coming through to his hallway. 1 Oct: Imogen says the roofer was ill, again 'next week'. 19 Oct: Luis writes more firmly; Imogen replied 21 Oct that a roofer, Gary, will come on Thursday 5 November, 9am to noon. Luis is at the offsite. Niamh is recording that morning and has asked Desmond to use the spare key; he has yet to confirm.",
+      "people": [
+        "imogen-barnes",
+        "desmond-clarke",
+        "niamh-gallagher"
+      ],
+      "from": "2026-09-02",
+      "to": "2026-11-05"
+    },
+    {
+      "id": "albion-deposit-dispute",
+      "account": "personal",
+      "title": "Albion Road deposit",
+      "summary": "29 Jun 2026: checkout inspection at Albion Road. 14 Jul: Olivia proposes deducting £340 of the £2,300 deposit: carpet clean £190 and a scratched door £150 (from Biscuit). 20 Jul: Luis disputes both deductions; he and Niamh had the carpets cleaned (receipt £95). 4 Aug: £1,960 returned, £340 disputed with the deposit scheme. 2 Oct: the scheme asks both sides for evidence by 23 October; Luis promised Niamh he'd upload the cleaning receipt and the check-in photos, not done yet.",
+      "people": [
+        "olivia-marsh",
+        "niamh-gallagher",
+        "peter-stavros"
+      ],
+      "from": "2026-06-29",
+      "to": "2026-11-10"
+    },
+    {
+      "id": "uk-tax-return-2026",
+      "account": "personal",
+      "title": "Self assessment 2025-26",
+      "summary": "14 Sep 2026: Martin asks for the usual papers for 2025-26, plus Luis's Mexican freelance income in pounds, the Mexican invoices and evidence of tax paid, so he can check what foreign tax credit applies. 6 Oct: chaser. 20 Oct: Martin writes that he needs everything by 31 October to file comfortably before Christmas. Luis has to ask Lupita for totals covering 6 April 2025 to 5 April 2026, since the Mexican annual return covers a calendar year. Fee £420 + VAT.",
+      "people": [
+        "martin-hale"
+      ],
+      "from": "2026-09-14",
+      "to": "2027-01-31"
+    },
+    {
+      "id": "christmas-cork-2026",
+      "account": "personal",
+      "title": "Christmas 2026 in Cork",
+      "summary": "5 Oct 2026: Bernadette asks when they're coming for Christmas and whether Luis eats ham ('Niamh says you eat everything'). 12 Oct: Niamh and Luis agree 21 to 28 December. 18 Oct: Bernie asks again which flights; Luis said he'd book once the Puffin Vale sale starts. Not booked at the anchor.",
+      "people": [
+        "bernadette-gallagher",
+        "niamh-gallagher"
+      ],
+      "from": "2026-10-05",
+      "to": "2026-12-23"
+    },
+    {
+      "id": "five-a-side-autumn-2026",
+      "account": "personal",
+      "title": "Five-a-side, autumn season",
+      "summary": "10 Sep 2026: Kwame opens the autumn season, Thursdays 7pm at Mabley Green pitch 3, eight fixtures from 1 October to 19 November, £45 each by 1 October. Luis plays but hasn't paid; Kwame chases on 8 Oct and 20 Oct. 15 Oct: Callum turns an ankle. Luis can't play on 5 November (offsite). Kwame intends to reconcile late payments at the end-of-year kickabout on 17 December.",
+      "people": [
+        "kwame-mensah",
+        "tom-ashworth",
+        "callum-reid",
+        "tariq-hussain"
+      ],
+      "from": "2026-09-10",
+      "to": "2026-12-17"
+    },
+    {
+      "id": "albion-boiler",
+      "account": "personal",
+      "title": "The Albion Road boiler",
+      "summary": "4 Nov 2024: boiler fails. 6 Nov: Darren sends an engineer to diagnose it. 13 Nov: he fits a replacement valve; it holds for nine days. 22 Nov: fails again; part on order. 2 Dec: Luis asks for a rent reduction; Olivia agrees £150 off December. 10 Jan 2025: third failure on the coldest week; Agnieszka lends a fan heater. 17 Feb: Peter replaces the boiler. 24 Feb: Luis confirms it works.",
+      "people": [
+        "olivia-marsh",
+        "darren-kirby",
+        "peter-stavros",
+        "agnieszka-nowak",
+        "niamh-gallagher"
+      ],
+      "from": "2024-11-04",
+      "to": "2025-02-24"
+    },
+    {
+      "id": "ski-les-arcs",
+      "account": "personal",
+      "title": "Ski week in Les Arcs",
+      "summary": "30 Oct 2024: Tom proposes a ski week. November: chalet booked, £640 each. 24-31 Jan 2025: the trip. 3 Feb: the chalet's £160 cleaning fee is split four ways; Josh promises his £40 'this weekend'. 7 Mar: Luis reminds him once, jokily. Still unpaid in October 2026.",
+      "people": [
+        "tom-ashworth",
+        "callum-reid",
+        "josh-whitaker"
+      ],
+      "from": "2024-10-30",
+      "to": "2025-03-07"
+    },
+    {
+      "id": "christmas-gdl-2024",
+      "account": "personal",
+      "title": "Christmas 2024 in Guadalajara",
+      "summary": "24 Oct 2024: Daniela proposes everyone home for Christmas. Luis goes 19 Dec to 5 Jan; Niamh goes to Cork. Daniela announces her engagement to Marc on Christmas Eve.",
+      "people": [
+        "daniela-cordero",
+        "niamh-gallagher"
+      ],
+      "from": "2024-10-24",
+      "to": "2025-01-06"
+    },
+    {
+      "id": "aisha-oliver-wedding",
+      "account": "personal",
+      "title": "Aisha and Oliver's wedding",
+      "summary": "15 Jan 2025: save the date for 16 August at Lower Hatherley Barn. March: Luis is asked to be an usher. June: mustard ties posted to the ushers. 16 Aug: the wedding. 28 Aug: Aisha sends thank-you notes and the photographer's link.",
+      "people": [
+        "aisha-rahman",
+        "oliver-grant",
+        "tom-ashworth",
+        "niamh-gallagher"
+      ],
+      "from": "2025-01-15",
+      "to": "2025-08-28"
+    },
+    {
+      "id": "daniela-wedding",
+      "account": "personal",
+      "title": "Daniela's wedding in Guadalajara",
+      "summary": "8 Sep 2025: Daniela asks Luis to design the invitations. November: invitations approved; printed in Guadalajara. January 2026: Luis and Niamh book flights (London-Mexico City-Guadalajara, 14-27 April). March: Marc pays Luis back CA$640 for printing. 18 April 2026: wedding at Hacienda Los Siete Capulines; Luis gives the toast. 10 May: Daniela sends photos and a thank-you.",
+      "people": [
+        "daniela-cordero",
+        "marc-tremblay",
+        "niamh-gallagher"
+      ],
+      "from": "2025-09-08",
+      "to": "2026-05-10"
+    },
+    {
+      "id": "physio-shins",
+      "account": "personal",
+      "title": "Shin splints",
+      "summary": "20 Mar 2025: Luis books Harriet after shin pain. Six sessions, £55 each, exercises by email. Bea adjusts his interval sessions. 30 May: discharged with a mileage cap of 40 km a week.",
+      "people": [
+        "harriet-lowe",
+        "bea-collins"
+      ],
+      "from": "2025-03-20",
+      "to": "2025-05-30"
+    },
+    {
+      "id": "biscuit-the-cat",
+      "account": "personal",
+      "title": "Adopting Biscuit",
+      "summary": "22 Apr 2025: Luis asks Olivia whether they can have a cat; the landlord agrees in writing on 30 April and asks for a pet clause in the renewal. 10 May: Biscuit arrives. Vaccinations with Emma at Lauriston Vets. 19 Jan 2026: Biscuit has a tooth out, £410.",
+      "people": [
+        "emma-pike",
+        "olivia-marsh",
+        "niamh-gallagher"
+      ],
+      "from": "2025-04-22",
+      "to": "2026-01-30"
+    },
+    {
+      "id": "flat-move-2026",
+      "account": "personal",
+      "title": "Moving to Mallory Road",
+      "summary": "11 May 2026: the rent at Albion Road is going up £275. 29 May: notice given. 6 Jun: they find Flat B, 41 Mallory Road (Imogen's), £1,950 a month. 27 Jun: move with Tariq's van. Marta comes to Mallory Road from 10 July. 20 Jul: address changes done, mostly; Agnieszka still gets parcels.",
+      "people": [
+        "niamh-gallagher",
+        "olivia-marsh",
+        "imogen-barnes",
+        "tariq-hussain",
+        "marta-silva",
+        "agnieszka-nowak"
+      ],
+      "from": "2026-05-11",
+      "to": "2026-07-20"
+    },
+    {
+      "id": "selling-before-move",
+      "account": "personal",
+      "title": "Selling things before the move",
+      "summary": "5 June 2026: lists the sofa at £200, the old drafting table at £60 and the spare bike rack at £25, collection only. 13 June: the sofa sells for £180. The table buyer misses two pickups; Niamh finds a taker who collects both the table and rack on 25 June for £70. One-off buyers on a marketplace site write in.",
+      "people": [
+        "niamh-gallagher"
+      ],
+      "from": "2026-06-05",
+      "to": "2026-06-25"
+    },
+    {
+      "id": "dentist-crown",
+      "account": "personal",
+      "title": "A cracked molar",
+      "summary": "24 Feb 2026: Luis cracks a lower-left molar on an olive stone. Emergency slot on 26 Feb; crown prep 9 March; crown fitted 23 March (£640). 30 March: invoice and the six-month recall.",
+      "people": [
+        "kerry-simmonds"
+      ],
+      "from": "2026-02-24",
+      "to": "2026-03-30"
+    },
+    {
+      "id": "uk-tax-return-2025",
+      "account": "personal",
+      "title": "Self assessment 2023-24",
+      "summary": "11 Nov 2024: Martin asks for the P60, freelance income and tax paid in Mexico for 6 April 2023 to 5 April 2024. Luis sends the last statement on 20 Jan 2025. 29 Jan: Martin files; £1,940 to pay by 31 Jan.",
+      "people": [
+        "martin-hale"
+      ],
+      "from": "2024-11-11",
+      "to": "2025-01-29"
+    },
+    {
+      "id": "niamh-new-job",
+      "account": "personal",
+      "title": "Niamh changes job",
+      "summary": "19 Jan 2026: Niamh gets an offer from Lowtide Audio. 27 Feb: last day at Pellam & Rook; Chloe organises leaving drinks. 2 Mar: first day. They celebrate at a Dalston restaurant on 6 March.",
+      "people": [
+        "niamh-gallagher",
+        "chloe-bennett"
+      ],
+      "from": "2026-01-19",
+      "to": "2026-03-06"
+    },
+    {
+      "id": "book-club-2026",
+      "account": "personal",
+      "title": "Tuesday Book Club",
+      "summary": "Monthly at Ife's. March 2026: Sunita lends Luis a 600-page novel, which he hasn't returned. September: Luis skips. Hamish hosts the November meeting on Tuesday 3 November; Mei Lin wants Luis's December pick by then. Luis has found six copies of The Unlit Landing, a short novel by Maud Sellick, in the library catalogue and is leaning towards that. He hasn't told Mei Lin yet.",
+      "people": [
+        "ifeoma-nwosu",
+        "hamish-fairweather",
+        "mei-lin-chou",
+        "sunita-varma"
+      ],
+      "from": "2026-01-06",
+      "to": "2026-11-03"
+    },
+    {
+      "id": "barranca-rebrand",
+      "account": "freelance",
+      "title": "Rebrand de Tueste Laja y Niebla",
+      "summary": "25 may 2026: Ernesto pide cotización para renovar la marca. 2 jun: Luis cotiza $86,000 MXN + IVA (logo, paleta, bolsas, menú, señalética de dos cafeterías), 50% anticipo. 9 jun: aprobada; el anticipo llega el 19 jun. Julio-agosto: tres rondas de logo; Andrea escribe el tono; Ximena fotografía el 28 de agosto. 12 sep: Luis entrega los PDF de producción; los originales editables sólo se entregan al liquidar. 15 sep: segunda factura, $43,000 + IVA, vence el 15 de octubre. 1 oct: Mariana pide los editables para la imprenta. 16 oct: Luis recuerda el pago; Emilio pide que se reenvíe el CFDI. 20 oct: Ernesto escribe que 'la próxima semana sale sin falta'; Emilio tiene que programar la transferencia para el viernes 30 de octubre. Al 22 de octubre Luis todavía tiene que reenviar el CFDI y el pago sigue pendiente.",
+      "people": [
+        "ernesto-villasenor",
+        "mariana-gomez",
+        "emilio-cardenas",
+        "ximena-lara",
+        "andrea-solis"
+      ],
+      "from": "2026-05-25",
+      "to": "2026-11-15"
+    },
+    {
+      "id": "odonto-san-pedro",
+      "account": "freelance",
+      "title": "Apertura de la clínica San Pedro",
+      "summary": "21 sep 2026: Paola pide la campaña de apertura de la séptima clínica, en San Pedro Garza García: lona de fachada, volantes, seis posts y una página. 5 oct: primera propuesta. 13 oct: el Dr. Garza pide que el fondo azul oscuro de la lona se limite a la franja superior para que destaque el teléfono. 19 oct: segunda propuesta enviada; Paola dice que la ve con él el viernes. Paola puede aprobar los posts; Héctor autoriza la lona y el volante. La imprenta necesita el PDF y la medida final de la lona (4 × 1.2 m) el 6 de noviembre; inauguración el 21 de noviembre. Rodrigo hace la página.",
+      "people": [
+        "paola-trevino",
+        "hector-garza",
+        "rodrigo-elizondo"
+      ],
+      "from": "2026-09-21",
+      "to": "2026-11-21"
+    },
+    {
+      "id": "contadora-otono-2026",
+      "account": "freelance",
+      "title": "Lupita y los papeles de otoño",
+      "summary": "10 sep 2026: Lupita pide los estados de cuenta de julio y agosto y, en cuanto cierre el mes, el de septiembre; también pide la constancia de situación fiscal actualizada. 6 oct: segundo aviso; además el CFDI de agosto a Lobo Gris salió con uso S01 y hay que cancelarlo y reemitirlo. 13 oct: Luis promete mandar todo 'el viernes 16'. No lo mandó. 20 oct: Brenda recuerda que la declaración de octubre se presenta el 17 de noviembre. Luis también tiene que pedirle a Lupita el desglose del 6 de abril de 2025 al 5 de abril de 2026 para Martin Hale.",
+      "people": [
+        "guadalupe-ibarra",
+        "brenda-salas",
+        "fernanda-rios"
+      ],
+      "from": "2026-09-10",
+      "to": "2026-11-17"
+    },
+    {
+      "id": "lobo-gris-ofrenda",
+      "account": "freelance",
+      "title": "Etiqueta 'Ofrenda' de Lobo Gris",
+      "summary": "17 ago 2026: Diego pide la etiqueta de la edición de Día de Muertos, una stout de cempasúchil y cacao. 2 sep: bocetos. 18 sep: Samuel corrige datos (7.2% ABV, 34 IBU). 9 oct: archivos a la imprenta, un día tarde. 21 oct: llegan las etiquetas; Diego manda foto. Lanzamiento el 31 de octubre en la cervecería; invitan a Luis aunque esté en Londres. Pendiente: factura final ($9,500 + IVA) y el CFDI corregido de agosto.",
+      "people": [
+        "diego-arreola",
+        "samuel-ortega",
+        "fernanda-rios"
+      ],
+      "from": "2026-08-17",
+      "to": "2026-10-31"
+    },
+    {
+      "id": "semilla-informe-2026",
+      "account": "freelance",
+      "title": "Informe anual de Semilla Viva",
+      "summary": "28 sep 2026: Lucía pide el informe anual 2026, 24 páginas, para el 1 de diciembre; tarifa de ONG $28,000 MXN. 6 oct: Luis manda retícula y portada. 15 oct: Iván manda 600 fotos agrupadas por escuela. Luis necesita 12 con autorización para publicar y le pide la selección para el 26 de octubre. Lucía aprueba el texto, que Andrea promete entregar el 30 de octubre.",
+      "people": [
+        "lucia-herrera",
+        "ivan-castillo",
+        "andrea-solis"
+      ],
+      "from": "2026-09-28",
+      "to": "2026-12-01"
+    },
+    {
+      "id": "lead-barro-rojo",
+      "account": "freelance",
+      "title": "Prospecto: Quema del Patio",
+      "summary": "8 oct 2026: Alejandra escribe: quiere una tienda en línea para 24 piezas de tres talleres de Puebla, con envíos sólo dentro de México al arrancar. 14 oct: videollamada (a las 18:00 de Londres, 11:00 de Puebla). Luis promete cotización a más tardar el viernes 23 de octubre; al ancla no la ha mandado. Alejandra pregunta el 21 oct si la cotización puede separar la fotografía por pieza y el costo de cargar el catálogo.",
+      "people": [
+        "alejandra-fuentes"
+      ],
+      "from": "2026-10-08",
+      "to": "2026-11-06"
+    },
+    {
+      "id": "barranca-empaque",
+      "account": "freelance",
+      "title": "Empaque de Tueste Laja y Niebla",
+      "summary": "28 oct 2024: Ernesto pide rediseñar las bolsas de 250 g y 1 kg. Diciembre: propuesta aprobada. 21 feb 2025: bolsas impresas; pago completo, puntual.",
+      "people": [
+        "ernesto-villasenor",
+        "mariana-gomez",
+        "emilio-cardenas"
+      ],
+      "from": "2024-10-28",
+      "to": "2025-02-21"
+    },
+    {
+      "id": "odonto-senaletica",
+      "account": "freelance",
+      "title": "Señalética de Clínicas Diente de Sierra",
+      "summary": "28 oct 2024: Paola encuentra a Luis por un amigo de Rodrigo. Señalética para tres clínicas. 31 ene 2025: instalada; el Dr. Garza contento.",
+      "people": [
+        "hector-garza",
+        "paola-trevino"
+      ],
+      "from": "2024-10-28",
+      "to": "2025-01-31"
+    },
+    {
+      "id": "odonto-iguala",
+      "account": "freelance",
+      "title": "Negociación de la iguala con Clínicas Diente de Sierra",
+      "summary": "12 ene 2026: Paola propone una iguala mensual. Luis pide $28,000; el Dr. Garza ofrece $18,000. 20 feb: quedan en $22,000 + IVA por doce meses, hasta 20 horas al mes. 16 mar 2026: contrato firmado.",
+      "people": [
+        "hector-garza",
+        "paola-trevino"
+      ],
+      "from": "2026-01-12",
+      "to": "2026-03-16"
+    },
+    {
+      "id": "ocotillo-sitio",
+      "account": "freelance",
+      "title": "Sitio web de Casa Ocotillo",
+      "summary": "10 feb 2025: Sofía pide un sitio con reservaciones. Abril: diseño aprobado; mayo: pasan al tú. Julio: Ximena fotografía las habitaciones. Septiembre: Rodrigo integra el motor de reservas. 20 nov 2025: el sitio sale; mantenimiento de $4,500 al mes desde diciembre.",
+      "people": [
+        "sofia-mendoza",
+        "jorge-perez",
+        "rodrigo-elizondo",
+        "ximena-lara"
+      ],
+      "from": "2025-02-10",
+      "to": "2025-11-20"
+    },
+    {
+      "id": "ocotillo-mantenimiento",
+      "account": "freelance",
+      "title": "Mantenimiento de Casa Ocotillo",
+      "summary": "Enero 2026: Renata entra y pide cambios mensuales. Junio: Jorge sube la tarifa de la habitación doble de $2,100 a $2,850 MXN para las dos semanas de Guelaguetza en julio. 30 sep 2026: Jorge reporta una reserva duplicada; Rodrigo corrige el reintento del cobro y Jorge avisa a la huésped.",
+      "people": [
+        "renata-aguilar",
+        "jorge-perez",
+        "sofia-mendoza",
+        "rodrigo-elizondo"
+      ],
+      "from": "2026-01-15",
+      "to": "2026-09-30"
+    },
+    {
+      "id": "lobo-gris-marca",
+      "account": "freelance",
+      "title": "Marca de Cervecería Lobo Gris",
+      "summary": "3 mar 2025: Diego quiere marca nueva antes de distribuir en CDMX. Mayo: el lobo gris aprobado tras cuatro rondas. 11 jul 2025: Luis entrega la marca y manda la factura por el saldo. 18 jul: Fernanda liquida.",
+      "people": [
+        "diego-arreola",
+        "samuel-ortega",
+        "fernanda-rios"
+      ],
+      "from": "2025-03-03",
+      "to": "2025-07-18"
+    },
+    {
+      "id": "semilla-donativos",
+      "account": "freelance",
+      "title": "Página de donativos de Semilla Viva",
+      "summary": "2 jun 2025: Lucía pide una página de donativos. Lucía aprueba $32,000 MXN por diseño y pruebas; Rodrigo factura aparte la integración. 12 sep 2025: en línea; la meta para el primer mes es $200,000 MXN.",
+      "people": [
+        "lucia-herrera",
+        "ivan-castillo",
+        "rodrigo-elizondo"
+      ],
+      "from": "2025-06-02",
+      "to": "2025-09-12"
+    },
+    {
+      "id": "declaracion-anual-2025",
+      "account": "freelance",
+      "title": "Declaración anual 2024",
+      "summary": "17 feb 2025: Lupita pide papeles para la anual. Luis manda facturas de gastos tarde. 28 abr 2025: presentada, saldo a favor de $3,100.",
+      "people": [
+        "guadalupe-ibarra",
+        "brenda-salas"
+      ],
+      "from": "2025-02-17",
+      "to": "2025-04-28"
+    },
+    {
+      "id": "declaracion-anual-2026",
+      "account": "freelance",
+      "title": "Declaración anual 2025",
+      "summary": "16 feb 2026: Lupita pide papeles. Luis está en Guadalajara en abril por la boda y la ve en persona el 22 abr. 29 abr 2026: presentada; a pagar $5,480.",
+      "people": [
+        "guadalupe-ibarra",
+        "brenda-salas"
+      ],
+      "from": "2026-02-16",
+      "to": "2026-04-29"
+    },
+    {
+      "id": "lead-montessori",
+      "account": "freelance",
+      "title": "Prospecto: Montessori Patio del Fresno",
+      "summary": "12 may 2026: Ricardo pide cotización de identidad y sitio. Luis cotiza $64,000. 18 jun 2026: no les alcanza; lo retoman en 2027.",
+      "people": [
+        "ricardo-sandoval"
+      ],
+      "from": "2026-05-12",
+      "to": "2026-06-18"
+    },
+    {
+      "id": "bermondsey-reunion",
+      "account": "icloud",
+      "title": "Bermondsey lot ten-year reunion",
+      "summary": "6 Oct 2026: Hayley proposes a weekend in a cottage in Norfolk to mark ten years since Hayley started the Bermondsey pub quiz team (Luis joined in 2020): 4-6 or 11-13 December. Andrei votes 4-6; Clara can only do 11-13; Nikhil might fly in; Rita says maybe. 16 Oct: Hayley asks everyone for a vote by 25 October and a £60 deposit once she confirms a date. She has a hold on a cottage near North Walsham until 27 October. Luis hasn't voted.",
+      "people": [
+        "hayley-brooks",
+        "andrei-popescu",
+        "clara-moreau",
+        "nikhil-mehta",
+        "rita-valente"
+      ],
+      "from": "2026-10-06",
+      "to": "2026-12-13"
+    },
+    {
+      "id": "bermondsey-deposit",
+      "account": "icloud",
+      "title": "Deposit back from Keetons Road",
+      "summary": "Luis paid the shared flat’s £1,800 deposit at 9 Keetons Road in 2020. Graham kept it on account when Luis moved out and the last flatmate renewed in 2023. 22 Oct 2024: the tenancy ends and Graham withholds £180 over a stained mattress. Luis sends the original inventory photos. 17 Jan 2025: £1,620 returned. Graham still forwards stray post now and then.",
+      "people": [
+        "graham-petts"
+      ],
+      "from": "2024-10-22",
+      "to": "2025-01-17"
+    },
+    {
+      "id": "bike-theft-claim",
+      "account": "icloud",
+      "title": "Stolen bike insurance claim",
+      "summary": "6 Mar 2025: the road bike is stolen outside 14 Albion Road. Claim HAL-2025-118734. Lorraine asks for the receipt and police reference. 12 Jun 2025: £680 paid (£780 less £100 excess).",
+      "people": [
+        "lorraine-whitby"
+      ],
+      "from": "2025-03-06",
+      "to": "2025-06-12"
+    },
+    {
+      "id": "lisbon-2025",
+      "account": "icloud",
+      "title": "Lisbon with Niamh",
+      "summary": "1 Jul 2025: flights booked with Puffin Vale Air. Rita plans a day in Cacilhas. Blue Room at Blue Swallow Guesthouse booked for 18-23 September. 18 Sep: flight delayed, late check-in at 23:10. 25 Sep: Joana asks for a review.",
+      "people": [
+        "rita-valente",
+        "joana-ferreira"
+      ],
+      "from": "2025-07-01",
+      "to": "2025-09-25"
+    },
+    {
+      "id": "felix-visit",
+      "account": "icloud",
+      "title": "Felix in London",
+      "summary": "2 Apr 2025: Felix writes that he's coming for a type conference, 15-19 May, and asks for the sofa. 26 May: Felix sends a thank-you from Berlin with a PDF of the type specimen he left drying on the kitchen table.",
+      "people": [
+        "felix-brandt"
+      ],
+      "from": "2025-04-02",
+      "to": "2025-05-26"
+    },
+    {
+      "id": "bec-in-london",
+      "account": "icloud",
+      "title": "Bec visits from Sydney",
+      "summary": "18 May 2026: Bec announces she'll be in London 8-21 July. Dinner at Mallory Road on 14 July, the first guest in the new flat. 22 Jul Sydney time: Bec writes after getting home; she left London on 21 July.",
+      "people": [
+        "bec-thornton"
+      ],
+      "from": "2026-05-18",
+      "to": "2026-07-22"
+    }
+  ]
+}

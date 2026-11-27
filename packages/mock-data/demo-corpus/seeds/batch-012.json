@@ -1,0 +1,847 @@
+[
+ {
+  "id": "s0328",
+  "account": "acme",
+  "lang": "en",
+  "kind": "a discussion on Acme everyone (the whole studio: announcements, leaving drinks, office notices, the odd reply-all)",
+  "people": [
+   "anil-joshi"
+  ],
+  "shape": "list",
+  "outcome": "rescheduled",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2024-12-15",
+   "2024-12-18"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list everyone@acme.example (listId everyone.acme.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "allstudio"
+ },
+ {
+  "id": "s0329",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a discussion on Marshgate Runners members (the running club's members list: race entries, kit, lost property, socials)",
+  "people": [
+   "chloe-bennett",
+   "harriet-lowe",
+   "hamish-fairweather"
+  ],
+  "shape": "list",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2025-02-16",
+   "2025-02-21"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list members@marshgaterunners.example (listId members.marshgaterunners.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "harriers"
+ },
+ {
+  "id": "s0330",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a candidate's portfolio",
+  "people": [
+   "rhys-morgan"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-05-21",
+   "2025-05-21"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0331",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a visa question",
+  "people": [
+   "hamish-fairweather",
+   "kwame-mensah"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "declined politely",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-07-19",
+   "2025-07-20"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0332",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "a discussion on Comunidad de diseño independiente (una lista de diseñadores independientes en México: tarifas, clientes que no pagan, herramientas, chambas)",
+  "people": [
+   "mariana-gomez",
+   "ivan-castillo"
+  ],
+  "shape": "list",
+  "outcome": "ongoing",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2025-07-30",
+   "2025-07-31"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list comunidad@disenoindependiente.example (listId comunidad.disenoindependiente.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "disenio"
+ },
+ {
+  "id": "s0333",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: a warranty claim",
+  "people": [
+   "lorraine-whitby",
+   "clara-moreau"
+  ],
+  "shape": "luis-starts",
+  "outcome": "declined politely",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-07-29",
+   "2025-08-02"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0334",
+  "account": "acme",
+  "lang": "en",
+  "kind": "someone asking for a reference for an ex-colleague",
+  "people": [],
+  "shape": "unanswered",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-09-02",
+   "2025-09-02"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0335",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: portfolio pieces for a pitch",
+  "people": [
+   "jae-cho"
+  ],
+  "shape": "ask-answer",
+  "outcome": "declined politely",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-01-11",
+   "2026-01-14"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0336",
+  "account": "acme",
+  "lang": "en",
+  "kind": "a discussion on Acme everyone (the whole studio: announcements, leaving drinks, office notices, the odd reply-all)",
+  "people": [
+   "shona-mcleod",
+   "gabriel-santos"
+  ],
+  "shape": "list",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-03-12",
+   "2026-03-18"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list everyone@acme.example (listId everyone.acme.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "allstudio"
+ },
+ {
+  "id": "s0337",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: parental leave cover",
+  "people": [
+   "jae-cho"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-03-22",
+   "2026-03-28"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0338",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a holiday request",
+  "people": [
+   "zainab-bello",
+   "marcus-adeyemi",
+   "gabriel-santos",
+   "terry-nolan",
+   "ingrid-solberg"
+  ],
+  "shape": "group",
+  "outcome": "ongoing",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-04-04",
+   "2026-04-09"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0339",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a candidate's portfolio",
+  "people": [
+   "jonathan-ellery",
+   "kasia-zielinska",
+   "zainab-bello",
+   "callie-fraser"
+  ],
+  "shape": "group",
+  "outcome": "decided",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-04-20",
+   "2026-04-22"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0340",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a job referral",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "ask-answer",
+  "outcome": "decided",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-06-27",
+   "2026-06-29"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0341",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a design critique",
+  "people": [
+   "priya-raman"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "ongoing",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-07-08",
+   "2026-07-10"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0342",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: access to a design file",
+  "people": [
+   "gabriel-santos"
+  ],
+  "shape": "luis-starts",
+  "outcome": "decided",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-07-16",
+   "2026-07-21"
+  ],
+  "length": "mixed",
+  "attachments": "forgotten",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0343",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: retro notes",
+  "people": [
+   "yasmin-farouk"
+  ],
+  "shape": "luis-starts",
+  "outcome": "decided",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-07-30",
+   "2026-08-02"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0344",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "un proveedor de impresión que ofrece servicios",
+  "people": [],
+  "shape": "ask-answer",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-09-14",
+   "2026-09-14"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0345",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: access to a design file",
+  "people": [
+   "yasmin-farouk"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "declined politely",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-09-18",
+   "2026-09-24"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0346",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a bug on staging",
+  "people": [
+   "sam-whitfield"
+  ],
+  "shape": "forward",
+  "outcome": "decided",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2026-09-27",
+   "2026-09-29"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0347",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a job referral",
+  "people": [
+   "tariq-hussain"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-09-26",
+   "2026-10-04"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0348",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "una agencia que busca colaborar",
+  "people": [],
+  "shape": "ask-answer",
+  "outcome": "waiting on them",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-05",
+   "2026-10-05"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": true,
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0349",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "free: un cambio de alcance",
+  "people": [
+   "mariana-gomez"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-04",
+   "2026-10-10"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0350",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a job referral",
+  "people": [
+   "harriet-lowe",
+   "josh-whitaker"
+  ],
+  "shape": "forward",
+  "outcome": "waiting on them",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2026-10-12",
+   "2026-10-12"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0351",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "storyline: Bermondsey lot ten-year reunion",
+  "people": [
+   "nikhil-mehta",
+   "hayley-brooks"
+  ],
+  "shape": "luis-starts",
+  "outcome": "resolved",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-10-09",
+   "2026-10-14"
+  ],
+  "length": "medium",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "firstFrom": "me",
+  "must": [
+   "Part 1 of 2 of the storyline \"Bermondsey lot ten-year reunion\": write what happens in this stretch (2026-10-09 to 2026-10-14), consistent with its summary."
+  ],
+  "storyline": "bermondsey-reunion"
+ },
+ {
+  "id": "s0352",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: scope creep",
+  "people": [
+   "gabriel-santos",
+   "jae-cho"
+  ],
+  "shape": "luis-starts",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-10-11",
+   "2026-10-15"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0353",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "planted: awaiting",
+  "people": [
+   "mariana-gomez"
+  ],
+  "shape": "luis-starts",
+  "outcome": "no answer yet",
+  "messages": [
+   1,
+   3
+  ],
+  "window": [
+   "2026-10-09",
+   "2026-10-16"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Luis, in his own message sent 6 to 13 days before the anchor, asked someone outside his own addresses a clear question or for something; nobody has answered."
+  ],
+  "plant": "awaiting",
+  "lastFrom": "me"
+ },
+ {
+  "id": "s0354",
+  "account": "acme",
+  "lang": "en",
+  "kind": "a discussion on Acme everyone (the whole studio: announcements, leaving drinks, office notices, the odd reply-all)",
+  "people": [
+   "hollie-tran",
+   "anil-joshi"
+  ],
+  "shape": "list",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-10-12",
+   "2026-10-18"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "must": [
+   "On the list everyone@acme.example (listId everyone.acme.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "allstudio"
+ },
+ {
+  "id": "s0355",
+  "account": "personal",
+  "lang": "en",
+  "kind": "planted: deadline",
+  "people": [
+   "kerry-simmonds"
+  ],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis, before the date",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-22"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "lastFrom": "them",
+  "must": [
+   "in the 14 days before the anchor someone asked Luis to do something by a stated date within the 10 days after the anchor; he hasn't done it.",
+   "The date he must act by falls between 2026-10-23 and 2026-11-01."
+  ],
+  "plant": "deadline"
+ },
+ {
+  "id": "s0356",
+  "account": "acme",
+  "lang": "en",
+  "kind": "planted: top",
+  "people": [
+   "margaret-okafor"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on Luis",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-19",
+   "2026-10-22"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": true,
+  "must": [
+   "the top of the Inbox: someone wrote today, unread, and waits for his reply to a real question. Four are English, two Spanish (Freelance). One is dated exactly 15:30 UTC on the anchor day.",
+   "The last message is dated today, the anchor day, before 15:30 UTC."
+  ],
+  "plant": "top",
+  "unreadFrom": "2026-10-22T07:30:00Z",
+  "lastFrom": "them"
+ },
+ {
+  "id": "s0357",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "storyline: Bermondsey lot ten-year reunion",
+  "people": [
+   "clara-moreau",
+   "rita-valente",
+   "hayley-brooks"
+  ],
+  "shape": "group",
+  "outcome": "decided",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-10-15",
+   "2026-10-22"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 2 of the storyline \"Bermondsey lot ten-year reunion\": write what happens in this stretch (2026-10-15 to 2026-10-22), consistent with its summary."
+  ],
+  "unreadFrom": "2026-10-22T04:30:00Z",
+  "storyline": "bermondsey-reunion"
+ }
+]

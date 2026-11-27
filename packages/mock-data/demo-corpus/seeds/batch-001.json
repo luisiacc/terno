@@ -1,0 +1,769 @@
+[
+ {
+  "id": "s0001",
+  "account": "acme",
+  "lang": "en",
+  "kind": "a conference inviting him to speak",
+  "people": [],
+  "shape": "ask-answer",
+  "outcome": "cancelled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2024-11-22",
+   "2024-11-23"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0002",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: splitting a bill",
+  "people": [
+   "ben-hartley"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on Luis",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2024-12-27",
+   "2024-12-28"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0003",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Promotion to Lead Product Designer",
+  "people": [
+   "shona-mcleod"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on them",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-04-06",
+   "2025-04-09"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 3 of the storyline \"Promotion to Lead Product Designer\": write what happens in this stretch (2025-04-06 to 2025-04-09), consistent with its summary."
+  ],
+  "storyline": "promotion-2025"
+ },
+ {
+  "id": "s0004",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Promotion to Lead Product Designer",
+  "people": [
+   "priya-raman",
+   "jonathan-ellery"
+  ],
+  "shape": "luis-starts",
+  "outcome": "decided",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-04-21",
+   "2025-04-26"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 2 of 3 of the storyline \"Promotion to Lead Product Designer\": write what happens in this stretch (2025-04-21 to 2025-04-26), consistent with its summary."
+  ],
+  "storyline": "promotion-2025"
+ },
+ {
+  "id": "s0005",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Promotion to Lead Product Designer",
+  "people": [
+   "shona-mcleod",
+   "jonathan-ellery"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "decided",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-05-02",
+   "2025-05-12"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 3 of the storyline \"Promotion to Lead Product Designer\": write what happens in this stretch (2025-05-02 to 2025-05-12), consistent with its summary."
+  ],
+  "storyline": "promotion-2025"
+ },
+ {
+  "id": "s0006",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a discussion on Albion Court residents (his building's residents: bins, the lift, parcels, a noisy party, the managing agent)",
+  "people": [
+   "harriet-lowe",
+   "rita-valente"
+  ],
+  "shape": "list",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2025-05-21",
+   "2025-05-27"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list residents@albioncourt.example (listId residents.albioncourt.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "building"
+ },
+ {
+  "id": "s0007",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Página de donativos de Semilla Viva",
+  "people": [
+   "ivan-castillo"
+  ],
+  "shape": "luis-starts",
+  "outcome": "cancelled",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-06-14",
+   "2025-06-19"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 1 of 6 of the storyline \"Página de donativos de Semilla Viva\": write what happens in this stretch (2025-06-14 to 2025-06-19), consistent with its summary."
+  ],
+  "storyline": "semilla-donativos"
+ },
+ {
+  "id": "s0008",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Página de donativos de Semilla Viva",
+  "people": [
+   "ivan-castillo",
+   "rodrigo-elizondo"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-06-26",
+   "2025-07-06"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 6 of the storyline \"Página de donativos de Semilla Viva\": write what happens in this stretch (2025-06-26 to 2025-07-06), consistent with its summary."
+  ],
+  "storyline": "semilla-donativos"
+ },
+ {
+  "id": "s0009",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Página de donativos de Semilla Viva",
+  "people": [
+   "lucia-herrera"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "cancelled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-07-13",
+   "2025-07-23"
+  ],
+  "length": "mixed",
+  "attachments": "forgotten",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 6 of the storyline \"Página de donativos de Semilla Viva\": write what happens in this stretch (2025-07-13 to 2025-07-23), consistent with its summary."
+  ],
+  "storyline": "semilla-donativos"
+ },
+ {
+  "id": "s0010",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Página de donativos de Semilla Viva",
+  "people": [
+   "rodrigo-elizondo",
+   "ivan-castillo"
+  ],
+  "shape": "luis-starts",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-08-04",
+   "2025-08-09"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 4 of 6 of the storyline \"Página de donativos de Semilla Viva\": write what happens in this stretch (2025-08-04 to 2025-08-09), consistent with its summary."
+  ],
+  "storyline": "semilla-donativos"
+ },
+ {
+  "id": "s0011",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Página de donativos de Semilla Viva",
+  "people": [
+   "lucia-herrera"
+  ],
+  "shape": "ask-answer",
+  "outcome": "decided",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-08-23",
+   "2025-08-26"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 5 of 6 of the storyline \"Página de donativos de Semilla Viva\": write what happens in this stretch (2025-08-23 to 2025-08-26), consistent with its summary."
+  ],
+  "storyline": "semilla-donativos"
+ },
+ {
+  "id": "s0012",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Página de donativos de Semilla Viva",
+  "people": [
+   "lucia-herrera"
+  ],
+  "shape": "ask-answer",
+  "outcome": "rescheduled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-09-09",
+   "2025-09-12"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 6 of 6 of the storyline \"Página de donativos de Semilla Viva\": write what happens in this stretch (2025-09-09 to 2025-09-12), consistent with its summary."
+  ],
+  "storyline": "semilla-donativos"
+ },
+ {
+  "id": "s0013",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: an accessibility audit",
+  "people": [
+   "callie-fraser",
+   "kasia-zielinska",
+   "dan-whelan",
+   "shona-mcleod",
+   "rhys-morgan"
+  ],
+  "shape": "group",
+  "outcome": "ongoing",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2025-09-27",
+   "2025-09-28"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0014",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "free: el acceso al dominio",
+  "people": [
+   "mariana-gomez"
+  ],
+  "shape": "forward",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2025-11-10",
+   "2025-11-12"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0015",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a design system component",
+  "people": [
+   "jade-morris",
+   "steve-barlow"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-06-03",
+   "2026-06-10"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0016",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a house-warming",
+  "people": [
+   "peter-stavros",
+   "harriet-lowe",
+   "hamish-fairweather"
+  ],
+  "shape": "group",
+  "outcome": "resolved",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-06-21",
+   "2026-06-26"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0017",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a surprise party",
+  "people": [
+   "kerry-simmonds"
+  ],
+  "shape": "ask-answer",
+  "outcome": "declined politely",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-07-12",
+   "2026-07-14"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0018",
+  "account": "acme",
+  "lang": "en",
+  "kind": "a discussion on Acme everyone (the whole studio: announcements, leaving drinks, office notices, the odd reply-all)",
+  "people": [
+   "chiara-russo",
+   "duncan-shaw"
+  ],
+  "shape": "list",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-07-19",
+   "2026-07-23"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list everyone@acme.example (listId everyone.acme.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "allstudio"
+ },
+ {
+  "id": "s0019",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a client's feedback round",
+  "people": [
+   "zainab-bello"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "rescheduled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-08-11",
+   "2026-08-17"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0020",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a lost key",
+  "people": [
+   "olivia-marsh",
+   "mateo-cordero"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-09-21",
+   "2026-09-24"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0021",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a surprise party",
+  "people": [
+   "kerry-simmonds",
+   "harriet-lowe"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "cancelled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-09-17",
+   "2026-09-24"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0022",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a workshop agenda",
+  "people": [
+   "dan-whelan"
+  ],
+  "shape": "luis-starts",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-09-23",
+   "2026-09-25"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0023",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: an expense claim",
+  "people": [
+   "rupert-ashdown"
+  ],
+  "shape": "ask-answer",
+  "outcome": "decided",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-09-26",
+   "2026-09-29"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0024",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: something left behind at a dinner",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "ongoing",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-09-25",
+   "2026-10-01"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0025",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: an RSVP and dietary needs",
+  "people": [
+   "kerry-simmonds",
+   "joanna-kowalczyk"
+  ],
+  "shape": "luis-starts",
+  "outcome": "rescheduled",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-10-11",
+   "2026-10-14"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0026",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a design system component",
+  "people": [
+   "hollie-tran"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on them",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-17",
+   "2026-10-20"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "must": [],
+  "unreadFrom": "2026-10-20T06:26:12Z"
+ },
+ {
+  "id": "s0027",
+  "account": "acme",
+  "lang": "en",
+  "kind": "planted: waiting-on-you",
+  "people": [
+   "steve-barlow"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on Luis",
+  "messages": [
+   3,
+   6
+  ],
+  "window": [
+   "2026-10-12",
+   "2026-10-22"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": true,
+  "must": [
+   "a recent Inbox thread: Luis wrote earlier in it, and the latest message, from a person, asks him something he hasn't answered."
+  ],
+  "plant": "waiting-on-you",
+  "firstFrom": "me",
+  "lastFrom": "them"
+ }
+]

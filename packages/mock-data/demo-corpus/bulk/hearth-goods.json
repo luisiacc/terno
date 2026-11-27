@@ -1,0 +1,91 @@
+[
+  {
+    "brand": "hearth-goods",
+    "currency": "£",
+    "account": "personal",
+    "schedule": {
+      "every": "random",
+      "zone": "Europe/London",
+      "perWeek": [
+        0.45,
+        1.1
+      ],
+      "from": "2026-06-06",
+      "to": "2026-08-02"
+    },
+    "templates": [
+      {
+        "weight": 18,
+        "subject": "A refund is on its way for order LL-{ref}",
+        "text": "Return processed\n\nWe’ve checked in your return and issued the refund to your original payment method.\n\nOrder: LL-{ref}\nReturned item: {item}\nRefund: {refund}\nProcessed: {date}\n\nYour bank may take three to five working days to show the credit.\n\nView return: https://larkandlintel.example/orders/LL-{ref}/returns\n\nWe sent this email because you placed an order with Lark & Lintel Home.\n\nLark & Lintel Home Ltd, 6 Sill Court, Norwich NR3 1EH. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#685039;color:#fff;text-align:center;font:700 22px Georgia,serif\">Lark &amp; Lintel Home</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font:700 25px/1.2 Georgia,serif\">Return processed</h1><p style=\"margin:0 0 16px\">We’ve checked in your return and issued the refund to your original payment method.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Order</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">LL-{ref}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Returned item</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{item}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Refund</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{refund}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Processed</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{date}</td></tr></table><p style=\"margin:0 0 16px\">Your bank may take three to five working days to show the credit.</p><p style=\"margin:0\"><a style=\"color:#685039;text-decoration:underline\" href=\"https://larkandlintel.example/orders/LL-{ref}/returns\">View return</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">We sent this email because you placed an order with Lark &amp; Lintel Home.<br>Lark &amp; Lintel Home Ltd, 6 Sill Court, Norwich NR3 1EH. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "ref": {
+            "int": [
+              10000000,
+              99999999
+            ]
+          },
+          "item": [
+            "Antique brass curtain holdbacks",
+            "Oak peg rail, 40 cm",
+            "Washed linen cushion cover, olive",
+            "Curtain rings, matt black"
+          ],
+          "refund": [
+            "£12.00",
+            "£16.00",
+            "£18.00",
+            "£22.00"
+          ]
+        }
+      },
+      {
+        "weight": 32,
+        "subject": "We’ve dispatched your Lark & Lintel order LL-{ref}",
+        "text": "Your parcel is on its way\n\nWe’ve handed your parcel to the carrier. The delivery estimate will appear after its first scan.\n\nOrder: LL-{ref}\nParcel includes: {item}\nService: Tracked standard delivery\n\nIf your order is coming in more than one parcel, we’ll email separately when the other items are packed.\n\nFollow your parcel: https://larkandlintel.example/orders/LL-{ref}/delivery\n\nWe sent this email because you placed an order with Lark & Lintel Home.\n\nLark & Lintel Home Ltd, 6 Sill Court, Norwich NR3 1EH. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#685039;color:#fff;text-align:center;font:700 22px Georgia,serif\">Lark &amp; Lintel Home</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font:700 25px/1.2 Georgia,serif\">Your parcel is on its way</h1><p style=\"margin:0 0 16px\">We’ve handed your parcel to the carrier. The delivery estimate will appear after its first scan.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Order</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">LL-{ref}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Parcel includes</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{item}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Service</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">Tracked standard delivery</td></tr></table><p style=\"margin:0 0 16px\">If your order is coming in more than one parcel, we’ll email separately when the other items are packed.</p><p style=\"margin:0\"><a style=\"color:#685039;text-decoration:underline\" href=\"https://larkandlintel.example/orders/LL-{ref}/delivery\">Follow your parcel</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">We sent this email because you placed an order with Lark &amp; Lintel Home.<br>Lark &amp; Lintel Home Ltd, 6 Sill Court, Norwich NR3 1EH. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "ref": {
+            "int": [
+              10000000,
+              99999999
+            ]
+          },
+          "item": [
+            "Pair of lined linen curtains, flax",
+            "Herringbone wool runner, pebble",
+            "Set of two oak wall shelves",
+            "Extendable curtain pole, matt black",
+            "Pair of shelf brackets, brushed brass"
+          ]
+        }
+      },
+      {
+        "weight": 50,
+        "subject": "Your Lark & Lintel order LL-{ref}",
+        "text": "Order confirmed\n\nYour payment has been received. We’ll let you know when the warehouse dispatches your order.\n\nOrder: LL-{ref}\nOrdered on: {date}\nItems: {item}\nTotal paid, including delivery: {total}\n\nFor address changes, contact our team before the parcel is packed.\n\nView order: https://larkandlintel.example/orders/LL-{ref}\n\nWe sent this email because you placed an order with Lark & Lintel Home.\n\nLark & Lintel Home Ltd, 6 Sill Court, Norwich NR3 1EH. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#685039;color:#fff;text-align:center;font:700 22px Georgia,serif\">Lark &amp; Lintel Home</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font:700 25px/1.2 Georgia,serif\">Order confirmed</h1><p style=\"margin:0 0 16px\">Your payment has been received. We’ll let you know when the warehouse dispatches your order.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Order</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">LL-{ref}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Ordered on</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{date}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Items</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{item}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Total paid, including delivery</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{total}</td></tr></table><p style=\"margin:0 0 16px\">For address changes, contact our team before the parcel is packed.</p><p style=\"margin:0\"><a style=\"color:#685039;text-decoration:underline\" href=\"https://larkandlintel.example/orders/LL-{ref}\">View order</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">We sent this email because you placed an order with Lark &amp; Lintel Home.<br>Lark &amp; Lintel Home Ltd, 6 Sill Court, Norwich NR3 1EH. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "ref": {
+            "int": [
+              10000000,
+              99999999
+            ]
+          },
+          "item": [
+            "Pair of lined linen curtains, flax",
+            "Herringbone wool runner, pebble",
+            "Set of two oak wall shelves"
+          ],
+          "total": {
+            "money": [
+              69,
+              158
+            ]
+          }
+        }
+      }
+    ]
+  }
+]

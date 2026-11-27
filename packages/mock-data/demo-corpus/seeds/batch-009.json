@@ -1,0 +1,869 @@
+[
+ {
+  "id": "s0238",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Sitio web de Casa Ocotillo",
+  "people": [
+   "jorge-perez"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-03-19",
+   "2025-03-29"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 6 of the storyline \"Sitio web de Casa Ocotillo\": write what happens in this stretch (2025-03-19 to 2025-03-29), consistent with its summary."
+  ],
+  "trash": true,
+  "storyline": "ocotillo-sitio"
+ },
+ {
+  "id": "s0239",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Sitio web de Casa Ocotillo",
+  "people": [
+   "rodrigo-elizondo",
+   "jorge-perez",
+   "ximena-lara",
+   "sofia-mendoza"
+  ],
+  "shape": "group",
+  "outcome": "waiting on Luis",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2025-05-08",
+   "2025-05-15"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 6 of the storyline \"Sitio web de Casa Ocotillo\": write what happens in this stretch (2025-05-08 to 2025-05-15), consistent with its summary."
+  ],
+  "storyline": "ocotillo-sitio"
+ },
+ {
+  "id": "s0240",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a brand guidelines question",
+  "people": [
+   "priya-raman"
+  ],
+  "shape": "unanswered",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-05-22",
+   "2025-05-22"
+  ],
+  "length": "mixed",
+  "attachments": "forgotten",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0241",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: timesheets",
+  "people": [
+   "callie-fraser",
+   "rhys-morgan",
+   "jae-cho",
+   "hollie-tran",
+   "freya-lindgren"
+  ],
+  "shape": "group",
+  "outcome": "rescheduled",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2025-06-14",
+   "2025-06-19"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [],
+  "trash": true
+ },
+ {
+  "id": "s0242",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Sitio web de Casa Ocotillo",
+  "people": [
+   "ximena-lara"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-07-01",
+   "2025-07-01"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "Part 3 of 6 of the storyline \"Sitio web de Casa Ocotillo\": write what happens in this stretch (2025-07-01 to 2025-07-01), consistent with its summary."
+  ],
+  "storyline": "ocotillo-sitio"
+ },
+ {
+  "id": "s0243",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a gym membership freeze",
+  "people": [
+   "harriet-lowe",
+   "hamish-fairweather"
+  ],
+  "shape": "luis-starts",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-07-20",
+   "2025-07-21"
+  ],
+  "length": "short",
+  "attachments": "forgotten",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [],
+  "trash": true
+ },
+ {
+  "id": "s0244",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: an expense claim",
+  "people": [
+   "philippa-dunn"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-08-07",
+   "2025-08-07"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0245",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Sitio web de Casa Ocotillo",
+  "people": [
+   "sofia-mendoza"
+  ],
+  "shape": "luis-starts",
+  "outcome": "resolved",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-08-13",
+   "2025-08-18"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 4 of 6 of the storyline \"Sitio web de Casa Ocotillo\": write what happens in this stretch (2025-08-13 to 2025-08-18), consistent with its summary."
+  ],
+  "storyline": "ocotillo-sitio"
+ },
+ {
+  "id": "s0246",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Sitio web de Casa Ocotillo",
+  "people": [
+   "jorge-perez"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-10-04",
+   "2025-10-04"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "Part 5 of 6 of the storyline \"Sitio web de Casa Ocotillo\": write what happens in this stretch (2025-10-04 to 2025-10-04), consistent with its summary."
+  ],
+  "storyline": "ocotillo-sitio"
+ },
+ {
+  "id": "s0247",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a lost key",
+  "people": [
+   "mateo-cordero",
+   "harriet-lowe",
+   "ifeoma-nwosu",
+   "olivia-marsh",
+   "callum-reid",
+   "ben-hartley"
+  ],
+  "shape": "group",
+  "outcome": "resolved",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2025-11-09",
+   "2025-11-15"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0248",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Sitio web de Casa Ocotillo",
+  "people": [
+   "jorge-perez",
+   "sofia-mendoza"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "rescheduled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-11-10",
+   "2025-11-20"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 6 of 6 of the storyline \"Sitio web de Casa Ocotillo\": write what happens in this stretch (2025-11-10 to 2025-11-20), consistent with its summary."
+  ],
+  "storyline": "ocotillo-sitio"
+ },
+ {
+  "id": "s0249",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: timesheets",
+  "people": [
+   "kate-sutherland"
+  ],
+  "shape": "luis-starts",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-01-18",
+   "2026-01-20"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0250",
+  "account": "acme",
+  "lang": "en",
+  "kind": "a discussion on Acme everyone (the whole studio: announcements, leaving drinks, office notices, the odd reply-all)",
+  "people": [
+   "steve-barlow"
+  ],
+  "shape": "list",
+  "outcome": "ongoing",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-02-06",
+   "2026-02-12"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list everyone@acme.example (listId everyone.acme.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "allstudio"
+ },
+ {
+  "id": "s0251",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: photos from a trip",
+  "people": [
+   "clara-moreau"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "cancelled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-06-19",
+   "2026-06-27"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0252",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: a lost luggage claim",
+  "people": [
+   "nikhil-mehta",
+   "hayley-brooks"
+  ],
+  "shape": "luis-starts",
+  "outcome": "decided",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-07-04",
+   "2026-07-08"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0253",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: splitting a bill",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-07-11",
+   "2026-07-11"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0254",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a sponsorship for a charity run",
+  "people": [
+   "darren-kirby"
+  ],
+  "shape": "luis-starts",
+  "outcome": "decided",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-08-25",
+   "2026-08-27"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0255",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a candidate's portfolio",
+  "people": [
+   "jae-cho"
+  ],
+  "shape": "unanswered",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-09-26",
+   "2026-09-26"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0256",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a sponsorship for a charity run",
+  "people": [
+   "aisha-rahman"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-09-30",
+   "2026-09-30"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0257",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Apertura de la clínica San Pedro",
+  "people": [
+   "paola-trevino"
+  ],
+  "shape": "forward",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2026-09-28",
+   "2026-10-01"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": true,
+  "must": [
+   "Part 1 of 3 of the storyline \"Apertura de la clínica San Pedro\": write what happens in this stretch (2026-09-28 to 2026-10-01), consistent with its summary."
+  ],
+  "storyline": "odonto-san-pedro"
+ },
+ {
+  "id": "s0258",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a house-warming",
+  "people": [
+   "darren-kirby"
+  ],
+  "shape": "ask-answer",
+  "outcome": "cancelled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-05",
+   "2026-10-05"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0259",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a client dinner",
+  "people": [
+   "margaret-okafor"
+  ],
+  "shape": "ask-answer",
+  "outcome": "declined politely",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-05",
+   "2026-10-07"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0260",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Apertura de la clínica San Pedro",
+  "people": [
+   "hector-garza"
+  ],
+  "shape": "luis-starts",
+  "outcome": "declined politely",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-10-07",
+   "2026-10-12"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": true,
+  "firstFrom": "me",
+  "must": [
+   "Part 2 of 3 of the storyline \"Apertura de la clínica San Pedro\": write what happens in this stretch (2026-10-07 to 2026-10-12), consistent with its summary."
+  ],
+  "storyline": "odonto-san-pedro"
+ },
+ {
+  "id": "s0261",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: quarterly planning",
+  "people": [
+   "dev-malhotra",
+   "marcus-adeyemi"
+  ],
+  "shape": "luis-starts",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-12"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0262",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a discussion on Marshgate Runners members (the running club's members list: race entries, kit, lost property, socials)",
+  "people": [
+   "olivia-marsh",
+   "harriet-lowe"
+  ],
+  "shape": "list",
+  "outcome": "rescheduled",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-10-13",
+   "2026-10-18"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list members@marshgaterunners.example (listId members.marshgaterunners.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "harriers"
+ },
+ {
+  "id": "s0263",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: scope creep",
+  "people": [
+   "jonathan-ellery"
+  ],
+  "shape": "unanswered",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-10-20",
+   "2026-10-20"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "lastFrom": "them",
+  "must": [],
+  "unreadFrom": "2026-10-20T00:03:08Z"
+ },
+ {
+  "id": "s0264",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "planted: promise-to-owner",
+  "people": [
+   "ernesto-villasenor"
+  ],
+  "shape": "ask-answer",
+  "outcome": "they owe what they promised",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-21"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "client"
+  ],
+  "inbox": true,
+  "must": [
+   "in the 14 days before the anchor someone promised Luis something with a time (I'll send the deck Monday); about half are already due and nothing came."
+  ],
+  "plant": "promise-to-owner",
+  "lastFrom": "them"
+ },
+ {
+  "id": "s0265",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Apertura de la clínica San Pedro",
+  "people": [
+   "paola-trevino"
+  ],
+  "shape": "ask-answer",
+  "outcome": "ongoing",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-19",
+   "2026-10-22"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "client"
+  ],
+  "inbox": true,
+  "must": [
+   "Part 3 of 3 of the storyline \"Apertura de la clínica San Pedro\": write what happens in this stretch (2026-10-19 to 2026-10-22), consistent with its summary."
+  ],
+  "storyline": "odonto-san-pedro"
+ },
+ {
+  "id": "s0266",
+  "account": "acme",
+  "lang": "en",
+  "kind": "planted: since",
+  "people": [
+   "rhys-morgan"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "the unread tail changes something (or, for one, nothing)",
+  "messages": [
+   3,
+   6
+  ],
+  "window": [
+   "2026-10-14",
+   "2026-10-22"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "must": [
+   "plan 279: earlier mail from others that he has read, then a contiguous tail of new mail from others, unread, all within the two hours before the anchor, that changes something (a plan, a date, an amount). One of the four changes nothing (a short thanks). Nothing from Luis after the unread tail.",
+   "This is the one where the new mail changes nothing: a short thanks or acknowledgement."
+  ],
+  "unreadFrom": "2026-10-22T13:30:00Z",
+  "plant": "since",
+  "lastFrom": "them"
+ },
+ {
+  "id": "s0267",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "planted: top",
+  "people": [
+   "emilio-cardenas"
+  ],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-10-22",
+   "2026-10-22"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "client"
+  ],
+  "inbox": true,
+  "lastFrom": "them",
+  "must": [
+   "the top of the Inbox: someone wrote today, unread, and waits for his reply to a real question. Four are English, two Spanish (Freelance). One is dated exactly 15:30 UTC on the anchor day.",
+   "The last message is dated today, the anchor day, before 15:30 UTC."
+  ],
+  "plant": "top",
+  "unreadFrom": "2026-10-22T07:30:00Z"
+ }
+]

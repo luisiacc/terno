@@ -1,0 +1,2184 @@
+[
+  {
+    "id": "s0148",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "Is yours doing this too?",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "agnieszka-nowak"
+        ],
+        "date": "2024-12-02T07:41:00+00:00",
+        "read": true,
+        "text": "morning Aga. Is it all right if I add your flat number to the email to the agent, if yours is cutting out as well? no need to be copied in. I took a photo at six this morning because the display was blank again by the time I went back to look. of course it came on the second Niamh got up.",
+        "attachments": [
+          {
+            "filename": "boiler-display-2-dec.jpg",
+            "mime": "image/jpeg",
+            "size": 1485861
+          }
+        ]
+      },
+      {
+        "from": "agnieszka-nowak",
+        "to": [
+          "me"
+        ],
+        "date": "2024-12-02T13:28:00+00:00",
+        "read": true,
+        "text": "Hi Luis\nI'd leave my flat off, please. The hot water's fine down here and the clicking I can hear is in the pipe by your stairs. I don't want them booking a visit to the wrong flat again.\nAga"
+      },
+      {
+        "from": "me",
+        "to": [
+          "agnieszka-nowak"
+        ],
+        "date": "2024-12-02T13:57:00+00:00",
+        "read": true,
+        "text": "fair. i'll stick to ours."
+      }
+    ],
+    "truth": {
+      "summary": "Agnieszka asked Luis to leave Flat 2 off his boiler email because her hot water was working and the clicking came from the pipe by his stairs.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "Luis's boiler display was blank again at about 06:00 on 2 December.",
+        "Agnieszka heard a clicking pipe but had hot water."
+      ]
+    }
+  },
+  {
+    "id": "s0149",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "January test / who to ask",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "jae-cho",
+        "to": [
+          "me"
+        ],
+        "date": "2024-12-31T11:23:00+00:00",
+        "read": true,
+        "text": "Luis,\nI'd recruit two people who've never booked a repair through the council, plus a spare.\nThe five on the attached list already know where that form lives, so they'll sail straight through.\n\nI've got two 25-minute slots held on the 8th. Is there anyone in the community-panel sheet you wouldn't invite again?\nJae",
+        "attachments": [
+          {
+            "filename": "repair-form-panel-availability.pdf",
+            "mime": "application/pdf",
+            "size": 46781
+          }
+        ]
+      },
+      {
+        "from": "me",
+        "to": [
+          "jae-cho"
+        ],
+        "date": "2025-01-02T08:05:00-06:00",
+        "read": true,
+        "text": "Still in Guadalajara. Two slots is fine if we get first-timers. Was the panel sheet the one with phone numbers on it?\n\nThanks,\nLuis\n\nLuis Cordero\nSenior Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "jae-cho",
+        "to": [
+          "me"
+        ],
+        "date": "2025-01-02T15:38:00+00:00",
+        "read": true,
+        "text": "Use the November sheet with the blue tab.\nThe other one has phone numbers but no consent status.\n\nCould you mark the rows we should skip before I send the invites?\nJae"
+      }
+    ],
+    "truth": {
+      "summary": "Jae held two January repair-form test slots and asked Luis to mark whom to skip in the November panel sheet before invitations go out.",
+      "ownerOwes": [
+        "Mark the rows Jae should skip in the November panel sheet with the blue tab."
+      ],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2025-01-08",
+          "what": "Two 25-minute test slots held."
+        }
+      ],
+      "facts": [
+        "Jae recommended two participants unfamiliar with the council repair form, plus a spare.",
+        "The sheet with phone numbers has no consent status."
+      ]
+    }
+  },
+  {
+    "id": "s0150",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "A spare stop on Friday",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "yasmin-farouk",
+        "to": [
+          "me"
+        ],
+        "date": "2025-01-10T13:36:00+00:00",
+        "read": true,
+        "text": "Hi Luis,\nMargins is shifting its kit out of the old office. Any use for two A1 cutting mats? We can drop them on the way to storage.\n\n17 January, after 11\n20 January, before 10 if we miss you Friday\n\nThanks so much,\nYasmin\n\nYasmin Farouk\nProgramme Lead, Margins - a conference about the edges of design\nmarginsconf.example"
+      },
+      {
+        "from": "me",
+        "to": [
+          "yasmin-farouk"
+        ],
+        "date": "2025-01-10T15:49:00+00:00",
+        "read": true,
+        "text": "One might fit. Are they the thick rubber ones?\n\nThanks,\nLuis\n\nLuis Cordero\nSenior Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "yasmin-farouk",
+        "to": [
+          "me"
+        ],
+        "date": "2025-01-13T09:16:00+00:00",
+        "read": true,
+        "text": "They're 6 mm. I measured the one by the door this morning.\n\nYasmin Farouk\nProgramme Lead, Margins - a conference about the edges of design\nmarginsconf.example"
+      },
+      {
+        "from": "me",
+        "to": [
+          "yasmin-farouk"
+        ],
+        "date": "2025-01-13T10:42:00+00:00",
+        "read": true,
+        "text": "We'll pass. Too thick for the plan chest, and that's the only place we'd have room for one.\n\nThanks,\nLuis\n\nLuis Cordero\nSenior Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      }
+    ],
+    "truth": {
+      "summary": "Luis declined Yasmin's offer of cutting mats because the 6 mm mats were too thick for the studio's plan chest.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "Margins offered two A1 mats, 6 mm thick."
+      ]
+    }
+  },
+  {
+    "id": "s0151",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Proof check moved",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "rhys-morgan",
+        "to": [
+          "me"
+        ],
+        "date": "2025-05-27T09:33:00+01:00",
+        "read": true,
+        "text": "Can you do the new slot instead?",
+        "forward": {
+          "from": "Poppy Venn <poppy@reedproof.example>",
+          "date": "2025-05-27T09:17:00+01:00",
+          "subject": "Re: Reed map / Tuesday press proof",
+          "to": "Rhys Morgan <rhys@acme.example>",
+          "text": "Rhys,\n\nThe folding machine is down. Can we move the Reed pocket-map proof from 11 today to Thursday 29 May at 14:30? I can have the folded copy on the bench for you then.\n\nPoppy"
+        }
+      },
+      {
+        "from": "me",
+        "to": [
+          "rhys-morgan"
+        ],
+        "date": "2025-05-27T10:03:00+01:00",
+        "read": true,
+        "text": "Thursday at 14:30 works. Do they have an old map to compare?\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "rhys-morgan",
+        "to": [
+          "me"
+        ],
+        "date": "2025-05-27T10:26:00+01:00",
+        "read": true,
+        "text": "Booked. Poppy has the old map. Rear shutter.\n\nR"
+      }
+    ],
+    "truth": {
+      "summary": "The Reed pocket-map proof moved to 29 May at 14:30 after the printer's folding machine broke.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2025-05-29",
+          "what": "Rescheduled folded proof at 14:30."
+        }
+      ],
+      "facts": [
+        "Poppy has an old map for comparison and can be found at the rear shutter."
+      ]
+    }
+  },
+  {
+    "id": "s0152",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Contract dates for the wayfinding role",
+    "state": {
+      "inbox": false,
+      "trash": true
+    },
+    "people": [
+      {
+        "id": "mira-benton-quay-recruiter",
+        "name": "Mira Benton",
+        "email": "mira@quaysearch.example",
+        "relationship": "recruiter who emailed Luis by mistake",
+        "lang": "en",
+        "timezone": "Europe/London",
+        "accounts": [
+          "acme"
+        ],
+        "facts": [],
+        "style": {
+          "register": "direct, acknowledges mistakes quickly",
+          "length": "two to five lines",
+          "greeting": "Hi Luis,",
+          "signoff": "Mira",
+          "signature": null,
+          "quoting": "bottom",
+          "quirks": []
+        }
+      }
+    ],
+    "messages": [
+      {
+        "from": "mira-benton-quay-recruiter",
+        "to": [
+          "me"
+        ],
+        "date": "2025-08-26T11:57:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nAre you still clear to start on 8 September? This is the six-week wayfinding contract at Salt Quay. The hiring manager changed the start on the brief yesterday and I had you down as finishing at Venn on the 5th.\n\nMira"
+      },
+      {
+        "from": "me",
+        "to": [
+          "mira-benton-quay-recruiter"
+        ],
+        "date": "2025-08-26T13:22:00+01:00",
+        "read": true,
+        "text": "Different Luis, I think. I'm at Acme and haven't applied for anything at Salt Quay.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "mira-benton-quay-recruiter",
+        "to": [
+          "me"
+        ],
+        "date": "2025-08-26T13:38:00+01:00",
+        "read": true,
+        "text": "Sorry, Luis. I've got Luis Campos now.\nMira"
+      }
+    ],
+    "truth": {
+      "summary": "Mira Benton mistook Luis Cordero for Luis Campos and confirmed she had found the intended candidate.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "The erroneous email concerned a six-week Salt Quay wayfinding contract starting 8 September."
+      ]
+    }
+  },
+  {
+    "id": "s0153",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Monday access slot",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "anil-joshi",
+        "to": [
+          "me"
+        ],
+        "date": "2025-09-20T10:12:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nSee the building note below. I'm taking Monday off now. Shall I give back the slot?\n\nAnil",
+        "forward": {
+          "from": "Mick Hale <mick@turnmilldesk.example>",
+          "date": "2025-09-19T15:55:00+01:00",
+          "subject": "Turnmill pass readers on Monday",
+          "to": "Anil Joshi <anil@acme.example>",
+          "text": "You and Luis are booked at the desk for 10:40 Monday to check the new pass reader. I only need you if you both have the old square passes.\n\nMick"
+        }
+      },
+      {
+        "from": "me",
+        "to": [
+          "anil-joshi"
+        ],
+        "date": "2025-09-20T12:18:00+01:00",
+        "read": true,
+        "text": "Yes, give it back. I'm in Lisbon until Tuesday and the spare pass I had was the round one anyway.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "anil-joshi",
+        "to": [
+          "me"
+        ],
+        "date": "2025-09-20T12:46:00+01:00",
+        "read": true,
+        "text": "Given back. Mick found someone from the second floor.\n\nAnil"
+      }
+    ],
+    "truth": {
+      "summary": "Anil gave back the 22 September pass-reader test slot after taking the day off and learning Luis could not attend.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2025-09-22",
+          "what": "Cancelled 10:40 desk slot."
+        }
+      ],
+      "facts": [
+        "The check needed two old square passes.",
+        "Luis was in Lisbon until Tuesday 23 September."
+      ]
+    }
+  },
+  {
+    "id": "s0154",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "client",
+      "work"
+    ],
+    "subject": "Shelf screen copy",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "steve-barlow",
+        "to": [
+          "me"
+        ],
+        "date": "2025-09-30T08:48:00+01:00",
+        "read": true,
+        "text": "Morning,\n\n3 OCTOBER now, not today. Can you still use it if it comes in after lunch on the Friday?\n\nSteve\n\nSteve Barlow | Head of E-commerce | Pennywort Grocers\nPennywort House, Kirkstall Road, Leeds LS4\nM: 07700 900 662",
+        "forward": {
+          "from": "Tessa Quill <tessa@pennywortsignage.example>",
+          "date": "2025-09-30T08:18:00+01:00",
+          "subject": "Shelf screen copy / Newcastle trial",
+          "to": "Steve Barlow <steve.barlow@pennywort.example>",
+          "text": "Steve, I need until Friday 3 October for the final price text. Newcastle have queried two of the unit prices. The shelf screen layout can stay at 800 by 480.\nTessa"
+        }
+      },
+      {
+        "from": "me",
+        "to": [
+          "steve-barlow"
+        ],
+        "date": "2025-09-30T10:05:00+01:00",
+        "read": true,
+        "text": "Hi Steve,\n\nFriday after lunch is fine, it'll still make Monday's build. If Newcastle haven't cleared the two unit prices by then, send the rest and we'll put placeholders in for those two.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "steve-barlow",
+        "to": [
+          "me"
+        ],
+        "date": "2025-10-03T14:12:00+01:00",
+        "read": true,
+        "text": "Newcastle STILL haven't cleared the two unit prices. Tessa's holding the lot till they do.\n\nSteve\n\nSteve Barlow | Head of E-commerce | Pennywort Grocers\nPennywort House, Kirkstall Road, Leeds LS4\nM: 07700 900 662"
+      }
+    ],
+    "truth": {
+      "summary": "Steve moved the Newcastle shelf-screen copy to Friday 3 October; on the day the two queried unit prices were still not cleared and Tessa was holding all the copy back.",
+      "ownerOwes": [],
+      "othersOwe": [
+        "Steve Barlow: send the final shelf-screen price copy once Newcastle clears the two unit prices."
+      ],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2025-10-03",
+          "what": "Revised copy delivery date; the two Newcastle unit prices were still not cleared."
+        }
+      ],
+      "facts": [
+        "The shelf-screen layout stays at 800 by 480.",
+        "Luis said copy arriving after lunch on Friday would still make Monday's build, and offered placeholders for the two unconfirmed prices."
+      ]
+    }
+  },
+  {
+    "id": "s0155",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "little brass key",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "harriet-lowe",
+          "josh-whitaker"
+        ],
+        "date": "2025-12-13T16:19:00+00:00",
+        "read": true,
+        "text": "any chance either of you spotted a tiny key with green tape when we folded up the tables? it's for the raffle cash tin, not anyone's front door. the spare is in an envelope inside the tin, which is of course locked."
+      },
+      {
+        "from": "josh-whitaker",
+        "to": [
+          "me",
+          "harriet-lowe"
+        ],
+        "date": "2025-12-13T18:23:00+00:00",
+        "read": true,
+        "text": "LUIS\nI swept all the trestles into the van with about a kilo of raffle tickets still on top. Will look under the mats next time I'm at the lockup. You sure it wasn't still hanging out of the tin?\nJ"
+      },
+      {
+        "from": "harriet-lowe",
+        "to": [
+          "me"
+        ],
+        "date": "2025-12-14T18:11:00+00:00",
+        "read": true,
+        "text": "Hi Luis,\n\nIs this it? It was under the coat rail in the hall when I went back for my scarf. The tape looked green in there but it's more blue under my kitchen light. I'll drop it at the clinic reception on Monday in an envelope with your name on it.\n\nHarriet\n\nHarriet Lowe MCSP\nDalston Step Clinic, Dalston",
+        "cc": [
+          "josh-whitaker"
+        ],
+        "attachments": [
+          {
+            "filename": "key-by-coat-rail.jpg",
+            "mime": "image/jpeg",
+            "size": 599204
+          }
+        ]
+      },
+      {
+        "from": "josh-whitaker",
+        "to": [
+          "me"
+        ],
+        "date": "2025-12-14T18:25:00+00:00",
+        "read": true,
+        "text": "ha that's mine. bike lock. thought i'd lost it for good lol\nJ"
+      },
+      {
+        "from": "me",
+        "to": [
+          "harriet-lowe",
+          "josh-whitaker"
+        ],
+        "date": "2025-12-15T19:16:00+00:00",
+        "read": true,
+        "text": "ha. harriet, it's josh's then, he can grab it from your reception. ours is smaller and square at the top. josh, can you check the fold in the grey table cover when you're at the lockup?"
+      },
+      {
+        "from": "josh-whitaker",
+        "to": [
+          "me"
+        ],
+        "date": "2025-12-16T18:56:00+00:00",
+        "read": true,
+        "text": "checked under the van mats, nothing. cover's not at the lockup either, think we left it in the hall lol\n\nJ"
+      }
+    ],
+    "truth": {
+      "summary": "The green-taped raffle cash-tin key is still missing: the key Harriet found was Josh's bike-lock key, Josh found nothing in the van, and the grey table cover seems to have been left in the hall.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [
+        {
+          "who": "Josh Whitaker",
+          "text": "Look under the van mats the next time he is at the lockup.",
+          "kept": true
+        }
+      ],
+      "keyDates": [],
+      "facts": [
+        "The missing key is tiny, has green tape and is square at the top; the spare is in an envelope inside the locked tin.",
+        "The key Harriet found under the coat rail in the hall is Josh's bike-lock key; she planned to leave it at Dalston Step Clinic reception.",
+        "Josh thinks the grey table cover was left in the hall."
+      ]
+    }
+  },
+  {
+    "id": "s0156",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Courier card / address line",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "natasha-whyte"
+        ],
+        "date": "2025-12-16T10:14:00+00:00",
+        "read": true,
+        "text": "Hey Tash,\n\nCan the courier card start with the floor? A driver went straight past the stairs with our test card.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "natasha-whyte",
+        "to": [
+          "me"
+        ],
+        "date": "2025-12-16T11:37:00+00:00",
+        "read": true,
+        "text": "Hi all,\n\nYes. **3RD FLOOR** on the first line, 48 Turnmill Street below. Use the street entrance.\n\nTash\n\nNatasha Whyte\nStudio Operations Manager, Acme Studio\nacme.example"
+      }
+    ],
+    "truth": {
+      "summary": "Natasha approved putting 3RD FLOOR first on Acme's courier card, with 48 Turnmill Street on the next line.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "Couriers should use the street entrance."
+      ]
+    }
+  },
+  {
+    "id": "s0157",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "The brown envelope with the pins",
+    "folder": "Label_11",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "daniela-cordero",
+        "to": [
+          "me"
+        ],
+        "date": "2026-01-11T10:19:00-05:00",
+        "read": true,
+        "text": "Lu,\n\nCan you tell if that's the door to number 14 in the photo? I spent ten minutes on the phone with a man who kept telling me it was delivered to the address on the label. I KNOW. What I was asking him was whether the driver rang the bell or just set it down. The mark on the brick looks like the one by your step but I can't see a number anywhere.\n\nIt's the brown envelope with the two sample pins I told you about, the ones for the wedding. The cardboard is stiff enough that it probably didn't go all the way through the letterbox. If it is your building, would you check behind the meter cupboard before I put in a claim? They photographed the envelope standing up and I'm picturing it falling straight through that gap behind the bin.\n\nDon't open the little paper packets if it does turn up. There's a card with the finish written on it in each one and I'd like to know which is which.\n\nLove,\nDani",
+        "attachments": [
+          {
+            "filename": "PV-619284-delivery-photo.jpg",
+            "mime": "image/jpeg",
+            "size": 821230
+          }
+        ]
+      },
+      {
+        "from": "me",
+        "to": [
+          "daniela-cordero"
+        ],
+        "date": "2026-01-11T16:03:00+00:00",
+        "read": true,
+        "text": "that's 14 all right, but it's the door of flat 1. nothing behind the meter cupboard. slipped a note under their door on the way out."
+      },
+      {
+        "from": "daniela-cordero",
+        "to": [
+          "me"
+        ],
+        "date": "2026-01-11T13:20:00-05:00",
+        "read": true,
+        "text": "Ugh OK. Leave it for tonight and I'll do the claim tomorrow if flat 1 hasn't got it. Thank you for going down, I know it's freezing.\n\nLove,\nDani"
+      }
+    ],
+    "truth": {
+      "summary": "Daniela's wedding pin samples were photographed outside Flat 1 at 14 Albion Road, and Luis left a note after finding nothing by the meters.",
+      "ownerOwes": [],
+      "othersOwe": [
+        "Flat 1 resident: respond to Luis's note if they have the envelope.",
+        "Daniela Cordero: put in the claim the next day if Flat 1 doesn't have it."
+      ],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "The brown envelope had two wedding pin samples, each with a card identifying its finish.",
+        "The delivery photo showed the door of Flat 1 at 14 Albion Road; nothing was behind the meter cupboard.",
+        "The photo filename includes PV-619284."
+      ]
+    }
+  },
+  {
+    "id": "s0158",
+    "account": "icloud",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "green holdall / the receipt",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "nikhil-mehta",
+        "to": [
+          "me"
+        ],
+        "date": "2026-01-13T08:44:00-05:00",
+        "read": true,
+        "text": "Yo Luis,\nWas the green holdall my old one? The claims form wants a receipt for the bag itself. I have the bag tag, JFK 407611, if that helps.\nNik",
+        "cc": [
+          "andrei-popescu"
+        ]
+      },
+      {
+        "from": "me",
+        "to": [
+          "nikhil-mehta",
+          "andrei-popescu"
+        ],
+        "date": "2026-01-13T17:46:00+00:00",
+        "read": true,
+        "text": "think yours had the long zip. this was the one with the straps that go all the way under. andrei, didn't we get it for that trip where the boot wouldn't shut?"
+      },
+      {
+        "from": "andrei-popescu",
+        "to": [
+          "me",
+          "nikhil-mehta"
+        ],
+        "date": "2026-01-14T13:15:00+00:00",
+        "read": true,
+        "text": "Market stall, cash, a gentleman who would have laughed if we'd asked for a receipt."
+      },
+      {
+        "from": "nikhil-mehta",
+        "to": [
+          "me"
+        ],
+        "date": "2026-01-15T12:09:00-05:00",
+        "read": true,
+        "text": "I'd tick 'no' then, except there's no 'no'. Maybe the old kitchen photo has the bag in the corner. I'll leave the form where it is for now.\nNik",
+        "cc": [
+          "andrei-popescu"
+        ]
+      }
+    ],
+    "truth": {
+      "summary": "The group traced the lost green holdall to a cash purchase at a market stall and dropped the discussion without a receipt or a submitted form.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "Bag tag JFK 407611.",
+        "The lost bag had straps that ran underneath it.",
+        "Nikhil considered using a kitchen photo and left the form as it was."
+      ]
+    }
+  },
+  {
+    "id": "s0159",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "an actual book token?",
+    "state": {
+      "inbox": false,
+      "trash": true
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "harriet-lowe",
+          "hamish-fairweather"
+        ],
+        "date": "2026-01-17T10:36:00+00:00",
+        "read": true,
+        "text": "would a £20 book token be a bit dull for the quiz prize? could put it in the old paperback with the cover that keeps coming off. hamish, what was the little shop you meant?"
+      },
+      {
+        "from": "hamish-fairweather",
+        "to": [
+          "me",
+          "harriet-lowe"
+        ],
+        "date": "2026-01-17T17:09:00+00:00",
+        "read": true,
+        "text": "Dear all,\n\nThe one I had in mind was Moth & Rook on Blackstock Road.  They've a notice in the window saying they'll sell tokens across the counter, which implies there's a second, secret method of getting one.  I rather like the idea of the old paperback, provided it isn't the one you borrowed from the library.\n\nYours,\nHamish Fairweather"
+      },
+      {
+        "from": "harriet-lowe",
+        "to": [
+          "me"
+        ],
+        "date": "2026-01-18T11:02:00+00:00",
+        "read": true,
+        "text": "Hi Luis,\n\nI can pass the shop on Monday. Does it have to be paper? If they only do a code, I can write the number in the card.\n\nHarriet\n\nHarriet Lowe MCSP\nDalston Step Clinic, Dalston",
+        "cc": [
+          "hamish-fairweather"
+        ]
+      },
+      {
+        "from": "me",
+        "to": [
+          "harriet-lowe",
+          "hamish-fairweather"
+        ],
+        "date": "2026-01-19T07:39:00+00:00",
+        "read": true,
+        "text": "code fine. just tell me before you pay though, in case the organiser's already bought something."
+      }
+    ],
+    "truth": {
+      "summary": "Luis suggested a £20 book token for the quiz prize and is waiting for Harriet to check in before buying one.",
+      "ownerOwes": [],
+      "othersOwe": [
+        "Harriet Lowe: tell Luis what Moth & Rook can sell before paying for a token."
+      ],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "Moth & Rook is on Blackstock Road and advertises tokens in its window.",
+        "Luis said a code would do if paper tokens were unavailable."
+      ]
+    }
+  },
+  {
+    "id": "s0160",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "client",
+      "work"
+    ],
+    "subject": "Breakfast badges / can we make them easier to read?",
+    "folder": "Label_21",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "callie-fraser",
+          "jade-morris",
+          "lena-hofmann",
+          "steve-barlow",
+          "margaret-okafor",
+          "jae-cho"
+        ],
+        "date": "2026-01-27T15:19:00+00:00",
+        "read": true,
+        "text": "Hi all,\n\nYou're down for the open studio breakfast on 5 February, so a quick one before the badges go to print: first name big, or company big? The printer's proof has the company name bigger than the person, which feels backwards to me.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "callie-fraser",
+        "to": [
+          "me"
+        ],
+        "date": "2026-01-27T16:42:00+00:00",
+        "read": true,
+        "text": "Hi Luis,\nThe two graduates I'm bringing can both make 08:30. First names big would help. They won't know anybody there yet.\nSpeak soon,\nCallie\n\nCallie Fraser\nSenior Consultant, Northlight Talent\n+44 7700 900 231",
+        "cc": [
+          "jade-morris",
+          "lena-hofmann",
+          "steve-barlow",
+          "margaret-okafor",
+          "jae-cho"
+        ]
+      },
+      {
+        "from": "lena-hofmann",
+        "to": [
+          "me"
+        ],
+        "date": "2026-01-28T10:28:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\nFirst name, please. And if the printer can drop the grey panel behind the name, even better. It always comes out darker than it looks on screen.\nBest,\nLena",
+        "cc": [
+          "callie-fraser",
+          "jade-morris",
+          "steve-barlow",
+          "margaret-okafor",
+          "jae-cho"
+        ]
+      },
+      {
+        "from": "steve-barlow",
+        "to": [
+          "me"
+        ],
+        "date": "2026-01-28T11:10:00+00:00",
+        "read": true,
+        "text": "Morning,\n08:30 is tight from Leeds. Save mine behind the desk.\nSteve\n\nSteve Barlow | Head of E-commerce | Pennywort Grocers\nPennywort House, Kirkstall Road, Leeds LS4\nM: 07700 900 662",
+        "cc": [
+          "callie-fraser",
+          "jade-morris",
+          "lena-hofmann",
+          "margaret-okafor",
+          "jae-cho"
+        ]
+      },
+      {
+        "from": "margaret-okafor",
+        "to": [
+          "me"
+        ],
+        "date": "2026-01-28T15:32:00+00:00",
+        "read": true,
+        "text": "Dear Luis,\n5 February is still in my diary. Could the badge also say whether someone is a guest or works at the studio? Our two trustees will want to know whom to ask for directions.\nWith best wishes,\n\nMargaret Okafor\nHead of Digital\nHolloway Museum of Making | 30 Seven Sisters Road, London N7\nPlease direct collection enquiries to collections@hollowaymuseum.example.",
+        "cc": [
+          "callie-fraser",
+          "jade-morris",
+          "lena-hofmann",
+          "jae-cho"
+        ]
+      },
+      {
+        "from": "jae-cho",
+        "to": [
+          "me"
+        ],
+        "date": "2026-01-29T12:43:00+00:00",
+        "read": true,
+        "text": "Try a white badge with the first name in 32 point.\nThe clip would cover the guest line.\nJae"
+      },
+      {
+        "from": "jade-morris",
+        "to": [
+          "me"
+        ],
+        "date": "2026-01-30T14:24:00+00:00",
+        "read": true,
+        "text": "Hi Luis!\n\nWe can put blank badges with a marker by the breakfast sign-in if the proof isn't going anywhere.\n\nThanks,\nJade\n\nJade Morris | Events | Brindle & Pan Catering\nbrindleandpan.example | 07700 900 815",
+        "cc": [
+          "callie-fraser",
+          "lena-hofmann",
+          "margaret-okafor",
+          "jae-cho"
+        ]
+      }
+    ],
+    "truth": {
+      "summary": "Luis asked the open studio breakfast guests whether badges should lead with first names; replies favoured first names and added suggestions, then the thread stopped without a print decision.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "The breakfast was on 5 February. Callie's two guests could make 08:30; Steve asked for his badge to be kept behind the desk.",
+        "Lena asked for the grey panel behind the name to be dropped; Margaret asked for a guest or studio line; Jae suggested 32-point first names on white.",
+        "Jade offered a marker and blank badges as a fallback."
+      ]
+    }
+  },
+  {
+    "id": "s0161",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Print check for the folio morning",
+    "folder": "Label_21",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "duncan-shaw",
+        "to": [
+          "me"
+        ],
+        "date": "2026-06-22T09:23:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nThe 4 July folio morning now has a second table. If you still want to put the Acme specimen on it, send me one sheet that we can copy locally. The little sheet you used at the studio was much clearer than half the stuff people bring.\n\nBest,\nDuncan\n\nDuncan Shaw | Partner, Harlow Search\n+44 7700 900 508",
+        "cc": [
+          "shona-mcleod"
+        ]
+      },
+      {
+        "from": "me",
+        "to": [
+          "ingrid-solberg"
+        ],
+        "date": "2026-06-22T12:06:00+01:00",
+        "read": true,
+        "text": "Duncan, this is the sheet, single-sided A4. Ingrid, does our studio licence for Brenna cover a run of 60 handed out at the folio morning?\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example",
+        "cc": [
+          "duncan-shaw",
+          "shona-mcleod"
+        ],
+        "attachments": [
+          {
+            "filename": "folio-morning-specimen-a4-proof.pdf",
+            "mime": "application/pdf",
+            "size": 1441106
+          }
+        ]
+      },
+      {
+        "from": "ingrid-solberg",
+        "to": [
+          "me"
+        ],
+        "date": "2026-06-23T11:18:00+02:00",
+        "read": true,
+        "text": "Dear Luis,\n\nFor sixty A4 sheets you may use the supplied proof. Please use the PDF as sent, with the letters as outlines. There is no need for the printer to install Brenna.\n\nBest regards,\nIngrid\n\nIngrid Solberg\nLicensing, Strandholt Type Type Foundry\nstrandholttype.example",
+        "cc": [
+          "duncan-shaw",
+          "shona-mcleod"
+        ]
+      },
+      {
+        "from": "shona-mcleod",
+        "to": [
+          "me"
+        ],
+        "date": "2026-06-24T15:02:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nThe proof has your direct work address at the bottom. Please change that to the studio reception address before it goes outside Acme. The office can point anyone with questions to the right person after the session.\n\nBest,\nShona\n\nShona McLeod\nPeople Partner, Acme Studio\nPronouns: she/her"
+      },
+      {
+        "from": "me",
+        "to": [
+          "duncan-shaw"
+        ],
+        "date": "2026-06-25T11:32:00+01:00",
+        "read": true,
+        "text": "Use this one for the 60 copies. I've changed the contact line to reception. The Brenna lettering is still outlined.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example",
+        "cc": [
+          "ingrid-solberg",
+          "shona-mcleod"
+        ],
+        "attachments": [
+          {
+            "filename": "folio-morning-specimen-a4-print.pdf",
+            "mime": "application/pdf",
+            "size": 1442710
+          }
+        ]
+      },
+      {
+        "from": "duncan-shaw",
+        "to": [
+          "me"
+        ],
+        "date": "2026-06-29T11:17:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nPrint room has that last file, sixty copies. The first one is out of the queue.\n\nBest,\nDuncan\n\nDuncan Shaw | Partner, Harlow Search\n+44 7700 900 508",
+        "cc": [
+          "shona-mcleod"
+        ]
+      }
+    ],
+    "truth": {
+      "summary": "Duncan sent the final A4 Brenna specimen, with Acme's reception contact, to print for the folio morning after Ingrid cleared a run of 60.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-07-04",
+          "what": "Folio morning."
+        }
+      ],
+      "facts": [
+        "Use folio-morning-specimen-a4-print.pdf instead of the proof.",
+        "Brenna is outlined in the PDF so the printer need not install the font.",
+        "Shona asked for Luis's direct address to be replaced with the studio reception address."
+      ]
+    }
+  },
+  {
+    "id": "s0162",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "client",
+      "work"
+    ],
+    "subject": "Cover for the July walkthroughs",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "margaret-okafor",
+        "to": [
+          "me"
+        ],
+        "date": "2026-07-02T09:08:00+01:00",
+        "read": true,
+        "text": "Dear Luis,\n\nFor the 9 July trustees' session, can I put Anil's name against the walkthrough? The technician who normally sets up the screen is starting parental leave. I have already put a spare laptop in the office. The trustees will be in the small boardroom and we will need captions.\n\nWith best wishes,\n\nMargaret Okafor\nHead of Digital\nHolloway Museum of Making | 30 Seven Sisters Road, London N7\nPlease direct collection enquiries to collections@hollowaymuseum.example.",
+        "cc": [
+          "anil-joshi"
+        ]
+      },
+      {
+        "from": "anil-joshi",
+        "to": [
+          "me"
+        ],
+        "date": "2026-07-02T10:52:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nI can cover the connection check. My note said 'run through the browser on the spare machine'. Is the handover for the deck as well?\n\nAnil",
+        "cc": [
+          "margaret-okafor"
+        ]
+      },
+      {
+        "from": "me",
+        "to": [
+          "margaret-okafor"
+        ],
+        "date": "2026-07-02T13:08:00+01:00",
+        "read": true,
+        "text": "Hi Margaret,\n\nHappy to lend Anil, but I was planning to present the walkthrough myself. Is the cover for your technician or for me? If it's the screen, I'll bring my own laptop and Anil can do the setup. Ingrid, copying you in case we end up on the museum's spare: can we show Brenna from a PDF on a machine that hasn't got it installed?\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example",
+        "cc": [
+          "anil-joshi",
+          "ingrid-solberg"
+        ]
+      },
+      {
+        "from": "ingrid-solberg",
+        "to": [
+          "me"
+        ],
+        "date": "2026-07-03T10:11:00+02:00",
+        "read": true,
+        "text": "Dear Luis,\n\nYou can embed Brenna in a view-only PDF under the studio's licence. If you're presenting from that file, you don't need the font installed on the museum laptop.\n\nBest regards,\nIngrid\n\nIngrid Solberg\nLicensing, Strandholt Type Type Foundry\nstrandholttype.example",
+        "cc": [
+          "margaret-okafor",
+          "anil-joshi"
+        ]
+      },
+      {
+        "from": "margaret-okafor",
+        "to": [
+          "me",
+          "anil-joshi"
+        ],
+        "date": "2026-07-03T11:15:00+01:00",
+        "read": true,
+        "text": "Dear Luis,\n\nCover for the technician only, the screen and sound. You are still presenting, and your name is already on the trustees' agenda. Anil, may I put you down for ten minutes at 09:50 to check the sound and captions?\n\nWith best wishes,\n\nMargaret Okafor\nHead of Digital\nHolloway Museum of Making | 30 Seven Sisters Road, London N7\nPlease direct collection enquiries to collections@hollowaymuseum.example.",
+        "cc": [
+          "ingrid-solberg"
+        ]
+      },
+      {
+        "from": "anil-joshi",
+        "to": [
+          "me"
+        ],
+        "date": "2026-07-03T15:14:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\n09:50 works. Put me down for sound and captions. I'll hand you the cable.\n\nAnil",
+        "cc": [
+          "margaret-okafor"
+        ]
+      }
+    ],
+    "truth": {
+      "summary": "Margaret's request to put Anil against the 9 July trustees' walkthrough meant cover for her technician's screen and sound setup, not for Luis; Luis still presents from his laptop and Anil took the 09:50 check.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [
+        {
+          "text": "Present the walkthrough from his laptop.",
+          "kept": false,
+          "due": "2026-07-09"
+        }
+      ],
+      "promisesToOwner": [
+        {
+          "who": "Anil Joshi",
+          "text": "Check the sound and captions in the small boardroom before handing over to Luis.",
+          "kept": false,
+          "due": "2026-07-09"
+        }
+      ],
+      "keyDates": [
+        {
+          "date": "2026-07-09",
+          "what": "Trustees' walkthrough with 09:50 AV check."
+        }
+      ],
+      "facts": [
+        "Ingrid confirmed the studio licence allows Brenna embedded in a view-only PDF.",
+        "A spare laptop is in the museum office."
+      ]
+    }
+  },
+  {
+    "id": "s0163",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "client",
+      "work"
+    ],
+    "subject": "Any takers for the old stands?",
+    "state": {
+      "inbox": false
+    },
+    "listId": "everyone.acme.example",
+    "messages": [
+      {
+        "from": "fiona-achterberg",
+        "to": [
+          "list"
+        ],
+        "date": "2026-07-07T16:41:00+01:00",
+        "read": true,
+        "text": "Hi team,\n\nThere are six acrylic leaflet stands under the table in the big room. They came back in a box with the client samples but the stands are ours. One is cracked. Could somebody take them over to the museum if there's room on the next run? I'm fairly sure they said they could use A5.\n\nF\n\nFiona Achterberg\nClient Director, Acme Studio\nacme.example",
+        "cc": [
+          "margaret-okafor"
+        ]
+      },
+      {
+        "from": "margaret-okafor",
+        "to": [
+          "list"
+        ],
+        "date": "2026-07-08T10:37:00+01:00",
+        "read": true,
+        "text": "Dear all,\n\nCould somebody measure one across the inside of the lip? Our summer sheets are 148 mm wide, but the last stands we tried had a narrow ridge at the bottom and the sheets curled up out of them. We have one on the desk for comparison if somebody is passing.\n\nWith best wishes,\n\nMargaret Okafor\nHead of Digital\nHolloway Museum of Making | 30 Seven Sisters Road, London N7\nPlease direct collection enquiries to collections@hollowaymuseum.example."
+      },
+      {
+        "from": "anil-joshi",
+        "to": [
+          "list"
+        ],
+        "date": "2026-07-09T12:17:00+01:00",
+        "read": true,
+        "text": "Hi all,\n\n153 mm inside the lip. Haven't tried a sheet.\n\nAnil"
+      }
+    ],
+    "truth": {
+      "summary": "Fiona floated donating Acme's acrylic stands to the museum, and the list discussion ended after Anil supplied a measurement.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "There were six stands, one cracked.",
+        "Anil measured 153 mm across the lip of one stand.",
+        "The museum's summer sheets are 148 mm wide."
+      ]
+    }
+  },
+  {
+    "id": "s0164",
+    "account": "freelance",
+    "lang": "es",
+    "tags": [
+      "client"
+    ],
+    "subject": "La autorización para las pruebas de bolsa",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "mariana-gomez",
+        "to": [
+          "me"
+        ],
+        "date": "2026-08-14T10:42:00-06:00",
+        "read": true,
+        "text": "¡Hola Luis!\n\nYa quedó firmada la autorización para que la imprenta haga pruebas en el papel de las bolsas. La guardé en la carpeta del contrato, en la parte de producción. Te aviso porque la semana pasada le pasé tu correo a la imprenta y no quiero que te pidan otra vez los archivos con el pretexto de que todavía no tiene permiso de tocar el papel. Si te escriben, pásale el correo a Inés, que lleva lo de la imprenta. Tú no tienes que mandarle nada ahorita.\n\nLe puse por escrito que por el momento use la bolsa actual para las pruebas. Lo que quiero ver es cómo sale el negro en el papel que nos enseñó, que era más amarillo que el de la muestra anterior. Inés le pasa las dos bolsas a Ernesto cuando salgan de máquina y yo las recojo en la cafetería. Para el menú y el letrero seguimos con las muestras de siempre. Eso no lo mandé junto porque luego en la imprenta me meten todo en la misma orden.\n\nGracias,\nMariana"
+      }
+    ],
+    "truth": {
+      "summary": "Mariana avisó que ya se firmó la autorización para que la imprenta pruebe el papel con la bolsa actual y que Luis no debe enviar archivos por ahora.",
+      "ownerOwes": [],
+      "othersOwe": [
+        "Inés: pasarle a Ernesto las dos bolsas de prueba.",
+        "Mariana Gómez: recoger las bolsas en la cafetería."
+      ],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "La autorización está en la sección de producción de la carpeta del contrato.",
+        "La prueba compara cómo sale el negro en un papel más amarillo.",
+        "Para el menú y el letrero se mantienen las muestras de siempre."
+      ]
+    }
+  },
+  {
+    "id": "s0165",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "cake label thing",
+    "folder": "Label_11",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "mateo-cordero",
+        "to": [
+          "me"
+        ],
+        "date": "2026-08-14T20:56:00+01:00",
+        "read": true,
+        "text": "hey Luis can I put your name down as the person making the little label for the cake table?\n\nit's for Saturday 29th. I only need one and I can print it at uni"
+      },
+      {
+        "from": "me",
+        "to": [
+          "mateo-cordero"
+        ],
+        "date": "2026-08-17T21:11:00+01:00",
+        "read": true,
+        "text": "if it can be handwritten, yes. how little is little?"
+      },
+      {
+        "from": "mateo-cordero",
+        "to": [
+          "me"
+        ],
+        "date": "2026-08-18T19:43:00+01:00",
+        "read": true,
+        "text": "half a sheet of A4. can you leave the bottom blank for allergens?\n\njust says walnut coffee cake. we're next to the coffee stall so make cake the big word"
+      },
+      {
+        "from": "me",
+        "to": [
+          "mateo-cordero"
+        ],
+        "date": "2026-08-20T08:08:00+01:00",
+        "read": true,
+        "text": "send me the exact words for the bottom when you've got them. i'm not putting my name on an allergen guess"
+      },
+      {
+        "from": "mateo-cordero",
+        "to": [
+          "me"
+        ],
+        "date": "2026-08-22T12:36:00+01:00",
+        "read": true,
+        "text": "hey Luis could you put 'contains wheat, eggs, milk and walnuts' under the name after all? can i print from a photo of it?\n\nthe tutor checked the packet labels this morning. still no table for us but at least that's sorted"
+      }
+    ],
+    "truth": {
+      "summary": "Mateo sent the checked allergen wording for the coffee cake label and asked whether he can print it from a photo Luis has yet to send.",
+      "ownerOwes": [
+        "Confirm whether Mateo can print the handwritten label from a photo and provide the label if he can."
+      ],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-08-29",
+          "what": "Bake sale."
+        }
+      ],
+      "facts": [
+        "The label is half an A4 sheet and the cake is walnut coffee cake.",
+        "Mateo supplied the wording 'contains wheat, eggs, milk and walnuts'."
+      ]
+    }
+  },
+  {
+    "id": "s0166",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "the film on saturday",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "hamish-fairweather"
+        ],
+        "date": "2026-08-20T20:04:00+01:00",
+        "read": true,
+        "text": "if i turn up at yours with crisps at 7 do i miss the start? couldn't open the thing you sent. copying harriet because i bet she got it too.",
+        "cc": [
+          "harriet-lowe"
+        ]
+      },
+      {
+        "from": "harriet-lowe",
+        "to": [
+          "me"
+        ],
+        "date": "2026-08-21T18:36:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nMine opened fine. It's a ticket for the 19:30 at the Marlow Picture Rooms, Screen 2, not Hamish's house. Did you get one?\n\nHarriet\n\nHarriet Lowe MCSP\nDalston Step Clinic, Dalston",
+        "cc": [
+          "hamish-fairweather"
+        ]
+      },
+      {
+        "from": "hamish-fairweather",
+        "to": [
+          "me",
+          "harriet-lowe"
+        ],
+        "date": "2026-08-22T10:46:00+01:00",
+        "read": true,
+        "text": "Dear all,\n\nThe address beneath my name was my address, which is the trouble with putting it beneath one's name.  The booking is indeed at the Marlow, at half past seven.  Bring the crisps to mine afterwards if you still have them.  We can spend twenty minutes working out what the last shot was meant to tell us.\n\nYours,\nHamish Fairweather"
+      },
+      {
+        "from": "me",
+        "to": [
+          "harriet-lowe",
+          "hamish-fairweather"
+        ],
+        "date": "2026-08-22T11:04:00+01:00",
+        "read": true,
+        "text": "marlow, screen 2. got it. crisps now have a separate itinerary."
+      }
+    ],
+    "truth": {
+      "summary": "Hamish clarified that his address was for after the film and the screening itself was at 19:30 in Screen 2 of the Marlow Picture Rooms.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-08-22",
+          "what": "Saturday film at 19:30."
+        }
+      ],
+      "facts": [
+        "Luis initially mistook Hamish's address for the venue.",
+        "Harriet already had a Screen 2 ticket."
+      ]
+    }
+  },
+  {
+    "id": "s0167",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Component reel for the pitch",
+    "folder": "Label_21",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "anil-joshi"
+        ],
+        "date": "2026-09-23T10:49:00+01:00",
+        "read": true,
+        "text": "Hey Anil,\n\nCan we show the keyboard-only clip from the component reel in the pitch? The cut I'm looking at is the one on this sheet.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example",
+        "attachments": [
+          {
+            "filename": "component-reel-shot-list-23sep.pdf",
+            "mime": "application/pdf",
+            "size": 103672
+          }
+        ]
+      },
+      {
+        "from": "anil-joshi",
+        "to": [
+          "me"
+        ],
+        "date": "2026-09-23T11:33:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nYes. Take the bit after `Tab` hits the jump link. The line before it still shows dummy copy.\n\nAnil"
+      },
+      {
+        "from": "me",
+        "to": [
+          "anil-joshi"
+        ],
+        "date": "2026-09-25T14:29:00+01:00",
+        "read": true,
+        "text": "Pitch is off. They pulled the brief this morning. Leave the reel where it is.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      }
+    ],
+    "truth": {
+      "summary": "Anil cleared the keyboard-only clip after the jump link, but the client pulled the pitch brief two days later.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-09-25",
+          "what": "Pitch cancelled after brief was pulled."
+        }
+      ],
+      "facts": [
+        "The line before the Tab jump link still showed dummy copy."
+      ]
+    }
+  },
+  {
+    "id": "s0168",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Do you still want the urn on Friday?",
+    "state": {
+      "inbox": true
+    },
+    "messages": [
+      {
+        "from": "jade-morris",
+        "to": [
+          "me"
+        ],
+        "date": "2026-09-25T14:41:00+01:00",
+        "read": true,
+        "text": "Hi Luis!\n\nThe hire place has asked whether to keep the tea urn on the quote for your Friday workshop. If there's a kettle in that room now, shall I take it out? It's £18. This is the Clerkenwell booking. The urn for the farm is on a different sheet.\n\nThanks,\nJade\n\nJade Morris | Events | Brindle & Pan Catering\nbrindleandpan.example | 07700 900 815"
+      }
+    ],
+    "truth": {
+      "summary": "Jade's question about removing the £18 tea urn from the Clerkenwell workshop quote received no follow-up.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "The question applied to the Clerkenwell workshop, and the farm urn was on a separate sheet."
+      ]
+    }
+  },
+  {
+    "id": "s0169",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "Grey tag on the spare",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "harriet-lowe",
+        "to": [
+          "me"
+        ],
+        "date": "2026-09-26T13:14:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nDid I leave the back-door key with you after the run? It's on a grey plastic tag with my initial scratched into it. I had it when I locked up, and I remember setting my bag down by the water jug when I went with you to pick up the crown receipt, so those are the two places I'm checking.\n\nHarriet\n\nHarriet Lowe MCSP\nDalston Step Clinic, Dalston"
+      },
+      {
+        "from": "me",
+        "to": [
+          "harriet-lowe"
+        ],
+        "date": "2026-09-26T14:02:00+01:00",
+        "read": true,
+        "text": "nothing in my bag. i saw something grey by the water jug at reception. thought it was a locker tag. i'll ask on monday."
+      },
+      {
+        "from": "me",
+        "to": [
+          "kerry-simmonds"
+        ],
+        "date": "2026-09-28T09:12:00+01:00",
+        "read": true,
+        "text": "Hi Kerry,\n\nDid anyone hand in a key on a grey tag with an H scratched on it on Saturday? My friend Harriet thinks she left it by the water jug when she came in with me. If it's there she'll pick it up herself.\n\nThanks,\nLuis",
+        "cc": [
+          "harriet-lowe"
+        ],
+        "subject": "Key left at reception on Saturday?"
+      },
+      {
+        "from": "kerry-simmonds",
+        "to": [
+          "me"
+        ],
+        "date": "2026-09-28T10:05:00+01:00",
+        "read": true,
+        "text": "Dear Mr Cordero,\n\nWe have one grey-tagged key in the drawer. Please ask Harriet to tell us the letter on the reverse when she collects it.\n\nKind regards,\n\nKerry Simmonds\nReception, Whitlock Cut Dental\n8 Wilton Way, London E8 1BG | 020 7946 0745\nPlease give 48 hours' notice of cancellations or a £35 fee applies."
+      },
+      {
+        "from": "harriet-lowe",
+        "to": [
+          "me"
+        ],
+        "date": "2026-09-29T18:12:00+01:00",
+        "read": true,
+        "text": "Got it. Tiny B on the back, for back door. I'd forgotten I'd done that.\n\nHarriet\n\nHarriet Lowe MCSP\nDalston Step Clinic, Dalston"
+      }
+    ],
+    "truth": {
+      "summary": "Harriet collected her missing back-door key from Whitlock Cut Dental after Luis asked reception to check the lost property.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [
+        {
+          "text": "Ask dental reception about the key.",
+          "kept": true,
+          "due": "2026-09-28"
+        }
+      ],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-09-29",
+          "what": "Harriet picked up the key on her way home."
+        }
+      ],
+      "facts": [
+        "The grey tag has an H on one side and a small B on the other.",
+        "Kerry kept the key in the reception drawer."
+      ]
+    }
+  },
+  {
+    "id": "s0170",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "the small matter of a dog",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "hamish-fairweather",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-04T15:14:00+01:00",
+        "read": true,
+        "text": "Dear Luis,\n\nI wonder if I could trouble you for a little help on the afternoon of the 24th.  A friend has asked me to have his dog while he's at a wedding.  I said yes before consulting the basket of cinema tickets in my desk, which I now discover contains a matinee booked in February.  In February I seem to have thought October would take care of itself.\n\nWhat I need, if you are about, is somebody to sit in the house for the time it takes to watch the film and get back.  The dog is Fig.  She's small, although she makes a noise you'd associate with something much bigger when the post comes.  She should have been out by the time you arrive.  There's no need to take her round Highbury yourself.  You can read, or put something on the television, if I can remember which remote belongs to it.  I expect to be back by five.\n\nYours,\nHamish Fairweather"
+      },
+      {
+        "from": "me",
+        "to": [
+          "hamish-fairweather"
+        ],
+        "date": "2026-10-05T18:33:00+01:00",
+        "read": true,
+        "text": "five is fine. when would you need me there? could do 2 if i go straight from the shops."
+      },
+      {
+        "from": "hamish-fairweather",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-07T19:24:00+01:00",
+        "read": true,
+        "text": "Dear Luis,\n\nTwo would be splendid if that's when Fig arrives.  My friend had first said before lunch and now says they may be coming by train, which in his messages appears to mean any time from half past one to three.  I would quite like you to meet her with him here, so she doesn't decide that you've come to take away the sofa.  Her rule is that the sofa is hers unless she is eating.\n\nYours,\nHamish Fairweather"
+      },
+      {
+        "from": "me",
+        "to": [
+          "hamish-fairweather"
+        ],
+        "date": "2026-10-09T16:16:00+01:00",
+        "read": true,
+        "text": "i can hold 2 to 5. can you check the drop-off and tell me when you know? if they're getting there at 3 i can't hang about for an hour first."
+      }
+    ],
+    "truth": {
+      "summary": "Luis can hold 14:00 to 17:00 on 24 October to sit with Fig, but is waiting for Hamish to confirm the dog's drop-off time.",
+      "ownerOwes": [],
+      "othersOwe": [
+        "Hamish Fairweather: confirm when Fig will arrive and tell Luis."
+      ],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-10-24",
+          "what": "Provisional dog-sitting, 14:00 to 17:00."
+        }
+      ],
+      "facts": [
+        "Fig is a friend's dog that Hamish agreed to mind during a wedding.",
+        "Hamish wants Fig and Luis to meet while her owner is there."
+      ]
+    }
+  },
+  {
+    "id": "s0171",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Can we move out of the barn before four?",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "rupert-ashdown",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-10T10:09:00+01:00",
+        "read": true,
+        "text": "Dear Luis,\n\nCould I ask you to check the attached room sheet? The barn is clear until four on Thursday the fifth. After that we need it empty for the dinner tables. I have your studio down for a planning session in there in the afternoon, and the sheet still says 16:30. The farmhouse sitting room is free, though it only seats ten once the door is open.\n\nWith kind regards,\nRupert Ashdown",
+        "attachments": [
+          {
+            "filename": "merefurrow-5-nov-room-sheet-v4.pdf",
+            "mime": "application/pdf",
+            "size": 78192
+          }
+        ]
+      },
+      {
+        "from": "me",
+        "to": [
+          "rupert-ashdown"
+        ],
+        "date": "2026-10-10T12:34:00+01:00",
+        "read": true,
+        "text": "Hi Rupert,\n\nWe'll finish planning at 15:45. The 16:30 hold was mine and we can drop it. Leave Friday's critique workshop on the room sheet.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "rupert-ashdown",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-10T13:07:00+01:00",
+        "read": true,
+        "text": "Dear Luis,\n\n15:45 it is. Friday stays.\n\nWith kind regards,\nRupert Ashdown"
+      }
+    ],
+    "truth": {
+      "summary": "Rupert changed the Merefurrow barn planning slot to end at 15:45 on 5 November and left Friday's critique workshop in place.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [
+        {
+          "text": "Finish the planning session in the barn by 15:45.",
+          "kept": false,
+          "due": "2026-11-05"
+        }
+      ],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-11-05",
+          "what": "Acme planning session ends at 15:45; barn needed empty at 16:00 for dinner setup."
+        },
+        {
+          "date": "2026-11-06",
+          "what": "Critique workshop unchanged."
+        }
+      ],
+      "facts": [
+        "The farmhouse sitting room seats ten with the door open.",
+        "The earlier barn hold ran to 16:30."
+      ]
+    }
+  },
+  {
+    "id": "s0172",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "Sunday gate tidy",
+    "state": {
+      "inbox": false
+    },
+    "listId": "residents.albioncourt.example",
+    "people": [
+      {
+        "id": "lenora-brigg-albion-volunteer",
+        "name": "Lenora Brigg",
+        "email": "lenora.brigg@gmail.com",
+        "relationship": "Albion Court residents list volunteer",
+        "lang": "en",
+        "timezone": "Europe/London",
+        "accounts": [
+          "personal"
+        ],
+        "facts": [],
+        "style": {
+          "register": "hands-on, explains why a notice matters",
+          "length": "three informal paragraphs",
+          "greeting": "Hello everyone,",
+          "signoff": "Lenora",
+          "signature": null,
+          "quoting": "bottom",
+          "quirks": []
+        }
+      }
+    ],
+    "messages": [
+      {
+        "from": "lenora-brigg-albion-volunteer",
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-07T19:07:00+01:00",
+        "read": true,
+        "text": "Hello everyone,\n\nDoes anyone have a pair of long-handled shears they could bring down on Sunday the 11th? The bit behind the bin gate has come right through the slats again. I'd rather do it while the bins are empty, so I'm thinking eleven in the morning if the truck has been by then. We could put the trimmings in the green sacks left from last time. There are some in the little cupboard off the stairs, with the roll of brown paper that nobody has claimed.\n\nI stuck a note up by the door this morning and then took it down again because it sounded as if the whole yard would be closed. The gate can stay open while we do the cutting. If you've got something arriving round then, just tell the driver to use the usual entrance. It took two of us about half an hour last time, including the bit where we stood on the pavement trying to remember whose shears they were.\n\nLenora"
+      },
+      {
+        "from": "tariq-hussain",
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-08T18:36:00+01:00",
+        "read": true,
+        "text": "alright\ncan drop shears before 11 if you still need them\nT"
+      },
+      {
+        "from": "lenora-brigg-albion-volunteer",
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-09T16:42:00+01:00",
+        "read": true,
+        "text": "Please keep the shears at home, Tariq. The agent has someone down to cut it back when they do the gutters. I saw the name on the sheet this afternoon. I've taken Sunday off the board and written CANCELLED where the first notice was. If you come down at eleven you'll just find me waiting for a bus.\n\nLenora",
+        "subject": "Re: Sunday gate tidy / cancelled"
+      },
+      {
+        "from": "me",
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-09T19:22:00+01:00",
+        "read": true,
+        "text": "could someone take me off this list next time they're in the settings? moved in june. hope the gate actually shuts this time"
+      },
+      {
+        "from": "lenora-brigg-albion-volunteer",
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-14T19:02:00+01:00",
+        "read": true,
+        "text": "Noted, Luis. Kerry looks after the list settings, so I've passed it on to her. She does them all in one go every few weeks, mind.\n\nLenora"
+      }
+    ],
+    "truth": {
+      "summary": "Lenora cancelled the 11 October gate tidy because the agent had arranged the work and passed Luis's request to be taken off the list to Kerry, who looks after its settings; he is still on it.",
+      "ownerOwes": [],
+      "othersOwe": [
+        "Kerry: take Luis off the residents' list"
+      ],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-10-11",
+          "what": "Cancelled 11:00 gate tidy."
+        },
+        {
+          "date": "2026-10-14",
+          "what": "Lenora passed Luis's request to come off the list to Kerry."
+        }
+      ],
+      "facts": [
+        "The agent arranged for the vegetation to be cut back during the gutter work.",
+        "Luis left in June.",
+        "Kerry looks after the residents' list settings; Luis was still on the list at the anchor."
+      ]
+    }
+  },
+  {
+    "id": "s0173",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "water by the bend",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "harriet-lowe"
+        ],
+        "date": "2026-10-12T19:26:00+01:00",
+        "read": true,
+        "text": "do you have the shot just after this one? it's the one where the swan's turned round. thought i could print it without the bin in the corner but the bin is basically the whole photo.",
+        "attachments": [
+          {
+            "filename": "lea-bend-11oct-1623.jpg",
+            "mime": "image/jpeg",
+            "size": 2291008
+          }
+        ]
+      },
+      {
+        "from": "harriet-lowe",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-14T10:17:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nI've got another one but the swan's gone altogether. You can see the bin and my thumb quite nicely. Josh had his phone out at that point if you happen to ask him.\n\nHarriet\n\nHarriet Lowe MCSP\nDalston Step Clinic, Dalston"
+      }
+    ],
+    "truth": {
+      "summary": "Harriet did not have the next swan shot Luis wanted and suggested Josh might have it, but neither followed up.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "Luis's attached photo was taken at the bend of the Lea and had a bin in the corner.",
+        "Harriet's other frame has no swan."
+      ]
+    }
+  },
+  {
+    "id": "s0174",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Reference for Ewan Pritchard",
+    "state": {
+      "inbox": true
+    },
+    "people": [
+      {
+        "id": "bethan-pike-bracken-reference",
+        "name": "Bethan Pike",
+        "email": "bethan@brackensignal.example",
+        "relationship": "hiring manager requesting a reference",
+        "lang": "en",
+        "timezone": "Europe/London",
+        "accounts": [
+          "acme"
+        ],
+        "facts": [],
+        "style": {
+          "register": "plain and careful about who can see a reference",
+          "length": "two short paragraphs",
+          "greeting": "Hello Luis,",
+          "signoff": "Bethan",
+          "signature": "Bethan Pike\nProduction Lead, Bracken Signal\nbrackensignal.example",
+          "quoting": "bottom",
+          "quirks": []
+        }
+      }
+    ],
+    "messages": [
+      {
+        "from": "bethan-pike-bracken-reference",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-15T10:21:00+01:00",
+        "read": true,
+        "text": "Hello Luis,\n\nEwan Pritchard gave me your name as someone who worked with him on the Dock Street kiosk. He has applied for a production role with us. Could I ring you for ten minutes next week? I'd like to ask how he handed over to the installation crew.\n\nI can call from the office number if that's easier to recognise.\n\nBethan\n\nBethan Pike\nProduction Lead, Bracken Signal\nbrackensignal.example"
+      },
+      {
+        "from": "me",
+        "to": [
+          "bethan-pike-bracken-reference"
+        ],
+        "date": "2026-10-15T13:51:00+01:00",
+        "read": true,
+        "text": "Hi Bethan,\n\nI can speak about the kiosk. Send me the request with his written consent first, please. I can do Monday from 12 to 12:30 if that works.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      }
+    ],
+    "truth": {
+      "summary": "Luis offered a Monday window for Ewan Pritchard's reference call and asked Bethan for Ewan's written consent first.",
+      "ownerOwes": [],
+      "othersOwe": [
+        "Bethan Pike: send Ewan's written consent and confirm a time if the call is still needed."
+      ],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-10-19",
+          "what": "Offered reference call window, 12:00 to 12:30."
+        }
+      ],
+      "facts": [
+        "Bethan wanted to ask about Ewan's handover to the Dock Street kiosk installation crew."
+      ]
+    }
+  },
+  {
+    "id": "s0175",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "client",
+      "work"
+    ],
+    "subject": "Where to bring the test dock now",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "dan-whelan",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-19T08:18:00+01:00",
+        "read": true,
+        "text": "Hi Luis\n\nWe've moved out of the ops room at Mallow Lane. We used to wheel the test parts in through the rider gate there. Can we drop the spare casing at Turnmill instead while the move's on? It's the one from dock H17 with the sticker over the worn button.\n\nDan"
+      },
+      {
+        "from": "me",
+        "to": [
+          "dan-whelan"
+        ],
+        "date": "2026-10-19T10:46:00+01:00",
+        "read": true,
+        "text": "Hi Dan,\n\nTurnmill works if we use the back door. Hold it for now though. I'll check whether our goods lift is back on before we give you a day.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      }
+    ],
+    "truth": {
+      "summary": "Dan asked to bring the spare H17 dock casing to Acme during the ops-room move and Luis asked him to hold it until the goods lift is checked.",
+      "ownerOwes": [
+        "Check the Turnmill Street goods lift and give Dan a drop-off day."
+      ],
+      "othersOwe": [],
+      "promisesByOwner": [
+        {
+          "text": "Check whether Acme's goods lift is working again before confirming a day.",
+          "kept": false
+        }
+      ],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "The casing is from dock H17 and has a sticker over the worn button.",
+        "If agreed, the drop-off will use Acme's back door."
+      ]
+    }
+  },
+  {
+    "id": "s0176",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "The unlock fallback when motion is off",
+    "state": {
+      "inbox": true
+    },
+    "messages": [
+      {
+        "from": "gabriel-santos",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-15T14:24:00+01:00",
+        "read": true,
+        "text": "Hey Luis!\n\nI've got the still version of the dock unlock running here https://prototype.acme.example/tandem/still-unlock\n\nI put the two states next to each other in the PDF because they look almost identical when you're standing in the sun. The timer stops, but the ring stays where it is. On attempt two it can look like nothing happened. Which frame should I treat as the start of the retry?\n\nGabi",
+        "attachments": [
+          {
+            "filename": "Tandem-still-unlock-frames-A-B.pdf",
+            "mime": "application/pdf",
+            "size": 328247
+          }
+        ]
+      },
+      {
+        "from": "me",
+        "to": [
+          "gabriel-santos"
+        ],
+        "date": "2026-10-16T11:57:00+01:00",
+        "read": true,
+        "text": "Hey Gabi,\n\nUse B when the dock hasn't responded. Keep A as it is for now.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "me",
+        "to": [
+          "gabriel-santos"
+        ],
+        "date": "2026-10-16T12:04:00+01:00",
+        "read": true,
+        "text": "Also leave the timer visible for now.\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "gabriel-santos",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-20T09:13:00+01:00",
+        "read": true,
+        "text": "Hey Luis!\n\nB is in the link now. The two captions in blue are still my placeholder text. Can you mark up those two frames with the actual wording for waiting and retry? If I have them by Monday I can fit them before the readout on Wednesday 28th.\n\nGabi"
+      },
+      {
+        "from": "me",
+        "to": [
+          "gabriel-santos"
+        ],
+        "date": "2026-10-21T16:38:00+01:00",
+        "read": true,
+        "text": "I'll get the marked-up PDF with the waiting and retry wording to you by noon on Monday. Keep the blue captions in the prototype till then so we can see where the lines wrap.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      }
+    ],
+    "truth": {
+      "summary": "Luis chose frame B for the Tandem dock retry and promised Gabriel a PDF with final waiting and retry copy by noon on 26 October.",
+      "ownerOwes": [
+        "Send Gabriel the marked-up waiting and retry frames as a PDF by noon London time on 26 October."
+      ],
+      "othersOwe": [],
+      "promisesByOwner": [
+        {
+          "text": "Send the marked-up PDF with final waiting and retry captions by noon London time.",
+          "kept": false,
+          "due": "2026-10-26"
+        }
+      ],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-10-26T12:00:00+00:00",
+          "what": "Luis's deadline for sending the marked-up PDF."
+        },
+        {
+          "date": "2026-10-28",
+          "what": "Wednesday readout Gabriel is preparing for."
+        }
+      ],
+      "facts": [
+        "Frame B is used when the dock has not responded. Frame A stays as it is and the timer stays visible for now.",
+        "Gabriel's blue captions stay in the prototype in the meantime so the team can see where the lines wrap."
+      ]
+    }
+  },
+  {
+    "id": "s0177",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "Have you still got the little phone stand?",
+    "state": {
+      "inbox": true
+    },
+    "messages": [
+      {
+        "from": "harriet-lowe",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-22T15:18:00+01:00",
+        "read": false,
+        "text": "Hi Luis,\n\nCould I borrow your little phone stand on Tuesday? I need to film the clinic's step-down exercise from the side. The one we've borrowed from reception tips as soon as I tilt the phone past about forty-five degrees.\n\nI've attached a photo of the clamp on ours that keeps slipping. The one I remember you using had a screw at the back. Is that the one you've still got?\n\nHarriet\n\nHarriet Lowe MCSP\nDalston Step Clinic, Dalston"
+      }
+    ],
+    "truth": {
+      "summary": "Harriet asked whether she can borrow Luis's screw-back phone stand on Tuesday to film a step-down exercise from the side.",
+      "ownerOwes": [
+        "Confirm whether his stand has a screw at the back and whether Harriet can borrow it on 27 October."
+      ],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-10-27",
+          "what": "Day Harriet wants to borrow the stand."
+        }
+      ],
+      "facts": [
+        "The clinic's borrowed stand tips past roughly 45 degrees.",
+        "Harriet says she attached a photo of the slipping clamp, but nothing is attached."
+      ]
+    }
+  }
+]

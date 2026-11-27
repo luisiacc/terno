@@ -1,0 +1,2870 @@
+[
+ {
+  "id": "s0418",
+  "account": "acme",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Mina Hart's invoice",
+  "folder": "Label_21",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "me",
+    "to": [
+     "anil-joshi",
+     "kasia-zielinska"
+    ],
+    "date": "2025-03-18T10:42:00+00:00",
+    "read": true,
+    "text": "Hey both,\n\nMina Hart's invoice for the Brightwell icons has come in at 6 days at £380, so £2,280. I signed off 4 days for the set. Did either of you ask her for extra work? It's over £2,000 so it goes to Philippa, and I don't want to send it until it adds up.\n\nThanks,\nLuis\n\nLuis Cordero\nSenior Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "anil-joshi",
+    "to": [
+     "me"
+    ],
+    "cc": [
+     "kasia-zielinska"
+    ],
+    "date": "2025-03-18T11:15:00+00:00",
+    "read": true,
+    "text": "Hi Luis,\n\nNot me, as far as I know. What I asked her for was a re-export, not new icons:\n- the 24 icons as one SVG sprite instead of loose files\n- `currentColor` on the strokes so they pick up the theme\n\nThat took her maybe half an hour and she said she wouldn't bill it. Could the extra days be the donate icons? That was Kasia's corner.\n\nAnil"
+   },
+   {
+    "from": "kasia-zielinska",
+    "to": [
+     "me"
+    ],
+    "cc": [
+     "anil-joshi"
+    ],
+    "date": "2025-03-18T13:03:00+00:00",
+    "read": true,
+    "text": "Luis - yes, mine. The trustees' donate button in January needed a heart, a coin and a gift icon in three sizes. I asked Mina for 2 extra days and logged it in the change log on 22 Jan. Should have told you directly.\nK."
+   },
+   {
+    "from": "me",
+    "to": [
+     "kasia-zielinska"
+    ],
+    "cc": [
+     "anil-joshi"
+    ],
+    "date": "2025-03-18T13:20:00+00:00",
+    "read": true,
+    "text": "Found it in the log. My fault for not reading it. Approving and sending to Philippa now.\n\nThanks,\nLuis\n\nLuis Cordero\nSenior Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   }
+  ],
+  "truth": {
+   "summary": "Luis queried a contractor's invoice for the Brightwell icons (6 days billed, 4 signed off); Kasia explained she had asked for 2 extra days in January for the donate icons, so Luis approved it and sent it to Philippa.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2025-01-22",
+     "what": "Kasia logged the extra 2 days for the donate icons in the change log"
+    },
+    {
+     "date": "2025-03-18",
+     "what": "Invoice queried and approved"
+    }
+   ],
+   "facts": [
+    "Mina Hart billed 6 days at £380 a day, £2,280, for the Brightwell icon set.",
+    "Luis had signed off 4 days.",
+    "Invoices over £2,000 go to Philippa.",
+    "Anil asked Mina only for a re-export: the 24 icons as one SVG sprite with currentColor strokes, not billed.",
+    "The 2 extra days were Kasia's: heart, coin and gift icons in three sizes for the trustees' donate button, asked for in January 2025."
+   ]
+  }
+ },
+ {
+  "id": "s0419",
+  "account": "acme",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "seeing a press run",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "gabriel-santos",
+    "to": [
+     "me"
+    ],
+    "date": "2025-09-04T17:48:00+01:00",
+    "read": true,
+    "text": "Hey Luis!\n\nThanks for today's session. I keep thinking about what you said, that I design for screens and then get surprised by paper. Those Tandem pitch boards proved it.\n\nYou mentioned you know someone at the printer in Bow? I'd love to watch a job actually go through, even for an hour. Any morning except Wednesdays (motion review).\n\nGabi"
+   },
+   {
+    "from": "me",
+    "to": [
+     "terry-nolan"
+    ],
+    "cc": [
+     "gabriel-santos"
+    ],
+    "date": "2025-09-05T09:12:00+01:00",
+    "read": true,
+    "text": "Hi Terry,\n\nOdd request. Could Gabriel from my team watch a job go through at Bow one morning? He does motion for us and wants to see what happens to a file once we send it over. He’ll stay out of the way and bring biscuits.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "terry-nolan",
+    "to": [
+     "me"
+    ],
+    "cc": [
+     "gabriel-santos"
+    ],
+    "date": "2025-09-08T07:41:00+01:00",
+    "read": true,
+    "text": "Can do.\nMornings only, 9 till 12.\nTuesdays best, the five-colour's on a long run.\nClosed shoes.\nNo biscuits with icing, it gets in everything.\n\nTerry\n\nTerry Nolan\nFold & Bind Print | Unit 7, Bow Industrial Park, E3\n020 7946 0277"
+   },
+   {
+    "from": "gabriel-santos",
+    "to": [
+     "terry-nolan"
+    ],
+    "cc": [
+     "me"
+    ],
+    "date": "2025-09-08T09:30:00+01:00",
+    "read": true,
+    "text": "Amazing, thank you Terry! Would Tuesday the 16th or the 23rd be better?\n\nGabi"
+   },
+   {
+    "from": "terry-nolan",
+    "to": [
+     "gabriel-santos"
+    ],
+    "cc": [
+     "me"
+    ],
+    "date": "2025-09-10T07:55:00+01:00",
+    "read": true,
+    "text": "23rd.\n9 sharp, ask for me at the yard gate.\nBring a job that went wrong if you've got one.\n\nTerry\n\nTerry Nolan\nFold & Bind Print | Unit 7, Bow Industrial Park, E3\n020 7946 0277"
+   },
+   {
+    "from": "me",
+    "to": [
+     "gabriel-santos"
+    ],
+    "date": "2025-09-10T12:05:00+01:00",
+    "read": true,
+    "text": "Take last year's Brightwell cover, the one with the wrong Pantone. Terry will love that (he won't). Tell me how it went at our session on the 25th.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   }
+  ],
+  "truth": {
+   "summary": "After a mentoring session Gabriel asked to see a print job; Luis asked Terry at Fold & Bind, and it was decided Gabriel visits the Bow works on Tuesday 23 September 2025 at 9am.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2025-09-04",
+     "what": "Mentoring session between Luis and Gabriel"
+    },
+    {
+     "date": "2025-09-23",
+     "what": "Gabriel's morning at Fold & Bind, 9am, yard gate"
+    },
+    {
+     "date": "2025-09-25",
+     "what": "Luis and Gabriel's next mentoring session"
+    }
+   ],
+   "facts": [
+    "Gabriel can do any morning except Wednesdays, when he has motion review.",
+    "Terry takes visitors mornings only, 9 till 12, Tuesdays best; closed shoes; no iced biscuits.",
+    "Gabriel should ask for Terry at the yard gate and bring a job that went wrong.",
+    "Luis suggested he bring the 2024 Brightwell cover printed with the wrong Pantone."
+   ]
+  }
+ },
+ {
+  "id": "s0420",
+  "account": "acme",
+  "storyline": "acme-offsite-2025",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Margate programme: draft for you three",
+  "folder": "Label_23",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "natasha-whyte",
+    "to": [
+     "jonathan-ellery",
+     "priya-raman",
+     "me"
+    ],
+    "date": "2025-10-06T09:05:00+01:00",
+    "read": true,
+    "text": "Hi all,\n\nDraft programme for MARGATE attached, before it goes to the whole studio. Hotel is confirmed: THE TIDEWELL, 22 MARINE TERRACE, 6-7 NOVEMBER, 19 rooms, mostly twins. Train out THURSDAY 6TH from St Pancras at 09:12.\n\nWhat I need from you three:\n- Jonathan: is the state of the studio 45 minutes or an hour?\n- Priya and Luis: the design session, who runs it and how long\n- everyone: is the FRIDAY 09:30 seal trip a yes? £28 a head, 34 people\n\nAnswers by FRIDAY 10 OCTOBER please, the boat wants numbers.\n\nTash\n\nNatasha Whyte\nStudio Operations Manager, Acme Studio\nacme.example",
+    "attachments": [
+     {
+      "filename": "Margate_offsite_programme_draft_v1.pdf",
+      "mime": "application/pdf",
+      "size": 214388
+     }
+    ]
+   },
+   {
+    "from": "jonathan-ellery",
+    "to": [
+     "natasha-whyte",
+     "priya-raman",
+     "me"
+    ],
+    "date": "2025-10-06T11:20:00+01:00",
+    "read": true,
+    "text": "Hi all,\n\nTandem City signed a year's retainer on 26 August, and when I asked Chiara what tipped it she said it was watching us take apart our own dock concept in front of her. That's why I'd like the Thursday afternoon to be about how we review work, not about me.\n\nSo: 45 minutes for the state of the studio is plenty. Luis, would you run the design session? An hour, Thursday at 16:00, ahead of dinner.\n\nSeals are a yes, if it isn't pouring.\n\nJonathan\n\nJonathan Veyland\nFounder & Managing Director\nAcme Studio | 3rd floor, 48 Turnmill Street, London EC1M 5RR\n+44 20 7946 0500\nFor Acme Studio project correspondence only."
+   },
+   {
+    "from": "priya-raman",
+    "to": [
+     "natasha-whyte",
+     "jonathan-ellery",
+     "me"
+    ],
+    "date": "2025-10-06T12:02:00+01:00",
+    "read": true,
+    "text": "Hi Tash,\n\n- Luis runs it; I'll back him up from the floor\n- 60 minutes is right, any longer and people drift\n- seals: yes from me\n\nP\n\nPriya Raman\nDesign Director, Acme Studio\nacme.example"
+   },
+   {
+    "from": "me",
+    "to": [
+     "natasha-whyte",
+     "jonathan-ellery",
+     "priya-raman"
+    ],
+    "date": "2025-10-06T14:40:00+01:00",
+    "read": true,
+    "text": "Happy to. I'll call it a critique hour: three pieces of real work, ten minutes each, then fifteen minutes on what we'd change about how we review. I'll send Jonathan an outline before the 24th.\n\nSeals: yes.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "natasha-whyte",
+    "to": [
+     "jonathan-ellery",
+     "priya-raman",
+     "me"
+    ],
+    "date": "2025-10-09T16:12:00+01:00",
+    "read": true,
+    "text": "Hi all,\n\nBad news on the seals. The boat stops running on 31 OCTOBER for the winter and they forgot to say when they quoted. So the FRIDAY 09:30 seal trip is CANCELLED. We hadn't paid a deposit, so nothing lost.\n\nIn its place: a walk along the front at 09:30, CHECKOUT BY 11:00. Updated programme attached. It goes to everyone on Monday.\n\nTash\n\nNatasha Whyte\nStudio Operations Manager, Acme Studio\nacme.example",
+    "attachments": [
+     {
+      "filename": "Margate_offsite_programme_draft_v2.pdf",
+      "mime": "application/pdf",
+      "size": 216910
+     }
+    ]
+   },
+   {
+    "from": "jonathan-ellery",
+    "to": [
+     "natasha-whyte",
+     "priya-raman",
+     "me"
+    ],
+    "date": "2025-10-09T17:34:00+01:00",
+    "read": true,
+    "text": "Shame. The walk is fine; I'll bring the big umbrella.\n\nJonathan\n\nJonathan Veyland\nFounder & Managing Director\nAcme Studio | 3rd floor, 48 Turnmill Street, London EC1M 5RR\n+44 20 7946 0500\nFor Acme Studio project correspondence only."
+   },
+   {
+    "from": "natasha-whyte",
+    "to": [
+     "jonathan-ellery",
+     "priya-raman",
+     "me"
+    ],
+    "date": "2025-10-09T17:51:00+01:00",
+    "read": true,
+    "text": "For the walk: leave your bags at reception before we go.\n\nTash\n\nNatasha Whyte\nStudio Operations Manager, Acme Studio\nacme.example"
+   },
+   {
+    "from": "priya-raman",
+    "to": [
+     "me"
+    ],
+    "date": "2025-10-10T08:50:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nFor the critique hour, put one of Hollie's pieces in. She's ready to have her work looked at in front of the studio and it'll do her good.\n\nP\n\nPriya Raman\nDesign Director, Acme Studio\nacme.example"
+   },
+   {
+    "from": "me",
+    "to": [
+     "priya-raman"
+    ],
+    "date": "2025-10-10T09:15:00+01:00",
+    "read": true,
+    "text": "Good idea. The Tandem dock map, probably. I'll ask her today.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   }
+  ],
+  "truth": {
+   "summary": "Natasha circulated the draft programme for the Margate offsite (6-7 November 2025 at The Tidewell); Luis agreed to run an hour-long critique hour on Thursday at 16:00, and the Friday seal trip was cancelled because the boat stops on 31 October.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [
+    {
+     "text": "Send Jonathan an outline of the critique hour before the 24th",
+     "due": "2025-10-24",
+     "kept": true
+    },
+    {
+     "text": "Ask Hollie today about presenting",
+     "due": "2025-10-10",
+     "kept": true
+    }
+   ],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2025-10-10",
+     "what": "Natasha's deadline for answers"
+    },
+    {
+     "date": "2025-10-31",
+     "what": "The seal boat stops running for the winter"
+    },
+    {
+     "date": "2025-11-06",
+     "what": "Train out from St Pancras at 09:12; original critique slot Thursday at 16:00"
+    },
+    {
+     "date": "2025-11-07",
+     "what": "Walk along the front 09:30 (replaces the seal trip); checkout by 11:00"
+    }
+   ],
+   "facts": [
+    "Hotel: The Tidewell, 22 Marine Terrace, Margate; 19 rooms, mostly twins.",
+    "34 people were going.",
+    "The seal trip would have cost £28 a head; no deposit had been paid.",
+    "Jonathan's state of the studio is 45 minutes.",
+    "Tandem City signed a year's retainer on 26 August 2025.",
+    "Luis's session: three pieces of work, ten minutes each, then fifteen minutes on how the studio reviews.",
+    "Priya suggested including one of Hollie's pieces; Luis thought of the Tandem dock map."
+   ]
+  }
+ },
+ {
+  "id": "s0421",
+  "account": "acme",
+  "storyline": "acme-offsite-2025",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Critique hour outline",
+  "folder": "Label_23",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "me",
+    "to": [
+     "jonathan-ellery"
+    ],
+    "date": "2025-10-21T10:05:00+01:00",
+    "read": true,
+    "text": "Hi Jonathan,\n\nOutline for the critique hour attached. Short version: three pieces, ten minutes each, the presenter talks for two minutes and then stays quiet while the room works on it, and we finish with fifteen minutes on what we'd change about our own reviews.\n\nHollie said yes to the Tandem dock map. Anil has the Brightwell donate flow and Gabi is bringing his Tandem unlock prototype.\n\nOne question: are you happy for the work to go up with client names on? Brightwell is fine, I asked Helen. Tandem I'd rather check with you first.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example",
+    "attachments": [
+     {
+      "filename": "critique-hour-outline.pdf",
+      "mime": "application/pdf",
+      "size": 98214
+     }
+    ]
+   },
+   {
+    "from": "jonathan-ellery",
+    "to": [
+     "me"
+    ],
+    "date": "2025-10-22T19:40:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nWhen Brightwell's site went live in March, Helen's first note to me said \"we finally argue about the right things\". That's what I'd like people to take home from your hour, and the outline gets there.\n\nPresenters are fine. Brightwell with its name, yes. Tandem I'd rather ask Chiara myself than assume; I'll try to get an answer by Friday.\n\nJonathan\n\nJonathan Veyland\nFounder & Managing Director\nAcme Studio | 3rd floor, 48 Turnmill Street, London EC1M 5RR\n+44 20 7946 0500\nFor Acme Studio project correspondence only."
+   },
+   {
+    "from": "jonathan-ellery",
+    "to": [
+     "me"
+    ],
+    "date": "2025-10-24T17:55:00+01:00",
+    "read": true,
+    "text": "Luis, Chiara is away until Tuesday and I haven't reached her. Prepare the Tandem pieces with the name blanked out for now and I'll let you know when I've got a yes or no.\n\nJonathan\n\nJonathan Veyland\nFounder & Managing Director\nAcme Studio | 3rd floor, 48 Turnmill Street, London EC1M 5RR\n+44 20 7946 0500\nFor Acme Studio project correspondence only."
+   },
+   {
+    "from": "me",
+    "to": [
+     "jonathan-ellery"
+    ],
+    "date": "2025-10-24T18:20:00+01:00",
+    "read": true,
+    "text": "Will do, name blanked until I hear from you.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   }
+  ],
+  "truth": {
+   "summary": "Jonathan approved Luis’s Margate critique outline and asked him to prepare the slides with Tandem’s name blanked out while he checked with Chiara, who later gave permission.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [
+    {
+     "who": "jonathan-ellery",
+     "text": "Confirm whether Tandem work can be shown in full",
+     "kept": true
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2025-10-21",
+     "what": "Outline sent"
+    },
+    {
+     "date": "2025-10-28",
+     "what": "Chiara back from being away (Tuesday)"
+    }
+   ],
+   "facts": [
+    "Presenters: Hollie (Tandem dock map), Anil (Brightwell donate flow), Gabriel (Tandem unlock prototype).",
+    "Format: presenter talks for two minutes then stays quiet; fifteen minutes at the end on the studio's own reviews.",
+    "Helen agreed Brightwell's work can be shown with its name.",
+    "Helen once wrote to Jonathan: \"we finally argue about the right things\".",
+    "Attachment: critique-hour-outline.pdf."
+   ]
+  }
+ },
+ {
+  "id": "s0422",
+  "account": "acme",
+  "storyline": "acme-offsite-2025",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Critique hour to Friday?",
+  "folder": "Label_23",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "jonathan-ellery",
+    "to": [
+     "me"
+    ],
+    "date": "2025-11-04T18:10:00+00:00",
+    "read": true,
+    "text": "Hi Luis,\n\nChiara says yes: Tandem can go up in full, name and all.\n\nSeparate thing. Could we move the critique hour from Thursday 16:00 to Friday 10:00? Thursday afternoon is overfull, and Tash has the sun room free Friday morning. Anyone doing the walk at half nine can peel off early.\n\nJonathan\n\nJonathan Veyland\nFounder & Managing Director\nAcme Studio | 3rd floor, 48 Turnmill Street, London EC1M 5RR\n+44 20 7946 0500\nFor Acme Studio project correspondence only."
+   },
+   {
+    "from": "me",
+    "to": [
+     "jonathan-ellery"
+    ],
+    "date": "2025-11-04T18:32:00+00:00",
+    "read": true,
+    "text": "Friday 10:00 works. I'll tell Hollie, Anil and Gabriel.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "jonathan-ellery",
+    "to": [
+     "me"
+    ],
+    "date": "2025-11-07T21:15:00+00:00",
+    "read": true,
+    "text": "Two people asked on the coach if we could do crit like that every month. Thanks for getting all three presenters there for ten. Hope you got home all right after the train was cancelled. We can forget the karaoke ever happened.\n\nJonathan\n\nJonathan Veyland\nFounder & Managing Director\nAcme Studio | 3rd floor, 48 Turnmill Street, London EC1M 5RR\n+44 20 7946 0500\nFor Acme Studio project correspondence only."
+   }
+  ],
+  "truth": {
+   "summary": "Chiara agreed Tandem’s work could be shown at the Margate offsite. The critique hour moved from Thursday 16:00 to Friday 10:00 in the sun room, and Jonathan heard requests for a monthly crit afterwards.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [
+    {
+     "text": "Tell Hollie, Anil and Gabriel about the new time",
+     "kept": true
+    }
+   ],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2025-11-07",
+     "what": "Critique hour, Friday 10:00, sun room"
+    }
+   ],
+   "facts": [
+    "Chiara approved showing Tandem City's work with its name.",
+    "The session moved because Thursday afternoon was overfull.",
+    "The train home was cancelled on 7 November and the group took a coach."
+   ]
+  }
+ },
+ {
+  "id": "s0423",
+  "account": "acme",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Intro: Rupert Ashdown, Merefurrow Farm",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "zainab-bello",
+    "to": [
+     "me",
+     "rupert-ashdown"
+    ],
+    "date": "2026-03-24T10:20:00+00:00",
+    "read": true,
+    "text": "Hi Luis,\n\nIntroducing Rupert Ashdown, who owns Merefurrow Farm near Faversham. I was at a wedding there in September and spent most of the evening talking to him about his website, which he describes as \"a brochure that answers the phone badly\". He wants a site that takes enquiries for retreats and small weddings properly.\n\nRupert, Luis leads product design at Acme and is far better at this than I am at ceilidh dancing.\n\nZ\n\nZainab Bello\nContent Designer, Acme Studio\nacme.example"
+   },
+   {
+    "from": "rupert-ashdown",
+    "to": [
+     "me"
+    ],
+    "cc": [
+     "zainab-bello"
+    ],
+    "date": "2026-03-24T16:45:00+00:00",
+    "read": true,
+    "text": "Dear Luis,\n\nIt is good of you to look at this, and thank you, Zainab, for the introduction and for the dancing, which was braver than you make out.\n\nThe farm has a converted barn that seats sixty and fourteen bedrooms between the farmhouse and the old dairy. At present every enquiry comes by telephone, and I lose a good many between half past six and nine in the evening, when I am out with the animals and the house is empty. The website was put together by my nephew in 2014; he has since moved to Vancouver and I have not had the heart to touch it.\n\nWhat I should like is simple enough: people able to see which dates are free, ask for a quotation, and read what we can and cannot do without ringing me. I attach our brochure and a few photographs, so you can see what we are working with.\n\nI should be glad to talk whenever suits you.\n\nWith kind regards, Rupert Ashdown",
+    "attachments": [
+     {
+      "filename": "Merefurrow_brochure_2025.pdf",
+      "mime": "application/pdf",
+      "size": 4182233
+     },
+     {
+      "filename": "barn_interior.jpg",
+      "mime": "image/jpeg",
+      "size": 2264190
+     },
+     {
+      "filename": "farmhouse_from_the_east.jpg",
+      "mime": "image/jpeg",
+      "size": 2810457
+     }
+    ]
+   },
+   {
+    "from": "me",
+    "to": [
+     "rupert-ashdown"
+    ],
+    "cc": [
+     "zainab-bello"
+    ],
+    "date": "2026-03-25T09:30:00+00:00",
+    "read": true,
+    "text": "Hi Rupert,\n\nI'll check with Fiona, who handles new work here, and get back to you next week. A site this size might be a better fit for a smaller studio.\n\nThe photos are lovely. Separately, the studio is looking for somewhere to take about 38 people for two days this autumn. Do you take groups that size, and roughly what would it cost?\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "zainab-bello",
+    "to": [
+     "me"
+    ],
+    "date": "2026-03-25T09:52:00+00:00",
+    "read": true,
+    "text": "Ha, I was about to suggest the offsite. Tash has been complaining about seaside prices since January.\n\nZ\n\nZainab Bello\nContent Designer, Acme Studio\nacme.example"
+   },
+   {
+    "from": "rupert-ashdown",
+    "to": [
+     "me"
+    ],
+    "cc": [
+     "zainab-bello"
+    ],
+    "date": "2026-03-27T11:05:00+00:00",
+    "read": true,
+    "text": "Dear Luis,\n\nWe do. For thirty-eight I would put twenty-eight in the farmhouse and the dairy, two to a room, and the other ten at the inn in the village, which is a five-minute walk down the lane. A usual two-day arrangement runs like this:\n\nDay one\n10:30 arrival, coffee in the barn\n13:00 lunch\n19:30 dinner\n\nDay two\n08:00 breakfast\n12:30 lunch\n15:00 departure\n\nFor October or November the cost would be in the region of £8,400 for the two days, everything but the wine. I hold a date against a deposit of £2,000.\n\nDo let me know about the website once you have spoken to Fiona. I am in no great hurry, but I should like something better in place before next year's wedding season.\n\nWith kind regards, Rupert Ashdown"
+   }
+  ],
+  "truth": {
+   "summary": "Zainab introduced Rupert Ashdown of Merefurrow Farm, who wants a new website that takes enquiries; Luis promised to check with Fiona and say the next week whether Acme would take it, and asked about the farm for a 38-person studio offsite, which Rupert priced at about £8,400. Luis hasn't answered about the website.",
+   "ownerOwes": [
+    "Tell Rupert whether Acme will take on the website, after talking to Fiona"
+   ],
+   "othersOwe": [],
+   "promisesByOwner": [
+    {
+     "text": "Talk to Fiona and come back to Rupert next week on whether the website is an Acme job",
+     "kept": false
+    }
+   ],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-03-24",
+     "what": "Zainab's introduction"
+    }
+   ],
+   "facts": [
+    "Merefurrow Farm is near Faversham: a converted barn seating sixty and fourteen bedrooms in the farmhouse and the old dairy.",
+    "The current website was built by Rupert's nephew in 2014; the nephew now lives in Vancouver.",
+    "Rupert loses enquiries between half past six and nine in the evening, when he is out with the animals.",
+    "Zainab met Rupert at a wedding at the farm in September 2025.",
+    "For 38 people: 28 in the farmhouse and dairy, two to a room, 10 at the village inn five minutes' walk away.",
+    "Two-day price: about £8,400, everything but the wine; dates held against a £2,000 deposit.",
+    "Schedule: day one 10:30 arrival, 13:00 lunch, 19:30 dinner; day two 08:00 breakfast, 12:30 lunch, 15:00 departure.",
+    "Fiona looks after new business at Acme."
+   ]
+  }
+ },
+ {
+  "id": "s0424",
+  "account": "freelance",
+  "storyline": "lead-montessori",
+  "lang": "es",
+  "tags": [
+   "client"
+  ],
+  "subject": "Cotización identidad y sitio: Patio del Fresno",
+  "state": {
+   "inbox": false
+  },
+  "people": [
+   {
+    "id": "itzel-carranza-fresno",
+    "name": "Itzel Carranza",
+    "email": "comunicacion@patiodelfresno.example",
+    "lang": "es",
+    "timezone": "America/Mexico_City",
+    "accounts": [
+     "freelance"
+    ],
+    "relationship": "coordinadora de comunicación de la Escuela Montessori Patio del Fresno",
+    "org": "arboleda",
+    "style": {
+     "register": "práctica, amable, de usted",
+     "length": "dos o tres líneas",
+     "greeting": "Buenos días, Luis.",
+     "signoff": "Saludos, Itzel",
+     "signature": null,
+     "quoting": "bottom",
+     "quirks": [
+      "va directo a lo que más le urge"
+     ]
+    },
+    "facts": [
+     "lleva las redes y la agenda de visitas de familias nuevas, hoy por teléfono"
+    ]
+   },
+   {
+    "id": "tomas-beltran-fresno",
+    "name": "Tomás Beltrán",
+    "email": "tomas.beltran.ing@gmail.com",
+    "lang": "es",
+    "timezone": "America/Mexico_City",
+    "accounts": [
+     "freelance"
+    ],
+    "relationship": "tesorero del consejo escolar de la Escuela Montessori Patio del Fresno (padre de familia)",
+    "style": {
+     "register": "seco, de números",
+     "length": "una o dos líneas",
+     "greeting": "none",
+     "signoff": "Tomás Beltrán",
+     "signature": null,
+     "quoting": "bottom",
+     "quirks": [
+      "escribe desde el celular, sin saludo"
+     ]
+    },
+    "facts": [
+     "el ciclo fiscal del consejo cierra en julio"
+    ]
+   }
+  ],
+  "messages": [
+   {
+    "from": "ricardo-sandoval",
+    "to": [
+     "me"
+    ],
+    "cc": [
+     "itzel-carranza-fresno",
+     "tomas-beltran-fresno"
+    ],
+    "date": "2026-05-18T09:10:00-06:00",
+    "read": true,
+    "text": "Estimado Sr. Cordero:\n\nLe agradezco la llamada del jueves. Como le comenté, le copio a la Mtra. Itzel Carranza, coordinadora de comunicación, y al Ing. Tomás Beltrán, tesorero de nuestro consejo escolar.\n\nPara que sepa cómo decidimos: el alcance y el calendario los puedo aprobar yo; el monto le corresponde al consejo, que sesiona el martes 2 de junio. ¿Sería posible contar con su cotización antes del viernes 22, para enviarla con la convocatoria?\n\nAtentamente, Ricardo Sandoval\n\nLic. Ricardo Sandoval Peña\nDirector | Escuela Montessori Patio del Fresno\nCoyoacán, CDMX"
+   },
+   {
+    "from": "itzel-carranza-fresno",
+    "to": [
+     "me"
+    ],
+    "cc": [
+     "ricardo-sandoval",
+     "tomas-beltran-fresno"
+    ],
+    "date": "2026-05-18T11:40:00-06:00",
+    "read": true,
+    "text": "Buenos días, Luis. Lo que más nos urge: que en el sitio las familias nuevas puedan agendar su visita. Hoy todo es por teléfono y se nos pierden muchas.\nSaludos, Itzel"
+   },
+   {
+    "from": "me",
+    "to": [
+     "ricardo-sandoval"
+    ],
+    "cc": [
+     "itzel-carranza-fresno",
+     "tomas-beltran-fresno"
+    ],
+    "date": "2026-05-19T21:10:00+01:00",
+    "read": true,
+    "text": "Estimado Lic. Sandoval:\n\nLe detallo la cotización:\n\n- Identidad: logotipo, paleta, tipografías y papelería básica\n- Sitio de seis secciones, con formulario para agendar visitas\n- Ocho a diez semanas\n\nTotal: $64,000 MXN + IVA, 50% de anticipo y 50% contra entrega.\n\nMtra. Carranza: la agenda de visitas va incluida; las familias eligen día y hora y a ustedes les llega un correo.\n\nSaludos,\n\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+   },
+   {
+    "from": "itzel-carranza-fresno",
+    "to": [
+     "me"
+    ],
+    "cc": [
+     "ricardo-sandoval",
+     "tomas-beltran-fresno"
+    ],
+    "date": "2026-05-19T15:22:00-06:00",
+    "read": true,
+    "text": "Perfecto, justo lo que necesitamos. Gracias, Luis.\nSaludos, Itzel"
+   },
+   {
+    "from": "tomas-beltran-fresno",
+    "to": [
+     "me"
+    ],
+    "cc": [
+     "ricardo-sandoval",
+     "itzel-carranza-fresno"
+    ],
+    "date": "2026-05-20T08:05:00-06:00",
+    "read": true,
+    "text": "Gracias. Pregunta para el consejo: ¿se puede pagar en tres partes? Nuestro ciclo cierra en julio.\nTomás Beltrán"
+   },
+   {
+    "from": "me",
+    "to": [
+     "tomas-beltran-fresno"
+    ],
+    "cc": [
+     "ricardo-sandoval",
+     "itzel-carranza-fresno"
+    ],
+    "date": "2026-05-20T17:30:00+01:00",
+    "read": true,
+    "text": "Ing. Beltrán:\n\nSí, sin problema: 40% al iniciar, 30% al aprobar el diseño y 30% al publicar el sitio. El total no cambia.\n\nSaludos,\n\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+   },
+   {
+    "from": "ricardo-sandoval",
+    "to": [
+     "me"
+    ],
+    "cc": [
+     "itzel-carranza-fresno",
+     "tomas-beltran-fresno"
+    ],
+    "date": "2026-05-21T10:15:00-06:00",
+    "read": true,
+    "text": "Estimado Sr. Cordero:\n\nMuchas gracias. Con esto el consejo tiene lo que necesita. Le escribo después de la sesión del 2 de junio.\n\nAtentamente, Ricardo Sandoval\n\nLic. Ricardo Sandoval Peña\nDirector | Escuela Montessori Patio del Fresno\nCoyoacán, CDMX"
+   }
+  ],
+  "truth": {
+   "summary": "Luis quoted $64,000 MXN + IVA for the Montessori school’s identity and six-section website and offered a three-instalment plan while the proposal went to the school council.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [
+    {
+     "who": "ricardo-sandoval",
+     "text": "Write after the 2 June council session",
+     "kept": true
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2026-05-14",
+     "what": "Call between Luis and Ricardo (the Thursday before)"
+    },
+    {
+     "date": "2026-05-22",
+     "what": "Ricardo's deadline for the quote"
+    },
+    {
+     "date": "2026-06-02",
+     "what": "School council session"
+    }
+   ],
+   "facts": [
+    "Quote: $64,000 MXN + IVA for logo, palette, typefaces, basic stationery and a six-section website with a visit booking form; eight to ten weeks.",
+    "Payment offered first as 50% upfront and 50% on delivery, then in three parts: 40% at the start, 30% on design approval, 30% at launch.",
+    "Ricardo can approve scope and schedule; the amount is up to the school council.",
+    "Tomás said their cycle closes in July.",
+    "Itzel Carranza is the school's communications coordinator; Tomás Beltrán is the council's treasurer.",
+    "Families book visits by phone today."
+   ]
+  }
+ },
+ {
+  "id": "s0425",
+  "account": "freelance",
+  "storyline": "lead-montessori",
+  "lang": "es",
+  "tags": [
+   "client"
+  ],
+  "subject": "Sesión del consejo",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "ricardo-sandoval",
+    "to": [
+     "me"
+    ],
+    "date": "2026-06-03T13:20:00-06:00",
+    "read": true,
+    "text": "Estimado Sr. Cordero:\n\nLa sesión del martes se pasó al 11 de junio por falta de quórum: dos consejeros estaban en una junta de zona escolar que se convocó ese mismo día.\n\nDe mi parte, el alcance está bien. A la Mtra. Carranza le urge la agenda de visitas. El monto sí tiene que esperar a que sesione el consejo.\n\n¿Le parecería una videollamada breve el viernes 12 para contarle el resultado y, si procede, acordar fechas?\n\nAtentamente, Ricardo Sandoval\n\nLic. Ricardo Sandoval Peña\nDirector | Escuela Montessori Patio del Fresno\nCoyoacán, CDMX"
+   },
+   {
+    "from": "me",
+    "to": [
+     "ricardo-sandoval"
+    ],
+    "date": "2026-06-03T21:45:00+01:00",
+    "read": true,
+    "text": "Estimado Lic. Sandoval:\n\nGracias por avisar. El viernes 12 puedo a las 10:00 de la Ciudad de México, que son las 17:00 en Londres. Si le acomoda otra hora, me dice; a partir de las 9:00 de allá estoy libre.\n\nSaludos,\n\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+   },
+   {
+    "from": "ricardo-sandoval",
+    "to": [
+     "me"
+    ],
+    "date": "2026-06-04T09:00:00-06:00",
+    "read": true,
+    "text": "Estimado Sr. Cordero:\n\nPerfecto, el viernes 12 a las 10:00. Le dejo la liga: reuniones.patiodelfresno.example/cotizacion.\n\nAtentamente, Ricardo Sandoval\n\nLic. Ricardo Sandoval Peña\nDirector | Escuela Montessori Patio del Fresno\nCoyoacán, CDMX"
+   }
+  ],
+  "truth": {
+   "summary": "The school council's 2 June session had no quorum and moved to Thursday 11 June; Ricardo, who likes the scope, set a video call with Luis for Friday 12 June at 10:00 Mexico City time to share the result.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-06-02",
+     "what": "Council session, no quorum"
+    },
+    {
+     "date": "2026-06-11",
+     "what": "Rescheduled council session"
+    },
+    {
+     "date": "2026-06-12",
+     "what": "Video call, 10:00 Mexico City / 17:00 London"
+    }
+   ],
+   "facts": [
+    "Two council members were at a school-zone meeting called the same day.",
+    "Ricardo approves the scope; the amount is the council's decision.",
+    "Luis is free from 9:00 Mexico City time."
+   ]
+  }
+ },
+ {
+  "id": "s0426",
+  "account": "freelance",
+  "storyline": "lead-montessori",
+  "lang": "es",
+  "tags": [
+   "client"
+  ],
+  "subject": "Después de la llamada del viernes",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "me",
+    "to": [
+     "ricardo-sandoval"
+    ],
+    "date": "2026-06-15T18:20:00+01:00",
+    "read": true,
+    "text": "Estimado Lic. Sandoval:\n\nGracias por la llamada del viernes. Como quedamos, le mando una opción más económica para que la revise el consejo:\n\n- Solo identidad (logotipo, paleta, tipografías y papelería básica): $28,000 MXN + IVA, cuatro semanas\n- Si más adelante quieren hacer el sitio, lo cotizo por separado\n\nLa propuesta completa queda en $64,000 MXN + IVA.\n\nSaludos,\n\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+   },
+   {
+    "from": "ricardo-sandoval",
+    "to": [
+     "me"
+    ],
+    "date": "2026-06-18T12:40:00-06:00",
+    "read": true,
+    "text": "Estimado Sr. Cordero:\n\nLe agradezco mucho la versión reducida y la paciencia de estas semanas.\n\nEl consejo revisó ambas opciones esta mañana y no nos alcanza en este ciclo: el presupuesto de este año ya está comprometido en la remodelación del taller de primaria. No es una cuestión de su propuesta, que a todos nos pareció muy clara.\n\nQuisiera llevar las dos propuestas a la junta de presupuesto de enero. ¿Podría enviarme ambas cotizaciones en un PDF, con vigencia hasta marzo de 2027? Le vuelvo a escribir en enero, cuando armemos el presupuesto.\n\nAtentamente, Ricardo Sandoval\n\nLic. Ricardo Sandoval Peña\nDirector | Escuela Montessori Patio del Fresno\nCoyoacán, CDMX"
+   }
+  ],
+  "truth": {
+   "summary": "After the call, Luis offered a smaller identity-only option at $28,000 MXN + IVA; the council said neither fits this year's budget and will revisit in 2027, and Ricardo asked Luis for both quotes in one PDF valid until March 2027, which Luis hasn't sent.",
+   "ownerOwes": [
+    "Send Ricardo both quotes in one PDF, valid until March 2027"
+   ],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [
+    {
+     "who": "ricardo-sandoval",
+     "text": "Write again when the council builds the 2027 budget in January",
+     "kept": false
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2026-06-12",
+     "what": "Video call between Luis and Ricardo"
+    },
+    {
+     "date": "2026-06-18",
+     "what": "Ricardo says the school can't go ahead this year"
+    }
+   ],
+   "facts": [
+    "Smaller option: identity only (logo, palette, typefaces, basic stationery), $28,000 MXN + IVA, four weeks.",
+    "Full proposal: $64,000 MXN + IVA.",
+    "This year's budget went to refurbishing the primary workshop.",
+    "The council reviewed both options on 18 June.",
+    "The council draws up the budget in January 2027. Ricardo asked for both quotes to be valid until March 2027."
+   ]
+  }
+ },
+ {
+  "id": "s0427",
+  "account": "freelance",
+  "lang": "es",
+  "tags": [
+   "client"
+  ],
+  "subject": "Logo para cajas de pastelería",
+  "state": {
+   "inbox": false
+  },
+  "people": [
+   {
+    "id": "marisol-echeverria-nube",
+    "name": "Marisol Echeverría",
+    "email": "pasteleria.nubedeazucar@gmail.com",
+    "lang": "es",
+    "timezone": "America/Mexico_City",
+    "accounts": [
+     "freelance"
+    ],
+    "relationship": "dueña de una pastelería en Zapopan que pidió cotización",
+    "style": {
+     "register": "cálida, de usted, un poco apurada",
+     "length": "un párrafo",
+     "greeting": "Hola Luis, buenas tardes.",
+     "signoff": "Gracias",
+     "signature": "Marisol Echeverría\nPastelería Nube de Azúcar · Zapopan, Jal.",
+     "quoting": "bottom",
+     "quirks": [
+      "escribe todo en un solo párrafo"
+     ]
+    },
+    "facts": [
+     "tiene una pastelería en Zapopan y necesitaba cajas impresas con urgencia en junio de 2026"
+    ]
+   }
+  ],
+  "messages": [
+   {
+    "from": "marisol-echeverria-nube",
+    "to": [
+     "me"
+    ],
+    "date": "2026-06-20T16:35:00-06:00",
+    "read": true,
+    "text": "Hola Luis, buenas tardes. Le escribí el martes desde el formulario de su página para pedirle precio de un logo para mi pastelería, porque el lunes tengo que mandar a hacer cajas nuevas. Ya no alcancé a esperar: en la imprenta me hicieron una versión sencilla con el nombre en letra cursiva y con eso nos vamos por ahora. Le aviso para que no pierda su tiempo cotizando. Si para fin de año ya podemos hacerlo bien, con calma, le vuelvo a escribir. Gracias\n\nMarisol Echeverría\nPastelería Nube de Azúcar · Zapopan, Jal."
+   }
+  ],
+  "truth": {
+   "summary": "Marisol Echeverría of Pastelería Nube de Azúcar, who had asked for a logo quote, wrote to say the printer made a simple version for her boxes, so Luis needn't quote; she may write again at the end of the year.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-06-16",
+     "what": "Marisol's original request through the contact form (Tuesday)"
+    },
+    {
+     "date": "2026-06-22",
+     "what": "The boxes go to print (Monday)"
+    }
+   ],
+   "facts": [
+    "Pastelería Nube de Azúcar is in Zapopan.",
+    "The printer made her a simple version: the name in a script typeface.",
+    "No quote is needed."
+   ]
+  }
+ },
+ {
+  "id": "s0428",
+  "account": "personal",
+  "lang": "en",
+  "tags": [
+   "personal"
+  ],
+  "subject": "the van got a ticket",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "niamh-gallagher",
+    "to": [
+     "me"
+    ],
+    "date": "2026-07-26T11:48:00+01:00",
+    "read": true,
+    "text": "tariq's forwarded a PCN for the van. Mallory Road, 27 June, 14:52, \"loading not observed\", which is funny because we were literally carrying the bed frame past the warden. £130, or £65 if it's paid by 3 August.\n\nappeal with the photo of you and Tariq carrying the headboard, or pay it and split it? photo has a timestamp. he needs to know by Thursday\nx\n\nPS it's on the doormat at his, not ours, so don't go looking for it"
+   }
+  ],
+  "truth": {
+   "summary": "Niamh told Luis about a £130 parking ticket (£65 if paid by 3 August) on Tariq's van from moving day and asked whether to appeal with photos or pay and split it; Luis didn't reply by email.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-06-27",
+     "what": "PCN issued on Mallory Road at 14:52 on moving day"
+    },
+    {
+     "date": "2026-07-30",
+     "what": "Tariq needs to know by Thursday"
+    },
+    {
+     "date": "2026-08-03",
+     "what": "Last day to pay the reduced £65"
+    }
+   ],
+   "facts": [
+    "The ticket says \"loading not observed\".",
+    "Full charge £130; £65 if paid by 3 August 2026.",
+    "The PCN is in Tariq's name and was sent to his address.",
+    "Niamh has a timestamped photo of Luis and Tariq carrying the headboard."
+   ]
+  }
+ },
+ {
+  "id": "s0429",
+  "account": "acme",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "portfolio for when the junior role opens",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "kasia-zielinska",
+    "to": [
+     "me"
+    ],
+    "date": "2026-08-02T20:14:00+01:00",
+    "read": true,
+    "text": "Luis - before you disappear to Scotland.\n\nPortfolio from Maja Sobczak, graduated from Camberwell in June, I met her at the degree show. maja-sobczak.example/work, password heron26. Strong on type and editorial, thin on product.\n\nWorth telling her to apply when the junior role opens? Can wait till you’re back.\nK."
+   },
+   {
+    "from": "me",
+    "to": [
+     "kasia-zielinska"
+    ],
+    "date": "2026-08-03T07:42:00+01:00",
+    "read": true,
+    "text": "Hey Kasia,\n\nYes, tell her to apply. I'd ask her to add a bit about the recipe planner first.\n\nI looked on the train. The editorial work is the best I've seen from a graduate this year. The Southwark zine is lovely: the grid holds up across forty pages and she clearly knows when to break it. The type specimen for her degree show is good too, if a bit long.\n\nThe product side is where it falls down. There's one app project, the recipe planner, and it's screens without a problem. I can't tell who it's for, what she tried first, or what she threw away. That's exactly what we'd ask about in an interview, and right now she'd have nothing to say.\n\nShe could take one bit of the planner and show how she got there. Even a photo of the first sketch and a few notes from watching someone use it would tell me more than another screen. If she can get that in before the role opens, I'd put her on the shortlist.\n\nI'll write her proper notes when I'm back on the 17th, and we can decide whether they come from you or from me. Probably better from you, since you know her.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "kasia-zielinska",
+    "to": [
+     "me"
+    ],
+    "date": "2026-08-03T09:02:00+01:00",
+    "read": true,
+    "text": "Agreed, from me is better. Enjoy the rain.\nK."
+   }
+  ],
+  "truth": {
+   "summary": "Kasia sent Luis the portfolio of Maja Sobczak, a Camberwell graduate, asking if she should apply for the junior role; Luis replied with first impressions (strong editorial, weak product work) and promised proper notes for her when he's back on 17 August, which he hasn't sent.",
+   "ownerOwes": [
+    "Write proper notes on Maja Sobczak’s portfolio for Kasia to pass along."
+   ],
+   "othersOwe": [],
+   "promisesByOwner": [
+    {
+     "text": "Write Maja proper notes when back on the 17th",
+     "due": "2026-08-17",
+     "kept": false
+    }
+   ],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-08-03",
+     "what": "Luis leaves for Scotland"
+    },
+    {
+     "date": "2026-08-17",
+     "what": "Luis back at work"
+    }
+   ],
+   "facts": [
+    "Maja Sobczak graduated from Camberwell in June 2026; Kasia met her at the degree show.",
+    "Portfolio: maja-sobczak.example/work, password heron26.",
+    "Her best piece is the forty-page Southwark zine.",
+    "Her only app project is a recipe planner, with no problem or process shown.",
+    "Luis suggested adding evidence of the recipe planner’s process and testing before applying."
+   ]
+  }
+ },
+ {
+  "id": "s0430",
+  "account": "personal",
+  "lang": "en",
+  "tags": [
+   "personal"
+  ],
+  "subject": "Pickle again (sorry)",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "harriet-lowe",
+    "to": [
+     "me"
+    ],
+    "date": "2026-08-04T19:30:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nPushing my luck again. Pickle needs minding from Friday 21 to Sunday 23 August. I'm teaching on a sports physio weekend in Bristol and my sitter is in Crete.\n\nSame as April:\nTwo walks a day, 30-40 minutes\nDinner at 6\nStop if he rolls in anything dead\n\nIf it's a no, it's a no.\n\nHarriet\n\nHarriet Lowe MCSP\nDalston Step Clinic, Dalston"
+   },
+   {
+    "from": "me",
+    "to": [
+     "harriet-lowe"
+    ],
+    "date": "2026-08-05T21:12:00+01:00",
+    "read": true,
+    "text": "yes. we're in the Highlands till the 14th, ignoring email badly, but back in plenty of time. Niamh says Pickle can come to ours this time if he doesn't mind a cat who hisses (Biscuit, not Niamh)\nL"
+   },
+   {
+    "from": "harriet-lowe",
+    "to": [
+     "me"
+    ],
+    "date": "2026-08-06T08:15:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nWonderful, thank you both. Let's keep him at mine if that's ok, he sulks in new places and Biscuit would win.\n\nOne thing: the organisers might move my sessions to the weekend after, 28-30 August. I'll know by the 14th and tell you then.\n\nHarriet\n\nHarriet Lowe MCSP\nDalston Step Clinic, Dalston"
+   },
+   {
+    "from": "me",
+    "to": [
+     "harriet-lowe"
+    ],
+    "date": "2026-08-06T12:31:00+01:00",
+    "read": true,
+    "text": "either weekend works, we're around for both. let us know"
+   }
+  ],
+  "truth": {
+   "summary": "Harriet asked Luis and Niamh to mind Pickle at her flat while she teaches in Bristol, 21-23 August or possibly 28-30 August; Luis said yes to either and is waiting for Harriet to confirm which weekend.",
+   "ownerOwes": [],
+   "othersOwe": [
+    "Harriet: confirm by 14 August which weekend she needs Pickle minded"
+   ],
+   "promisesByOwner": [
+    {
+     "text": "Mind Pickle at Harriet's on whichever weekend she confirms",
+     "kept": false
+    }
+   ],
+   "promisesToOwner": [
+    {
+     "who": "harriet-lowe",
+     "text": "Say by the 14th whether her sessions move to 28-30 August",
+     "due": "2026-08-14",
+     "kept": false
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2026-08-14",
+     "what": "Luis back from the Highlands; Harriet to know her dates"
+    },
+    {
+     "date": "2026-08-21",
+     "what": "Planned dog-sitting weekend, 21-23 August"
+    },
+    {
+     "date": "2026-08-28",
+     "what": "Possible alternative weekend, 28-30 August"
+    }
+   ],
+   "facts": [
+    "Harriet is teaching on a sports physio weekend in Bristol; her usual sitter is in Crete.",
+    "Pickle: two walks a day of 30-40 minutes, dinner at 6.",
+    "Pickle stays at Harriet's flat because he sulks in new places.",
+    "Luis and Niamh are in the Highlands until 14 August."
+   ]
+  }
+ },
+ {
+  "id": "s0431",
+  "account": "icloud",
+  "lang": "en",
+  "tags": [
+   "personal"
+  ],
+  "subject": "Plums, and an album",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "felix-brandt",
+    "to": [
+     "me"
+    ],
+    "date": "2026-08-13T22:10:00+02:00",
+    "read": true,
+    "text": "Dear Luis,\n\nThe plum tree in the courtyard has decided to drop everything at once this week, and the caretaker has given up sweeping and hung a sign on it that says, more or less, help yourselves. Lotte has helped herself to about four hundred plums. I am writing this with purple fingers.\n\nThere are already too many plum photos in the summer album. Further back there is the week we spent on the Baltic in July, when it rained every day except the one we forgot the sun cream. It is at albums.paperkite.example/brandt-summer-26, and you and Niamh should both be able to add to it.\n\nI know you are in Scotland. Please put some Scotland in it. I want mountains, a wet Niamh and at least one sheep.\n\nKanalgrotesk now has an italic, which nobody asked for and which I am very proud of. You will get a specimen at Christmas whether you like it or not.\n\nAnd I thought we might at last have the call we keep promising each other. Would Sunday at eleven your time work? I will have coffee, you will have tea, and we will both pretend we are not looking at our phones.\n\nLove, Felix"
+   },
+   {
+    "from": "me",
+    "to": [
+     "felix-brandt"
+    ],
+    "date": "2026-08-15T10:40:00+01:00",
+    "read": true,
+    "text": "not this Sunday, sorry. we only got back last night, and tomorrow is laundry and getting Biscuit to forgive us. saw your text. the 23rd at 11 works. I'll ring you.\n\nadded 34 photos to the album. there's a sheep in most of them and one wet Niamh, used with permission. the italic sounds great, I want the specimen\nL"
+   }
+  ],
+  "truth": {
+   "summary": "Felix shared his summer photo album and proposed a Sunday call; Luis, just back from Scotland, added 34 photos and moved the call to Sunday 23 August at 11 London time.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [
+    {
+     "text": "Call Felix on Sunday 23 August at 11",
+     "due": "2026-08-23",
+     "kept": false
+    }
+   ],
+   "promisesToOwner": [
+    {
+     "who": "felix-brandt",
+     "text": "Send a Kanalgrotesk italic specimen at Christmas",
+     "kept": false
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2026-08-16",
+     "what": "Felix's proposed call, declined"
+    },
+    {
+     "date": "2026-08-23",
+     "what": "Call moved to Sunday 23 August, 11:00 London"
+    }
+   ],
+   "facts": [
+    "Felix's album: albums.paperkite.example/brandt-summer-26.",
+    "Felix's family spent a week on the Baltic in July 2026.",
+    "Kanalgrotesk now has an italic.",
+    "Luis and Niamh got back from Scotland on 14 August.",
+    "Luis added 34 photos."
+   ]
+  }
+ },
+ {
+  "id": "s0432",
+  "account": "personal",
+  "lang": "en",
+  "tags": [
+   "personal"
+  ],
+  "subject": "plumber for the ceiling?",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "niamh-gallagher",
+    "to": [
+     "me"
+    ],
+    "date": "2026-09-06T10:12:00+01:00",
+    "read": true,
+    "text": "the plumber Desmond uses is holding Tuesday 8–10 for us to look at the ceiling. Dale something. £85 call-out, then £60 an hour after the first hour. do I book him or wait for Imogen? she hasn't answered your email from Thursday\nx\nPS he needs to know today, he's filling his week"
+   },
+   {
+    "from": "me",
+    "to": [
+     "niamh-gallagher"
+    ],
+    "date": "2026-09-06T11:05:00+01:00",
+    "read": true,
+    "text": "let Dale go. if we book him ourselves Imogen will argue about the bill. I'll ring her tomorrow morning before work.\n\nalso Desmond thinks it's the roof, not a pipe. the patch is right under where the gutter runs, so a plumber could be £85 to be told that\nx"
+   },
+   {
+    "from": "niamh-gallagher",
+    "to": [
+     "me"
+    ],
+    "date": "2026-09-06T11:20:00+01:00",
+    "read": true,
+    "text": "fine. cancelled Dale, told him we'd call if the landlord wants him. he was nice about it\nx"
+   }
+  ],
+  "truth": {
+   "summary": "Niamh had a plumber, Dale, lined up to look at the damp bathroom ceiling for an £85 call-out; Luis said it's Imogen's job as landlord and that it's probably the roof, so Niamh cancelled him and Luis said he'd ring Imogen.",
+   "ownerOwes": [
+    "Ring Imogen on Monday morning about the ceiling"
+   ],
+   "othersOwe": [],
+   "promisesByOwner": [
+    {
+     "text": "Ring Imogen tomorrow morning before work",
+     "due": "2026-09-07",
+     "kept": false
+    }
+   ],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-09-08",
+     "what": "Dale's offered visit, Tuesday 8-10, cancelled"
+    }
+   ],
+   "facts": [
+    "Dale is the plumber Desmond uses.",
+    "His price: £85 call-out, then £60 an hour after the first hour.",
+    "Imogen hadn't answered since Thursday 3 September.",
+    "Desmond thinks the damp comes from the roof; the patch is under the gutter."
+   ]
+  }
+ },
+ {
+  "id": "s0433",
+  "account": "freelance",
+  "storyline": "contadora-otono-2026",
+  "lang": "es",
+  "tags": [
+   "client"
+  ],
+  "subject": "Pago factura de agosto",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "me",
+    "to": [
+     "fernanda-rios"
+    ],
+    "date": "2026-09-22T17:05:00+01:00",
+    "read": true,
+    "text": "Hola, Fer:\n\n¿Me confirmas si ya salió el pago de la factura de agosto? Es la LC-087, el anticipo de Ofrenda, por $14,500 MXN + IVA. Mi contadora me pide cuadrar los estados de cuenta y no la encuentro.\n\nUn abrazo,\n\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+   },
+   {
+    "from": "fernanda-rios",
+    "to": [
+     "me"
+    ],
+    "date": "2026-09-23T10:30:00-06:00",
+    "read": true,
+    "text": "Hola Luis, buen día\nFolio LC-087: no la he programado. Nuestro contador la apartó para revisarla, algo del uso de CFDI. En cuanto me diga te aviso.\nSaludos, Fer"
+   },
+   {
+    "from": "me",
+    "to": [
+     "fernanda-rios"
+    ],
+    "date": "2026-09-23T18:12:00+01:00",
+    "read": true,
+    "text": "Va, gracias, Fer. Quedo pendiente.\n\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+   }
+  ],
+  "truth": {
+   "summary": "Luis asked about the August Lobo Gris invoice LC-087, and Fernanda said she had held off scheduling payment because their accountant was checking the CFDI use. She later confirmed it needs to be reissued.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [
+    {
+     "who": "fernanda-rios",
+     "text": "Let Luis know as soon as the accountant answers about LC-087",
+     "kept": true
+    }
+   ],
+   "keyDates": [],
+   "facts": [
+    "August invoice LC-087 is the Ofrenda advance for $14,500 MXN + IVA.",
+    "Luis needs to reconcile the bank statements for his accountant.",
+    "Lobo Gris's accountant held the invoice over its CFDI use."
+   ]
+  }
+ },
+ {
+  "id": "s0434",
+  "account": "acme",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Pennywort accessibility audit: what I've decided",
+  "folder": "Label_21",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "marcus-adeyemi",
+    "to": [
+     "me"
+    ],
+    "date": "2026-09-25T16:20:00+01:00",
+    "read": true,
+    "text": "Hey Luis,\n\nI’ve kept Pennywort’s tier colours on the badges, which means changing where we use them. Gold was doing the work of a text colour and a label. The badges now say Bronze, Silver or Gold in dark type, with the tier colours behind them. Steve won't love it, but Owen agreed on Wednesday's call, and while Hannah is on leave it's his decision.\n\nThe audit came back from Nadia at Clearpath yesterday. 23 findings: 4 blockers, 11 serious, 8 minor. The blockers are:\n\n1. the points balance is an image, so a screen reader says nothing at all\n2. the scan button on the till screen is 36 px, under the target size\n3. the gold badge text is 2.1:1 on white\n4. reward expiry dates only show on hover\n\nAll four go into sprint 9, which starts on 5 October. Dev takes 2 and 4 because they're in checkout, which is his now, and I'll do 1 and 3. I've split the serious ones between sprints 9 and 10. The minor ones are in the backlog with an a11y label so they don't vanish.\n\nI’ll bring the revised badges to Monday’s review in case Steve asks to see the gold one.\n\nThe full report is in the Pennywort folder as Clearpath_audit_Sept26.pdf. For anything about the points engine, Owen Pratt knows it better than anyone on our side. For the till screens, ask Dev.\n\nMarcus\n\nMarcus Adeyemi\nSenior Product Designer, Acme Studio\nacme.example"
+   }
+  ],
+  "truth": {
+   "summary": "Marcus told Luis the Pennywort accessibility audit found 23 issues, 4 of them blockers, and that he's keeping the tier colours but adding tier names in text; fixes are planned for sprints 9 and 10 and nothing is needed from Luis.",
+   "ownerOwes": [],
+   "othersOwe": [
+    "Marcus: fix blockers 1 and 3 in sprint 9",
+    "Dev: fix blockers 2 and 4 in sprint 9"
+   ],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-09-24",
+     "what": "Clearpath's audit delivered"
+    },
+    {
+     "date": "2026-09-28",
+     "what": "Monday's Pennywort review"
+    },
+    {
+     "date": "2026-10-05",
+     "what": "Sprint 9 starts"
+    }
+   ],
+   "facts": [
+    "Auditor: Nadia at Clearpath. Report: Clearpath_audit_Sept26.pdf in the Pennywort folder.",
+    "23 findings: 4 blockers, 11 serious, 8 minor.",
+    "Blockers: points balance is an image; 36 px scan button on the till screen; gold badge text at 2.1:1 on white; expiry dates only on hover.",
+    "The new Bronze, Silver and Gold badges use dark text over the tier colours. Owen Pratt agreed.",
+    "Dev owns checkout and takes blockers 2 and 4; Marcus takes 1 and 3.",
+    "Owen Pratt at Pennywort knows the points engine best."
+   ]
+  }
+ },
+ {
+  "id": "s0435",
+  "account": "personal",
+  "lang": "en",
+  "tags": [
+   "personal"
+  ],
+  "subject": "Dale's quote",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "niamh-gallagher",
+    "to": [
+     "me"
+    ],
+    "date": "2026-09-27T19:40:00+01:00",
+    "read": true,
+    "text": "Dale's quote for the bath tap, attached. £145 for the cartridge and washers, parts included. can you send it to Imogen, she answers you faster\nx"
+   },
+   {
+    "from": "me",
+    "to": [
+     "niamh-gallagher"
+    ],
+    "date": "2026-09-27T20:15:00+01:00",
+    "read": true,
+    "text": "nothing attached x"
+   },
+   {
+    "from": "niamh-gallagher",
+    "to": [
+     "me"
+    ],
+    "date": "2026-09-27T20:22:00+01:00",
+    "read": true,
+    "text": "ugh. here",
+    "attachments": [
+     {
+      "filename": "Dale_Pryor_quote_bath_tap.pdf",
+      "mime": "application/pdf",
+      "size": 88412
+     }
+    ]
+   },
+   {
+    "from": "me",
+    "to": [
+     "niamh-gallagher"
+    ],
+    "date": "2026-09-28T08:10:00+01:00",
+    "read": true,
+    "text": "it's made out to us, not to her. she asked for it in her name for her accounts. can you ask Dale to put Imogen Barnes as the customer and leave Flat B, 41 Mallory Road as the job address? then I'll send it on the same day\nx"
+   },
+   {
+    "from": "niamh-gallagher",
+    "to": [
+     "me"
+    ],
+    "date": "2026-09-28T12:45:00+01:00",
+    "read": true,
+    "text": "will ask him tonight, he only does email after 6\nx"
+   }
+  ],
+  "truth": {
+   "summary": "Niamh got Dale's £145 quote to fix the dripping bath tap (after forgetting to attach it); Luis noticed it's made out to them rather than to Imogen, so Niamh is asking Dale to reissue it before Luis forwards it.",
+   "ownerOwes": [
+    "Send Dale's reissued quote to Imogen the day it arrives"
+   ],
+   "othersOwe": [
+    "Niamh: ask Dale to reissue the quote in Imogen's name"
+   ],
+   "promisesByOwner": [
+    {
+     "text": "Send the reissued quote to Imogen the same day",
+     "kept": false
+    }
+   ],
+   "promisesToOwner": [
+    {
+     "who": "niamh-gallagher",
+     "text": "Ask Dale tonight to redo the quote",
+     "due": "2026-09-28",
+     "kept": false
+    }
+   ],
+   "keyDates": [],
+   "facts": [
+    "Dale Pryor quoted £145 for a new cartridge and washers on the bath tap, parts included.",
+    "Imogen wants the quote in her name for her accounts.",
+    "Dale only answers email after 6pm.",
+    "Attachment: Dale_Pryor_quote_bath_tap.pdf."
+   ]
+  }
+ },
+ {
+  "id": "s0436",
+  "account": "acme",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Staging: booking widget shows the wrong times",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "lauren-gage",
+    "to": [
+     "me"
+    ],
+    "date": "2026-09-22T09:40:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nBug on staging before I send the interview links:\n- the careers page booking widget shows slots in UTC, so 10:00 shows as 09:00\n- the confirmation email has the right time\n- it’s still a private preview, but I’d sent Sol the page to check the available dates\n\nShall I hold the links until it's fixed, or send the direct Minute Latch link instead?\n\nLauren\n\nLauren Gage\nDesign Operations, Acme Studio\nacme.example"
+   },
+   {
+    "from": "me",
+    "to": [
+     "lauren-gage"
+    ],
+    "date": "2026-09-22T09:58:00+01:00",
+    "read": true,
+    "text": "Send the direct link today, don't wait for a fix. I'll raise it with Anil, but it won't be his priority before Holloway.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "lauren-gage",
+    "to": [
+     "me"
+    ],
+    "date": "2026-09-23T14:12:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nToo late for one. Sol Adebayo booked through the private preview before opening the direct link. Sol picked Thursday at what looked like 14:00, which is really 15:00, and you're in the Holloway call then.\n\nOptions:\n- move Sol to Monday 28 at 14:00\n- keep Thursday at 15:00 and put Kasia on the panel in your place\n\nLauren\n\nLauren Gage\nDesign Operations, Acme Studio\nacme.example"
+   },
+   {
+    "from": "me",
+    "to": [
+     "lauren-gage"
+    ],
+    "date": "2026-09-23T14:30:00+01:00",
+    "read": true,
+    "text": "Monday at 14:00, with me and Hollie. Please apologise to Sol from me.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "lauren-gage",
+    "to": [
+     "me"
+    ],
+    "date": "2026-09-24T09:05:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nDone:\n- Sol confirmed for Monday 28 September, 14:00, room 2\n- panel: you and Hollie\n- apology sent\n\nLauren\n\nLauren Gage\nDesign Operations, Acme Studio\nacme.example"
+   },
+   {
+    "from": "lauren-gage",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-01T11:30:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nStaging update:\n- Anil got your note. He’ll pick up the time zone fix next sprint, after the Holloway redirects\n- I've taken the widget off the staging page so nobody else books through it\n- direct links went to all five on the 22nd\n\nLauren\n\nLauren Gage\nDesign Operations, Acme Studio\nacme.example"
+   }
+  ],
+  "truth": {
+   "summary": "Lauren found the staging booking widget showing interview slots in UTC, sent direct Minute Latch links, and moved Sol Adebayo’s interview to Monday 28 September at 14:00. Anil is picking up the widget fix after the Holloway redirects.",
+   "ownerOwes": [],
+   "othersOwe": [
+    "Anil: fix the time zone in the staging booking widget next sprint"
+   ],
+   "promisesByOwner": [
+    {
+     "text": "Raise the staging bug with Anil",
+     "kept": true
+    }
+   ],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-09-22",
+     "what": "Direct interview links sent to all five shortlisted candidates"
+    },
+    {
+     "date": "2026-09-24",
+     "what": "Sol's original slot, Thursday 15:00, clashed with the Holloway call"
+    },
+    {
+     "date": "2026-09-28",
+     "what": "Sol Adebayo's interview, Monday 14:00, room 2, with Luis and Hollie"
+    }
+   ],
+   "facts": [
+    "The staging widget showed slots in UTC (10:00 showed as 09:00); confirmation emails were right.",
+    "Interviews are booked through Minute Latch.",
+    "Five candidates were sent links.",
+    "Luis chose to move Sol rather than put Kasia on the panel."
+   ]
+  }
+ },
+ {
+  "id": "s0437",
+  "account": "freelance",
+  "storyline": "contadora-otono-2026",
+  "lang": "es",
+  "tags": [
+   "client"
+  ],
+  "subject": "Folio LC-087: uso de CFDI",
+  "state": {
+   "inbox": true
+  },
+  "messages": [
+   {
+    "from": "fernanda-rios",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-06T11:15:00-06:00",
+    "read": true,
+    "text": "Hola Luis, buen día\nFolio LC-087: ya me contestó el contador. Salió con uso S01, sin efectos fiscales, y nosotros la necesitamos con G03, gastos en general. Hay que cancelarla y emitir una nueva. Mándame por favor juntos el PDF y el XML de la nueva y la programo para pago esa misma semana.\nSaludos, Fer"
+   },
+   {
+    "from": "me",
+    "to": [
+     "fernanda-rios"
+    ],
+    "date": "2026-10-06T19:40:00+01:00",
+    "read": true,
+    "text": "Hola, Fer:\n\nPerdón, error mío. Hoy mismo me lo dijo también Lupita. Lo vemos con ella esta semana y te mando la nueva con G03, PDF y XML juntos.\n\nUn abrazo,\n\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+   },
+   {
+    "from": "fernanda-rios",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-07T08:50:00-06:00",
+    "read": true,
+    "text": "Va, gracias Luis. Quedo atenta.\nSaludos, Fer"
+   }
+  ],
+  "truth": {
+   "summary": "Fernanda told Luis his August invoice LC-087 went out with CFDI use S01 and must be cancelled and reissued with G03; Luis apologised and said he'd send the new one, PDF and XML, that week. Nothing followed in this thread.",
+   "ownerOwes": [
+    "Cancel invoice LC-087 and send Fernanda the reissued one with use G03, PDF and XML together"
+   ],
+   "othersOwe": [],
+   "promisesByOwner": [
+    {
+     "text": "Send the reissued invoice with G03 this week",
+     "due": "2026-10-09",
+     "kept": false
+    }
+   ],
+   "promisesToOwner": [
+    {
+     "who": "fernanda-rios",
+     "text": "Schedule payment the same week the new invoice arrives",
+     "kept": false
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2026-10-06",
+     "what": "Lobo Gris's accountant flags the S01 use"
+    }
+   ],
+   "facts": [
+    "LC-087 was issued with CFDI use S01 (no tax effect); Lobo Gris needs G03 (general expenses).",
+    "Lupita told Luis the same thing on 6 October.",
+    "Fernanda wants the PDF and XML together."
+   ]
+  }
+ },
+ {
+  "id": "s0438",
+  "account": "acme",
+  "lang": "en",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "subject": "Holloway: this week's feedback round on staging",
+  "folder": "Label_22",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "me",
+    "to": [
+     "ian-ferris"
+    ],
+    "cc": [
+     "hollie-tran"
+    ],
+    "date": "2026-10-01T15:20:00+01:00",
+    "read": true,
+    "text": "Hi Ian,\n\nThe launch is now Thursday 12 November. Margaret confirmed it in writing this morning.\n\nThis week's feedback round is on staging, at holloway-staging.acme.example, same login as before. Could you look at the technical side (search, image loading and the redirects sheet attached) by Wednesday the 7th? Hollie is collecting everything.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example",
+    "attachments": [
+     {
+      "filename": "holloway_redirects_v4.xlsx",
+      "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "size": 41872
+     }
+    ]
+   },
+   {
+    "from": "ian-ferris",
+    "to": [
+     "me"
+    ],
+    "cc": [
+     "hollie-tran"
+    ],
+    "date": "2026-10-05T16:48:00+01:00",
+    "read": true,
+    "text": "Search is broken. \"loom\" gives zero results, so does \"textile\".\nImages fine.\nRedirects: 14 of the old URLs on your sheet don't exist on our side.\nExport: not this week.\nIan"
+   },
+   {
+    "from": "hollie-tran",
+    "to": [
+     "ian-ferris"
+    ],
+    "cc": [
+     "me"
+    ],
+    "date": "2026-10-06T09:30:00+01:00",
+    "read": true,
+    "text": "collection search on staging: \"loom\" gives me 6 results, screenshot attached. are you on holloway-staging or staging-old? the old one stopped getting imports in august. the search index is empty\nh",
+    "attachments": [
+     {
+      "filename": "search-loom-staging.png",
+      "mime": "image/png",
+      "size": 318540
+     }
+    ]
+   },
+   {
+    "from": "ian-ferris",
+    "to": [
+     "hollie-tran"
+    ],
+    "cc": [
+     "me"
+    ],
+    "date": "2026-10-06T11:02:00+01:00",
+    "read": true,
+    "text": "staging-old. Old bookmark. Fine now.\nIan"
+   },
+   {
+    "from": "me",
+    "to": [
+     "ian-ferris"
+    ],
+    "cc": [
+     "hollie-tran"
+    ],
+    "date": "2026-10-06T11:20:00+01:00",
+    "read": true,
+    "text": "Ian, could you send the 14 URLs you couldn’t find? Anil can check them against the export when it comes.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "ian-ferris",
+    "to": [
+     "me"
+    ],
+    "cc": [
+     "hollie-tran"
+    ],
+    "date": "2026-10-08T17:30:00+01:00",
+    "read": true,
+    "text": "Redirects: list attached.\nExport: still not this week.\nIan",
+    "attachments": [
+     {
+      "filename": "redirects_missing_14.csv",
+      "mime": "text/csv",
+      "size": 1204
+     }
+    ]
+   }
+  ],
+  "truth": {
+   "summary": "Ian thought Holloway’s search was broken, but Hollie found he was using an old staging bookmark. Search works on current staging. Ian sent the 14 missing redirect URLs, and the old CMS export is still outstanding.",
+   "ownerOwes": [],
+   "othersOwe": [
+    "Ian: send the old CMS export"
+   ],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-10-07",
+     "what": "Deadline for Ian's technical feedback"
+    },
+    {
+     "date": "2026-11-12",
+     "what": "Holloway launch, confirmed by Margaret in writing on 1 October"
+    }
+   ],
+   "facts": [
+    "Staging is at holloway-staging.acme.example. The old preview has not been importing data since August and has an empty index.",
+    "On the real staging, \"loom\" returns 6 results.",
+    "Ian had an old bookmark to staging-old.",
+    "14 old URLs on the redirects sheet don't exist on the museum's side (redirects_missing_14.csv).",
+    "Redirect sheet: holloway_redirects_v4.xlsx.",
+    "Images load fine."
+   ]
+  }
+ },
+ {
+  "id": "s0439",
+  "account": "acme",
+  "lang": "en",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "subject": "Small favour: a few lines about working with me",
+  "state": {
+   "inbox": true
+  },
+  "messages": [
+   {
+    "from": "gabriel-santos",
+    "to": [
+     "anil-joshi",
+     "natasha-whyte",
+     "helen-ashby",
+     "dan-whelan",
+     "yasmin-farouk"
+    ],
+    "cc": [
+     "me"
+    ],
+    "date": "2026-10-02T10:15:00+01:00",
+    "read": true,
+    "text": "Hey all!\n\nSmall favour. I'm up for promotion to Senior Prototyper at the November panel, and part of it is a few lines from people I've worked with this year. Could you send Luis (cc'd) three or four sentences on what it's like working with me, good and bad? By Friday 9 October if you can.\n\nThank you, really 🙏\nGabi"
+   },
+   {
+    "from": "me",
+    "to": [
+     "anil-joshi",
+     "natasha-whyte",
+     "helen-ashby",
+     "dan-whelan",
+     "yasmin-farouk"
+    ],
+    "cc": [
+     "gabriel-santos"
+    ],
+    "date": "2026-10-02T10:40:00+01:00",
+    "read": true,
+    "text": "Please send your lines to me directly. I’ll give them to the panel.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "anil-joshi",
+    "to": [
+     "me",
+     "natasha-whyte",
+     "helen-ashby",
+     "dan-whelan",
+     "yasmin-farouk"
+    ],
+    "cc": [
+     "gabriel-santos"
+    ],
+    "date": "2026-10-02T14:05:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nGabi:\n- turns a vague idea into something clickable in a day\n- writes down the states he hasn't designed, which saves me hours\n- could say earlier when a prototype won't survive real data\n\nAnil"
+   },
+   {
+    "from": "anil-joshi",
+    "to": [
+     "me",
+     "natasha-whyte",
+     "helen-ashby",
+     "dan-whelan",
+     "yasmin-farouk"
+    ],
+    "cc": [
+     "gabriel-santos"
+    ],
+    "date": "2026-10-02T14:07:00+01:00",
+    "read": true,
+    "text": "That was meant for Luis only. Gabi, you've now read your own reference. Sorry.\n\nAnil"
+   },
+   {
+    "from": "natasha-whyte",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-05T12:30:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nGabi ran the motion jam at MARGATE last year and saved a wet afternoon. Reliable on logistics, first to send back every form. I'd have him on the offsite crew again.\n\nTash\n\nNatasha Whyte\nStudio Operations Manager, Acme Studio\nacme.example"
+   },
+   {
+    "from": "dan-whelan",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-06T08:10:00+01:00",
+    "read": true,
+    "text": "Hi Luis\n\nGabriel's prototype was the first thing our dock staff could test with gloves on. He came to Mallow Lane at 7am twice to watch riders use it in the rain. Only thing I'd say: he's optimistic about dates.\n\nDan"
+   },
+   {
+    "from": "yasmin-farouk",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-07T09:45:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nGabriel did the prototyping table at our July workshop. We got the room twenty minutes before people arrived and he was still ready when the doors opened. I wandered over at lunch and he was helping someone transfer a sketch off her phone. She’d come in saying she wasn’t a designer and stayed at his table most of the afternoon.\n\nThanks so much, Yasmin\n\nYasmin Farouk\nProgramme Lead, Margins - a conference about the edges of design\nmarginsconf.example"
+   },
+   {
+    "from": "helen-ashby",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-08T17:20:00+01:00",
+    "read": true,
+    "text": "Dear Luis,\n\nOf course, and I'm sorry to be slow. Gabriel's animated reading counter for last year's supporters' evening was the moment the room went quiet, and I want to do him justice rather than dash something off between meetings. This week has been the annual report: our chief executive has seen Kasia's first spreads, our chair has not, and I'm the one in between.\n\nI’ll send you something on Monday the 12th. Is that still in time?\n\nWarmly, Helen\n\nHelen Ashby\nDirector of Communications\nBrightwell Trust - every child a reader\nFor press enquiries: press@brightwelltrust.example"
+   },
+   {
+    "from": "me",
+    "to": [
+     "gabriel-santos"
+    ],
+    "date": "2026-10-09T16:30:00+01:00",
+    "read": true,
+    "text": "Four in, Helen's promised hers for Monday. All good so far. Don't read Anil's twice.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "gabriel-santos",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-09T16:52:00+01:00",
+    "read": true,
+    "text": "too late, I've read it four times. thank you!\nGabi"
+   }
+  ],
+  "truth": {
+   "summary": "Gabriel asked five colleagues and clients for a few lines to Luis for his promotion to Senior Prototyper; Anil, Natasha, Dan and Yasmin replied by 9 October, and Helen promised hers for Monday 12 October.",
+   "ownerOwes": [
+    "Pass the feedback on Gabriel to the November promotion panel"
+   ],
+   "othersOwe": [
+    "Helen: her lines on Gabriel, promised for Monday 12 October"
+   ],
+   "promisesByOwner": [
+    {
+     "text": "Pass Gabriel’s feedback to the promotion panel",
+     "kept": false
+    }
+   ],
+   "promisesToOwner": [
+    {
+     "who": "helen-ashby",
+     "text": "Send her feedback on Gabriel on Monday the 12th",
+     "due": "2026-10-12",
+     "kept": false
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2026-10-09",
+     "what": "Gabriel's deadline for feedback"
+    },
+    {
+     "date": "2026-10-12",
+     "what": "Helen's promised date"
+    }
+   ],
+   "facts": [
+    "Gabriel is up for promotion to Senior Prototyper at the November panel.",
+    "Anil accidentally replied to everyone, including Gabriel.",
+    "Anil: Gabriel turns vague ideas into clickable prototypes in a day and documents undesigned states, but could warn earlier when a prototype won't survive real data.",
+    "Natasha: Gabriel ran the motion jam at the 2025 Margate offsite.",
+    "Dan: Gabriel's prototype was the first his dock staff could test with gloves; he came to Mallow Lane at 7am twice; optimistic about dates.",
+    "Yasmin: Gabriel ran the prototyping table at Margins' July workshop.",
+    "Helen: Gabriel animated the reading counter for Brightwell's 2025 supporters' evening."
+   ]
+  }
+ },
+ {
+  "id": "s0440",
+  "account": "acme",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Tomorrow's dinner: 6 covers?",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "philippa-dunn",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-08T10:15:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\n9 October, Railway Arch Dining Room: the booking on the studio calendar says 6 people. At £50 a head that's up to £300, not the four we agreed on Monday. Are Jonathan or Priya joining? If so I need to know before, not after.\n\nMany thanks, Philippa\n\nPhilippa Dunn\nFinance Manager, Acme Studio\nacme.example"
+   },
+   {
+    "from": "me",
+    "to": [
+     "philippa-dunn"
+    ],
+    "date": "2026-10-08T10:32:00+01:00",
+    "read": true,
+    "text": "It's still four: Arjun, Lena, Fiona and me. Fiona asked for the quiet room upstairs. It’s usually for six, so that’s what they put on the booking, but she checked and they’re only charging for the four of us.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "philippa-dunn",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-08T10:50:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nThat explains it, thank you. Four is fine. The itemised receipt please, not the card slip, by the 25th.\n\nMany thanks, Philippa\n\nPhilippa Dunn\nFinance Manager, Acme Studio\nacme.example"
+   }
+  ],
+  "truth": {
+   "summary": "Finance queried the Kestrel dinner reservation for six. Luis confirmed there would be four diners and Philippa asked for the itemised receipt by the 25th.",
+   "ownerOwes": [
+    "Send Philippa the itemised receipt (not the card slip) for the 9 October dinner by 25 October"
+   ],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-10-09",
+     "what": "Kestrel dinner at the Railway Arch Dining Room"
+    },
+    {
+     "date": "2026-10-25",
+     "what": "Itemised receipt due to Philippa"
+    }
+   ],
+   "facts": [
+    "Guests: Arjun, Lena, Fiona and Luis.",
+    "The restaurant normally uses the upstairs room for groups of six or more. Fiona confirmed it will only charge for four.",
+    "The expense limit is £50 a head.",
+    "Philippa needs the itemised receipt, not the card slip."
+   ]
+  }
+ },
+ {
+  "id": "s0441",
+  "account": "acme",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Printer for the Margins programme?",
+  "state": {
+   "inbox": true
+  },
+  "messages": [
+   {
+    "from": "yasmin-farouk",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-05T10:05:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nOur usual printer has closed (the owner retired in September) and I'm stuck. Could you recommend someone for the Margins programme? The details:\n- 400 copies, A5, 24 pages plus cover\n- content closes Friday 23 October\n- needed at the Red Lion Rooms by Tuesday 1 December\n\nThanks so much, Yasmin\n\nYasmin Farouk\nProgramme Lead, Margins - a conference about the edges of design\nmarginsconf.example"
+   },
+   {
+    "from": "me",
+    "to": [
+     "yasmin-farouk",
+     "terry-nolan"
+    ],
+    "date": "2026-10-05T11:20:00+01:00",
+    "read": true,
+    "text": "Hi Yasmin, Terry,\n\nTerry prints the Brightwell reports for us at Fold & Bind in Bow. Yasmin runs Margins and needs a print slot for the December programme. Terry, can you fit her in if copy closes on the 23rd?\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "terry-nolan",
+    "to": [
+     "yasmin-farouk"
+    ],
+    "cc": [
+     "me"
+    ],
+    "date": "2026-10-06T07:35:00+01:00",
+    "read": true,
+    "text": "Yasmin\n\nA5, 24pp plus cover, 400.\n130gsm uncoated text, 300gsm uncoated cover. Saddle stitched.\n£684 + VAT.\nFiles by 26 Oct, delivered Tue 24 Nov.\n\nOr silk, £612 + VAT. Uncoated reads better.\n\nTerry\n\nTerry Nolan\nFold & Bind Print | Unit 7, Bow Industrial Park, E3\n020 7946 0277"
+   },
+   {
+    "from": "yasmin-farouk",
+    "to": [
+     "terry-nolan"
+    ],
+    "cc": [
+     "me"
+    ],
+    "date": "2026-10-06T14:10:00+01:00",
+    "read": true,
+    "text": "Hi Terry,\n\nLet’s go with uncoated. I can get you the files on the 26th. Can you deliver straight to the Red Lion Rooms, 9 Lamb’s Conduit Passage, London WC1R 4RH? The goods door is round the back.\n\nLet me know what you need for the deposit.\n\nThanks so much, Yasmin\n\nYasmin Farouk\nProgramme Lead, Margins - a conference about the edges of design\nmarginsconf.example"
+   },
+   {
+    "from": "terry-nolan",
+    "to": [
+     "yasmin-farouk"
+    ],
+    "cc": [
+     "me"
+    ],
+    "date": "2026-10-07T07:50:00+01:00",
+    "read": true,
+    "text": "Venue's fine.\nGoods door, before 10am, someone there to sign.\nDelivery Tue 24 Nov.\n50% up front, £410.40 inc VAT. Job number FB-26-1187, put it on the transfer.\n\nTerry\n\nTerry Nolan\nFold & Bind Print | Unit 7, Bow Industrial Park, E3\n020 7946 0277"
+   },
+   {
+    "from": "yasmin-farouk",
+    "to": [
+     "terry-nolan"
+    ],
+    "cc": [
+     "me"
+    ],
+    "date": "2026-10-09T16:25:00+01:00",
+    "read": true,
+    "text": "Hi Terry,\n\nDeposit of £410.40 paid today by bank transfer, reference FB-26-1187. I'll be at the goods door myself on 24 November from 8:30 to sign.\n\nThanks so much, Yasmin\n\nYasmin Farouk\nProgramme Lead, Margins - a conference about the edges of design\nmarginsconf.example"
+   },
+   {
+    "from": "terry-nolan",
+    "to": [
+     "yasmin-farouk"
+    ],
+    "cc": [
+     "me"
+    ],
+    "date": "2026-10-12T07:40:00+01:00",
+    "read": true,
+    "text": "Got it.\nPDF proof to you 28 Oct.\nWet proof on request, £35.\n\nTerry\n\nTerry Nolan\nFold & Bind Print | Unit 7, Bow Industrial Park, E3\n020 7946 0277"
+   },
+   {
+    "from": "yasmin-farouk",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-14T10:00:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nAll sorted with Terry. I’m putting a little Fold & Bind credit on the back of the programme. He didn’t ask, but he got us out of a hole.\n\nThanks so much, Yasmin\n\nYasmin Farouk\nProgramme Lead, Margins - a conference about the edges of design\nmarginsconf.example"
+   }
+  ],
+  "truth": {
+   "summary": "Luis introduced Yasmin to Terry at Fold & Bind to print the Margins programme; Yasmin chose uncoated stock at £684 + VAT, paid a £410.40 deposit on 9 October (job FB-26-1187), and Terry will deliver to the Red Lion Rooms on Tuesday 24 November.",
+   "ownerOwes": [],
+   "othersOwe": [
+    "Terry: PDF proof to Yasmin on 28 October",
+    "Terry: deliver the programmes to the Red Lion Rooms on 24 November before 10am",
+    "Yasmin: send print files on 26 October and meet the delivery at the goods door on 24 November."
+   ],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-10-09",
+     "what": "Margins paid the £410.40 deposit by bank transfer"
+    },
+    {
+     "date": "2026-10-23",
+     "what": "Programme content closes"
+    },
+    {
+     "date": "2026-10-26",
+     "what": "Print files due to Fold & Bind"
+    },
+    {
+     "date": "2026-10-28",
+     "what": "PDF proof from Terry"
+    },
+    {
+     "date": "2026-11-24",
+     "what": "Delivery to the Red Lion Rooms goods door, before 10am; Yasmin there from 8:30"
+    },
+    {
+     "date": "2026-12-01",
+     "what": "Yasmin's original need-by date"
+    }
+   ],
+   "facts": [
+    "Job number FB-26-1187 at Fold & Bind.",
+    "Spec: 400 copies, A5, 24 pages plus cover, 130gsm uncoated text, 300gsm uncoated cover, saddle stitched.",
+    "Uncoated costs £684 + VAT; silk would have been £612 + VAT. Yasmin chose uncoated, as Terry advised.",
+    "Margins paid 50% up front: £410.40 including VAT, by bank transfer on 9 October 2026, reference FB-26-1187.",
+    "Delivery address: Red Lion Rooms, 9 Lamb's Conduit Passage, London WC1R 4RH, goods door round the back.",
+    "A wet proof costs £35 on request.",
+    "Margins' previous printer closed when its owner retired in September 2026.",
+    "Yasmin decided to put a small Fold & Bind credit on the back of the programme; Terry didn't ask for it."
+   ]
+  }
+ },
+ {
+  "id": "s0442",
+  "account": "freelance",
+  "lang": "es",
+  "tags": [
+   "client"
+  ],
+  "subject": "Identidad para una librería en Mérida",
+  "state": {
+   "inbox": false
+  },
+  "people": [
+   {
+    "id": "carmen-ledesma-ceiba",
+    "name": "Carmen Ledesma",
+    "email": "carmen@libreriaceiba.example",
+    "lang": "es",
+    "timezone": "America/Merida",
+    "accounts": [
+     "freelance"
+    ],
+    "relationship": "prospecto: Librería La Ceiba, librería con café en Mérida",
+    "style": {
+     "register": "cordial, de usted, ordenada",
+     "length": "medio",
+     "greeting": "Buen día, Luis: / Buenos días, Luis:",
+     "signoff": "Saludos,",
+     "signature": "Carmen Ledesma\nLibrería La Ceiba · Calle 55, Centro, Mérida",
+     "quoting": "bottom",
+     "quirks": [
+      "pregunta el precio sin rodeos"
+     ]
+    },
+    "facts": [
+     "abrió La Ceiba en marzo de 2019 con un socio"
+    ]
+   }
+  ],
+  "messages": [
+   {
+    "from": "carmen-ledesma-ceiba",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-13T12:10:00-06:00",
+    "read": true,
+    "text": "Buen día, Luis:\n\nVi en su portafolio el trabajo para Tueste Laja y Niebla y me gustó mucho cómo quedaron las bolsas. Tenemos una librería con café en el centro de Mérida, La Ceiba, desde 2019, y queremos renovar la imagen para el aniversario de marzo de 2027: logotipo, letrero de fachada y separadores para regalar con cada compra.\n\nDos preguntas antes de quitarle tiempo: ¿trabaja con clientes fuera de su ciudad? Y más o menos, ¿cuánto cuesta algo así? Para saber si estamos en el rango.\n\nSaludos,\n\nCarmen Ledesma\nLibrería La Ceiba · Calle 55, Centro, Mérida"
+   },
+   {
+    "from": "me",
+    "to": [
+     "carmen-ledesma-ceiba"
+    ],
+    "date": "2026-10-14T20:15:00+01:00",
+    "read": true,
+    "text": "Hola, Carmen:\n\nSí, trabajo a distancia desde Londres.\n\nPara darle una idea: una identidad con logotipo, paleta y tipografías, más aplicaciones como el letrero y los separadores, suele quedar entre $45,000 y $70,000 MXN + IVA, según cuántas aplicaciones y cuántas rondas. Para llegar a marzo con todo impreso conviene empezar a principios de diciembre.\n\nSi le sirve, platicamos media hora. Por la diferencia de horario me quedan bien sus mañanas. Las 10:00 en Mérida son las 17:00 en Londres, o las 16:00 a partir del 25 de octubre.\n\nSaludos,\n\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+   },
+   {
+    "from": "carmen-ledesma-ceiba",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-15T09:30:00-06:00",
+    "read": true,
+    "text": "Buenos días, Luis:\n\nMuy claro, gracias. Estamos dentro de lo que pensábamos. Lo platico con mi socio esta semana y le escribo en noviembre para agendar la llamada.\n\nSaludos,\n\nCarmen Ledesma\nLibrería La Ceiba · Calle 55, Centro, Mérida"
+   }
+  ],
+  "truth": {
+   "summary": "Carmen Ledesma of Librería La Ceiba in Mérida asked whether Luis works with clients outside his city and roughly what a new identity costs; he said yes, $45,000-70,000 MXN + IVA, starting early December for a March launch, and she'll write in November to book a call.",
+   "ownerOwes": [],
+   "othersOwe": [
+    "Carmen: write in November to set up a call"
+   ],
+   "promisesByOwner": [],
+   "promisesToOwner": [
+    {
+     "who": "carmen-ledesma-ceiba",
+     "text": "Write in November to book the call",
+     "kept": false
+    }
+   ],
+   "keyDates": [],
+   "facts": [
+    "La Ceiba is a bookshop with a café in central Mérida, open since 2019.",
+    "Wanted: logo, shopfront sign and bookmarks given with each purchase.",
+    "Carmen found Luis through his Tueste Laja y Niebla bags.",
+    "Luis's range: $45,000 to $70,000 MXN + IVA.",
+    "10:00 in Mérida is 17:00 in London until 25 October, then 16:00.",
+    "La Ceiba’s anniversary is in March 2027. Luis suggested starting in early December."
+   ]
+  }
+ },
+ {
+  "id": "s0443",
+  "account": "personal",
+  "lang": "en",
+  "tags": [
+   "personal"
+  ],
+  "subject": "look what I found",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "me",
+    "to": [
+     "rita-valente",
+     "harriet-lowe"
+    ],
+    "date": "2026-10-11T21:05:00+01:00",
+    "read": true,
+    "text": "clearing my phone and found this from April. Rita and Pickle on London Fields, both airborne. I'm getting a few prints done at the photo place on Chatsworth Road on Saturday, want one each?",
+    "attachments": [
+     {
+      "filename": "IMG_4471.jpg",
+      "mime": "image/jpeg",
+      "size": 1184220
+     }
+    ]
+   },
+   {
+    "from": "rita-valente",
+    "to": [
+     "me",
+     "harriet-lowe"
+    ],
+    "date": "2026-10-12T08:30:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nLook at her ears! Yes please. The same address, above the pharmacy with the green cross that never switches off. Tremoco will be jealous.\n\nLove, Rita"
+   },
+   {
+    "from": "harriet-lowe",
+    "to": [
+     "me",
+     "rita-valente"
+    ],
+    "date": "2026-10-12T12:50:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nPickle has never looked so athletic. Yes please, it's going on the clinic noticeboard.\n\nHarriet\n\nHarriet Lowe MCSP\nDalston Step Clinic, Dalston"
+   },
+   {
+    "from": "me",
+    "to": [
+     "rita-valente",
+     "harriet-lowe"
+    ],
+    "date": "2026-10-16T18:40:00+01:00",
+    "read": true,
+    "text": "change of plan: their printer's packed in and they don't know when it'll be fixed. skipping the prints for now. full-size file attached, print it wherever you like",
+    "attachments": [
+     {
+      "filename": "IMG_4471_full.jpg",
+      "mime": "image/jpeg",
+      "size": 6412880
+     }
+    ]
+   }
+  ],
+  "truth": {
+   "summary": "Luis offered prints of his photo of Rita and Pickle. The shop’s printer broke, so he sent the full-size file instead.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [],
+   "facts": [
+    "The photo (IMG_4471.jpg) shows Rita and Pickle mid-leap on London Fields in April 2026.",
+    "The printer at the Chatsworth Road photo shop broke down.",
+    "Rita lives above the pharmacy with the green cross that never switches off.",
+    "Harriet wanted it for the clinic noticeboard."
+   ]
+  }
+ },
+ {
+  "id": "s0444",
+  "account": "icloud",
+  "lang": "en",
+  "tags": [
+   "personal"
+  ],
+  "subject": "odd question about May last year",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "me",
+    "to": [
+     "felix-brandt"
+    ],
+    "date": "2026-10-09T20:10:00+01:00",
+    "read": true,
+    "text": "Felix, one more on the deposit, sorry. The two you sent in September are great but the door's mostly behind me and Biscuit. Did you take any others inside the flat that week? The bedroom door in particular. Of the money in dispute, £150 is for scratches Peter says Biscuit made. Biscuit had been with us about a week when you came, so a photo from then would help.\n\nno worries if not\nL"
+   },
+   {
+    "from": "felix-brandt",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-11T21:30:00+02:00",
+    "read": true,
+    "text": "Dear Luis,\n\nI am at the kitchen table with the radiator making its October noise, a sort of knocking, as if someone small were trapped inside and too polite to shout.\n\nI dug out the old laptop. It still has the sticker you put over the camera. I did take photographs at Albion Road, mostly of the risograph proofs drying on your kitchen table, because I was proud of them and wanted Lotte to see. In one, from the morning of 16 May, the bedroom door is open behind the table and you can see the handle and the panel above it quite clearly. There are marks just above the handle, two or three, pale. I would not call them scratches. They look like something was dragged past the door rather than at it.\n\nI have put that photograph and the two either side of it in the old album from my visit, albums.paperkite.example/felix-london-25, so you can see them full size. The date is in the files, if that is the kind of thing a deposit scheme cares about.\n\nI am sorry this is still going on. When we left our flat in Kreuzberg the landlord tried to charge us for the sun fading the floorboards, so I believe you completely about landlords.\n\nLove, Felix"
+   },
+   {
+    "from": "me",
+    "to": [
+     "felix-brandt"
+    ],
+    "date": "2026-10-12T08:15:00+01:00",
+    "read": true,
+    "text": "this is perfect. the marks are exactly where they are now, same size. Niamh says thank you and also asks who the man in the kettle is (it's you).\n\ncan we send it to the deposit scheme with your name as the person who took it?\nL"
+   },
+   {
+    "from": "felix-brandt",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-13T22:05:00+02:00",
+    "read": true,
+    "text": "Dear Luis,\n\nLotte has a cold and has decided the only cure is a story about a cat who scratches doors, so you are now famous in Neukolln.\n\nOf course you can use my name, and my address if they want it. I still won't write about the door from memory, as I said in September, but this much I can do: a short note saying when I took the photograph and that the marks are in it. Tell me what it should say and I will sign it in my best handwriting, which is not very good.\n\nLove, Felix"
+   },
+   {
+    "from": "me",
+    "to": [
+     "felix-brandt"
+    ],
+    "date": "2026-10-16T19:20:00+01:00",
+    "read": true,
+    "text": "we'll send yours with Niamh's check-in photos. evidence is due Friday the 23rd. Peter turned down the £75 for the door, so we're asking for the whole lot back.\n\na signed note would be great. two lines is plenty: you stayed 15–19 May 2025, and the marks were there when you took the photo on the 16th. thanks Felix\nL"
+   }
+  ],
+  "truth": {
+   "summary": "After the two photos he sent in September, Felix found another from 16 May 2025 showing the Albion Road bedroom door marks. Luis and Niamh decided to challenge the full deduction and submit Felix’s photo with their check-in photos, and Luis asked Felix for a signed note.",
+   "ownerOwes": [
+    "Send Felix’s photo and Niamh’s check-in photos to the deposit scheme by 23 October"
+   ],
+   "othersOwe": [
+    "Felix: write and sign a two-line note about the photo"
+   ],
+   "promisesByOwner": [
+    {
+     "text": "Submit Felix’s photo with Niamh’s check-in photos by the scheme’s evidence deadline",
+     "due": "2026-10-23",
+     "kept": false
+    }
+   ],
+   "promisesToOwner": [
+    {
+     "who": "felix-brandt",
+     "text": "Write a signed note saying when he took the photo and that the marks are in it (he still won't vouch for the door from memory)",
+     "kept": false
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2025-05-16",
+     "what": "Felix's photo of the bedroom door at Albion Road"
+    },
+    {
+     "date": "2026-10-23",
+     "what": "Deposit scheme evidence deadline"
+    }
+   ],
+   "facts": [
+    "The landlord wants to keep £150 of the deposit for door scratches blamed on Biscuit.",
+    "Biscuit had been with Luis and Niamh about a week when Felix visited (15-19 May 2025).",
+    "Felix's photos are in albums.paperkite.example/felix-london-25.",
+    "The marks in the photo are just above the handle, two or three, pale, in the same place as now and as in Felix's September photos.",
+    "Peter declined their £75 offer for the door. Luis and Niamh are asking for the full deduction back.",
+    "The note should say: Felix stayed 15-19 May 2025, took the photo on the 16th, the marks were already there."
+   ]
+  }
+ },
+ {
+  "id": "s0445",
+  "account": "personal",
+  "lang": "en",
+  "tags": [
+   "personal"
+  ],
+  "subject": "dentist",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "niamh-gallagher",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-15T08:20:00+01:00",
+    "read": true,
+    "text": "my filling's come out again. is your dentist actually good or just near\nx\nPS I can only do early, I'm recording from 10 most days"
+   },
+   {
+    "from": "me",
+    "to": [
+     "niamh-gallagher"
+    ],
+    "date": "2026-10-15T09:05:00+01:00",
+    "read": true,
+    "text": "both. ask for Dr Haines, she's the gentle one, and they do slots from 8. I'll ask Kerry if they take new patients x"
+   },
+   {
+    "from": "me",
+    "to": [
+     "kerry-simmonds"
+    ],
+    "cc": [
+     "niamh-gallagher"
+    ],
+    "date": "2026-10-15T09:12:00+01:00",
+    "read": true,
+    "text": "Hi Kerry,\n\nMy partner, Niamh Gallagher, is looking for a dentist. A filling has come out. Are you taking new private patients, and is there anything early with Dr Haines in the next week or so? She's cc'd.\n\nThanks,\nLuis"
+   },
+   {
+    "from": "kerry-simmonds",
+    "to": [
+     "me"
+    ],
+    "cc": [
+     "niamh-gallagher"
+    ],
+    "date": "2026-10-16T11:40:00+01:00",
+    "read": true,
+    "text": "Dear Mr Cordero,\n\nThank you for your email. We are taking new private patients. Dr Haines has the following appointments available:\n\nTuesday 20 October at 08:00\nMonday 26 October at 08:20\n\nA new patient examination is £65; any treatment is charged separately. Ms Gallagher should arrive ten minutes early to complete a medical history form.\n\nKind regards,\n\nKerry Simmonds\nReception, Whitlock Cut Dental\n8 Wilton Way, London E8 1BG | 020 7946 0745\nPlease give 48 hours' notice of cancellations or a £35 fee applies."
+   },
+   {
+    "from": "niamh-gallagher",
+    "to": [
+     "kerry-simmonds"
+    ],
+    "cc": [
+     "me"
+    ],
+    "date": "2026-10-16T12:30:00+01:00",
+    "read": true,
+    "text": "Hi Kerry, the 26th at 08:20 please. Niamh Gallagher, 07700 900562. Thanks"
+   },
+   {
+    "from": "kerry-simmonds",
+    "to": [
+     "niamh-gallagher"
+    ],
+    "cc": [
+     "me"
+    ],
+    "date": "2026-10-19T16:45:00+01:00",
+    "read": false,
+    "text": "Dear Ms Gallagher,\n\nI apologise for the delay in replying. I can confirm your appointment with Dr Haines on Monday 26 October at 08:20. Please arrive at 08:10 to complete your medical history form, and bring a list of any medicines you take.\n\nKind regards,\n\nKerry Simmonds\nReception, Whitlock Cut Dental\n8 Wilton Way, London E8 1BG | 020 7946 0745\nPlease give 48 hours' notice of cancellations or a £35 fee applies."
+   }
+  ],
+  "truth": {
+   "summary": "Niamh's filling came out and Luis recommended his dentist, Whitlock Cut Dental; Kerry offered two slots with Dr Haines, Niamh took Monday 26 October at 08:20, and Kerry confirmed it.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [
+    {
+     "text": "Ask Kerry whether the practice takes new patients",
+     "due": "2026-10-15",
+     "kept": true
+    }
+   ],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-10-26",
+     "what": "Niamh's new patient appointment with Dr Haines, 08:20 (arrive 08:10)"
+    }
+   ],
+   "facts": [
+    "Whitlock Cut Dental is taking new private patients.",
+    "A new patient examination costs £65; treatment is extra.",
+    "Slots offered: Tuesday 20 October at 08:00 and Monday 26 October at 08:20.",
+    "Niamh records from 10am most days, so needs early appointments.",
+    "Niamh's phone number: 07700 900562.",
+    "She should bring a list of medicines and arrive ten minutes early for the medical history form."
+   ]
+  }
+ },
+ {
+  "id": "s0446",
+  "account": "acme",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Small Screens podcast: would you come on?",
+  "state": {
+   "inbox": true
+  },
+  "people": [
+   {
+    "id": "theo-marchetti-podcast",
+    "name": "Theo Marchetti",
+    "email": "theo@smallscreenspod.example",
+    "lang": "en",
+    "timezone": "Europe/London",
+    "accounts": [
+     "acme"
+    ],
+    "relationship": "host of a design podcast, a stranger",
+    "style": {
+     "register": "chatty, flattering, a little long",
+     "length": "medium",
+     "greeting": "Hi Luis,",
+     "signoff": "Cheers,",
+     "signature": "Theo Marchetti\nHost, Small Screens - conversations about the design of everyday software\nsmallscreenspod.example",
+     "quoting": "bottom",
+     "quirks": [
+      "gives dates as a list of options"
+     ]
+    },
+    "facts": [
+     "records in a studio in Hackney Wick"
+    ]
+   }
+  ],
+  "messages": [
+   {
+    "from": "theo-marchetti-podcast",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-21T14:22:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nI host Small Screens, a fortnightly podcast about the design of everyday software: the apps people use without thinking, and the people who sweat over them. I saw you're on the Margins line-up in December, and the idea of designing for the last 10 metres is exactly the kind of thing our listeners love. Someone also told me you were behind the Kestrel Pay redesign, which I use every month and have never once sworn at.\n\nWould you come on? It's 45 minutes, recorded in person at our studio in Hackney Wick, lightly edited, and you'd see the cut before it goes out. Any of these would work for us:\n\n- Tuesday 10 November, 10:00\n- Thursday 19 November, 14:00\n- any morning in the week of 7 December\n\nNo fee, I'm afraid, but there's good coffee and a canal outside.\n\nCheers,\n\nTheo Marchetti\nHost, Small Screens - conversations about the design of everyday software\nsmallscreenspod.example"
+   }
+  ],
+  "truth": {
+   "summary": "Theo Marchetti invited Luis onto his Small Screens design podcast (45 minutes, recorded in Hackney Wick) with three possible dates; Luis hasn't replied.",
+   "ownerOwes": [
+    "Answer Theo's podcast invitation"
+   ],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-11-10",
+     "what": "Offered recording slot, 10:00"
+    },
+    {
+     "date": "2026-11-19",
+     "what": "Offered recording slot, 14:00"
+    },
+    {
+     "date": "2026-12-07",
+     "what": "Offered: any morning that week"
+    }
+   ],
+   "facts": [
+    "Small Screens is a fortnightly podcast about the design of everyday software.",
+    "Recording: 45 minutes, in person, Hackney Wick; Luis would see the cut first.",
+    "No fee.",
+    "Theo found Luis through the Margins line-up and the Kestrel Pay redesign."
+   ]
+  }
+ },
+ {
+  "id": "s0447",
+  "account": "freelance",
+  "storyline": "contadora-otono-2026",
+  "lang": "es",
+  "tags": [
+   "client"
+  ],
+  "subject": "Folio LC-087 y comprobante de septiembre",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "fernanda-rios",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-12T10:05:00-06:00",
+    "read": true,
+    "text": "Hola Luis, buen día\nFolio LC-087: ¿cómo vamos con la nueva? Aparte, la LC-091 de septiembre ya quedó pagada el 2 de octubre, te mando el comprobante.\nSaludos, Fer",
+    "attachments": [
+     {
+      "filename": "comprobante_SPEI_LC-091.pdf",
+      "mime": "application/pdf",
+      "size": 61340
+     }
+    ]
+   },
+   {
+    "from": "me",
+    "to": [
+     "fernanda-rios"
+    ],
+    "date": "2026-10-13T18:30:00+01:00",
+    "read": true,
+    "text": "Hola, Fer:\n\nGracias por el comprobante. Lupita me está ayudando a cancelar la que salió mal. El viernes 16 te mando la nueva con el acuse de cancelación.\n\nUn abrazo,\n\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+   },
+   {
+    "from": "fernanda-rios",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-14T09:20:00-06:00",
+    "read": true,
+    "text": "Luis, ¿te refieres a la LC-091? Esa ya quedó pagada y registrada en septiembre.\nSaludos, Fer"
+   },
+   {
+    "from": "me",
+    "to": [
+     "fernanda-rios"
+    ],
+    "date": "2026-10-14T19:05:00+01:00",
+    "read": true,
+    "text": "No, no, la LC-091 se queda como está. Solo cambia la de agosto, la LC-087. No me expliqué bien.\n\nUn abrazo,\n\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+   },
+   {
+    "from": "fernanda-rios",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-15T09:02:00-06:00",
+    "read": true,
+    "text": "Ah, ya. Entonces espero la LC-087 el viernes.\nSaludos, Fer"
+   },
+   {
+    "from": "fernanda-rios",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-20T10:40:00-06:00",
+    "read": true,
+    "text": "Hola Luis, buen día\nFolio LC-087: no me llegó el viernes. ¿La tienes esta semana? Cerramos octubre el 28 y si no entra se nos va a noviembre. Recuerda PDF y XML juntos.\nSaludos, Fer"
+   }
+  ],
+  "truth": {
+   "summary": "Fernanda sent proof of payment for September’s LC-091 and clarified that only August’s LC-087 would be cancelled, then chased Luis for the corrected invoice after he missed his 16 October promise.",
+   "ownerOwes": [
+    "Send Fernanda the reissued LC-087 (use G03), PDF and XML together, plus the cancellation receipt, before Lobo Gris closes October on the 28th"
+   ],
+   "othersOwe": [],
+   "promisesByOwner": [
+    {
+     "text": "Send the new invoice on Friday 16 October with the cancellation receipt",
+     "due": "2026-10-16",
+     "kept": false
+    }
+   ],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-10-02",
+     "what": "Lobo Gris paid invoice LC-091"
+    },
+    {
+     "date": "2026-10-16",
+     "what": "Luis's promised date for the reissued LC-087, missed"
+    },
+    {
+     "date": "2026-10-28",
+     "what": "Lobo Gris closes October's books"
+    }
+   ],
+   "facts": [
+    "LC-091 (September) was paid on 2 October 2026; proof: comprobante_SPEI_LC-091.pdf.",
+    "Only LC-087 (August) is being cancelled and reissued; LC-091 stays.",
+    "Lupita is helping Luis with the cancellation.",
+    "If LC-087 isn't in by 28 October, it moves to Lobo Gris's November books."
+   ]
+  }
+ }
+]

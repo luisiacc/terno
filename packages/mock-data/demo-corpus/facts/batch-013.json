@@ -1,0 +1,21 @@
+[
+ { "person": "joanna-kowalczyk", "fact": "On 29 October 2024 Luis cracked his lower left first molar on Jo's homemade brittle at her and Ben's house; she sent him £68 for the emergency appointment (reference BRITTLE TAX)." },
+ { "person": "kerry-simmonds", "fact": "Luis's emergency appointment at Whitlock Cut Dental was Thursday 31 October 2024 at 08:15 with Dr Farah Siddiqui (ref WCD-48213, £68): a temporary filling on the lower left first molar and a crown estimate of £545." },
+ { "person": "terry-nolan", "fact": "Fold & Bind reprinted the 2,000 covers of the 2024 Brightwell report free by 22 November 2024 because the first run (delivered 11 November) came out yellower than the specified Pantone 7741 C; the cover board is Fenner Smooth 350gsm, and green drawdowns are now signed off by Kasia on the real stock, with two days' notice." },
+ { "person": "kasia-zielinska", "fact": "In design system v2 she cut the greys from 14 to 9 and kept on-dark colours in the client token files, with Tandem's teal restricted to fills in dark (Orchard Lane Housing's purple #5B2A86 becomes #B38AE0 on dark); the write-up is section 4 of the DS v2 doc." },
+ { "person": "anil-joshi", "fact": "He is the library admin of the Acme DS v2 component library; v1 (61 components) was frozen on 2 July 2025." },
+ { "person": "kate-sutherland", "fact": "She built the design system's token export: the apps read one JSON file at build, and a token missing from the dark set stops the build with an error naming the file." },
+ { "person": "gareth-pugh", "fact": "The Marshgate Half 2026 medals come from Brockley Medals: 1,400 medals, 70 mm, round, antique bronze, two enamel colours, ribbon slot at the top; the back reads MARSHGATE HALF, 15.11.2026, 13.1 MILES round the edge, with no names." },
+ { "person": "gareth-pugh", "fact": "Committee meetings are upstairs at the Lea Tavern; the marshals' course walk of Sunday 18 October 2026 was cancelled because the towpath between miles 8 and 10 is shut for bank works until 31 October." },
+ { "person": "bea-collins", "fact": "She picked the heron as the best of Luis's five medal sketches (heron, Lea bridge, Marshgate Lane gates, running hare, pumping station chimney) and has a photo of a heron at the filter beds on her phone." },
+ { "person": "mateo-cordero", "fact": "Luis offered him the loan of a big grey rucksack (kept on top of the spare-room wardrobe at Mallory Road) for a Cairngorms trip on 17 October 2026." },
+ { "person": "freya-lindgren", "fact": "Ran the Pennywort in-store interviews at the Station Parade shop in Harrogate on Tuesday 7 July 2026 and the Claypath shop in Durham on Thursday 9 July 2026, three sessions each; the vouchers (£480) went on Acme's cost code PW-003." },
+ { "person": "steve-barlow", "fact": "Pennywort's brand green is Pennywort Leaf #6DBE45; the app's buttons use Leaf Deep #2F6E3B from page 14 of Pennywort's guidelines. Pennywort's Brand & Marketing Manager is Lorna Sykes." },
+ { "person": "steve-barlow", "fact": "The scan and go change request goes to Pennywort's finance director on Monday 26 October 2026; the 2,000-customer beta list is due to Acme by 6 November, with beta invites going out on 23 November." },
+ { "person": "natasha-whyte", "fact": "Booked Luis and Hollie for FORMFEST at the Harbour Sheds, Bristol, on Thursday 11 June 2026." },
+ { "person": "hollie-tran", "fact": "Designed Kestrel Pay's referral screens; is collecting for Marcus's leaving present." },
+ { "person": "shona-mcleod", "fact": "Marcus's exit interview is Thursday 10 December 2026 at 11; her leaver meeting with Luis on 22 October was cancelled, and Priya takes the client side with Luis from 2 November." },
+ { "person": "gabriel-santos", "fact": "Built the Holloway object page transition prototype at https://proto.acme.example/holloway/object-expand-v3 (160, 200 and 280ms); Luis owes him notes by Wednesday 28 October 2026." },
+ { "person": "dev-malhotra", "fact": "Runs six remote Pennywort till-test sessions with Pennywort's customer panel on Wednesday 4 November 2026." },
+ { "person": "rhys-morgan", "fact": "The Holloway preview has its own server separate from Acme's staging environment since August 2026." }
+]

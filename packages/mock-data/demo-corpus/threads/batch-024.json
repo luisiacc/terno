@@ -1,0 +1,2108 @@
+[
+  {
+    "id": "s0681",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "can you open checkout v7?",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "hollie-tran",
+        "to": [
+          "me"
+        ],
+        "date": "2024-12-13T10:43:00+00:00",
+        "read": true,
+        "text": "checkout / address step: the postcode error is still hiding below the fold. can i comment in v7? i can open it but all i get is the little padlock.\n\nh"
+      },
+      {
+        "from": "me",
+        "to": [
+          "hollie-tran"
+        ],
+        "date": "2024-12-13T10:58:00+00:00",
+        "read": true,
+        "text": "Try it now. The file was still in Drafts.\n\nThanks,\nLuis\n\nLuis Cordero\nSenior Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "hollie-tran",
+        "to": [
+          "me"
+        ],
+        "date": "2024-12-13T11:01:00+00:00",
+        "read": true,
+        "text": "in. left a pin on the postcode field\n\nh"
+      }
+    ],
+    "truth": {
+      "summary": "Luis opened commenting on checkout v7 and Hollie confirmed she could leave a pin on the postcode field.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "The postcode error on the address step was below the fold.",
+        "Hollie left a comment on the postcode field after Luis changed access."
+      ]
+    }
+  },
+  {
+    "id": "s0682",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "re: £35 repair stand",
+    "state": {
+      "inbox": false
+    },
+    "people": [
+      {
+        "id": "leanne-watts-repair-stand",
+        "name": "Leanne Watts",
+        "email": "leanne.watts82@gmail.com",
+        "lang": "en",
+        "timezone": "Europe/London",
+        "accounts": [
+          "personal"
+        ],
+        "relationship": "marketplace seller of a bike repair stand",
+        "style": {
+          "register": "practical, friendly to buyers",
+          "length": "two or three short sentences",
+          "greeting": "Hi Luis,",
+          "signoff": "Leanne",
+          "signature": null,
+          "quoting": "none",
+          "quirks": [
+            "puts payment and pickup in the same sentence"
+          ]
+        },
+        "facts": [
+          "Selling a folding bike repair stand for £35 cash, collection off Chatsworth Road."
+        ]
+      }
+    ],
+    "messages": [
+      {
+        "from": "leanne-watts-repair-stand",
+        "to": [
+          "me"
+        ],
+        "date": "2025-03-28T19:24:00+00:00",
+        "read": true,
+        "text": "Hi Luis, yes it's still here. £35 cash, collection off Chatsworth Road. Did you want to see it folded?\nLeanne"
+      },
+      {
+        "from": "me",
+        "to": [
+          "leanne-watts-repair-stand"
+        ],
+        "date": "2025-03-29T09:17:00+00:00",
+        "read": true,
+        "text": "yes please. could you send a photo and the folded length? it'll have to fit behind the coats."
+      }
+    ],
+    "truth": {
+      "summary": "A marketplace seller confirmed the £35 repair stand was available and hasn’t answered Luis’s request for a folded photo and length.",
+      "ownerOwes": [],
+      "othersOwe": [
+        "Leanne Watts: send a photo and the length of the stand folded."
+      ],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "The asking price is £35 cash.",
+        "Collection is off Chatsworth Road."
+      ]
+    }
+  },
+  {
+    "id": "s0683",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "Item left at the practice",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "kerry-simmonds",
+        "to": [
+          "me"
+        ],
+        "date": "2025-03-31T12:37:00+01:00",
+        "read": true,
+        "text": "Dear Mr Cordero,\n\nA navy scarf was left on the coat stand after your check-up on Friday afternoon. You were our last patient that day, so we think it may be yours. I have attached a photo.\n\nKind regards,\n\nKerry Simmonds\nReception, Whitlock Cut Dental\n8 Wilton Way, London E8 1BG | 020 7946 0745\nPlease give 48 hours' notice of cancellations or a £35 fee applies.",
+        "attachments": [
+          {
+            "filename": "navy-scarf.jpg",
+            "mime": "image/jpeg",
+            "size": 406381
+          }
+        ]
+      },
+      {
+        "from": "me",
+        "to": [
+          "kerry-simmonds"
+        ],
+        "date": "2025-03-31T19:49:00+01:00",
+        "read": true,
+        "text": "That's mine, thank you. I'm going past on Thursday anyway, could I pick it up then?"
+      },
+      {
+        "from": "kerry-simmonds",
+        "to": [
+          "me"
+        ],
+        "date": "2025-04-01T13:06:00+01:00",
+        "read": true,
+        "text": "Dear Mr Cordero,\n\nCertainly. I have put it in a bag behind the reception desk with your name on it. Please collect it by 5.30 pm on Thursday, as the practice closes early that day.\n\nKind regards,\n\nKerry Simmonds\nReception, Whitlock Cut Dental\n8 Wilton Way, London E8 1BG | 020 7946 0745\nPlease give 48 hours' notice of cancellations or a £35 fee applies."
+      }
+    ],
+    "truth": {
+      "summary": "Kerry found the navy scarf Luis left at Whitlock Cut Dental after his check-up and has kept it at reception for him to collect on Thursday.",
+      "ownerOwes": [
+        "Collect the navy scarf from Whitlock Cut Dental reception by 5.30 pm on Thursday 3 April."
+      ],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2025-03-28",
+          "what": "Luis's check-up, after which he left the scarf"
+        },
+        {
+          "date": "2025-04-03T17:30:00+01:00",
+          "what": "Latest pickup time; the practice closes early that Thursday"
+        }
+      ],
+      "facts": [
+        "The scarf was left on the coat stand.",
+        "Luis was the last patient that Friday.",
+        "Kerry put it in a bag with his name behind the reception desk at 8 Wilton Way."
+      ]
+    }
+  },
+  {
+    "id": "s0684",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "client",
+      "work"
+    ],
+    "subject": "Cover for 21–22 August",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "kate-sutherland"
+        ],
+        "date": "2025-08-14T10:28:00+01:00",
+        "read": true,
+        "text": "Hey Kate,\n\nI'd like to take Thursday and Friday next week off. Before I stick it in the calendar, can you take the dock demo notes if Chiara tests while I'm out? I've put the July pitch workshop version back on the review link. It's the one where the bike stays grey until you pick a dock, which is what they saw in the room. The version on my desk has the new map pins mixed in and I'd rather keep that here until I'm back.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "kate-sutherland",
+        "to": [
+          "me"
+        ],
+        "date": "2025-08-14T11:04:00+01:00",
+        "read": true,
+        "text": "Hi,\n\nClient only, no API change. I can cover. I'll test the empty dock on the review build before we tell Chiara to use it.\n\nKate"
+      },
+      {
+        "from": "me",
+        "to": [
+          "chiara-russo"
+        ],
+        "date": "2025-08-14T14:20:00+01:00",
+        "read": true,
+        "text": "Hi Chiara,\n\nKate's covering the dock demo on 21 and 22 August while I'm off. Are those still the days you're showing it to operations? I can leave the July workshop build up for both days. There are two pins labelled Ash Lane in the current branch and I don't want anyone spending the afternoon trying to work out which is the real dock.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example",
+        "cc": [
+          "kate-sutherland"
+        ]
+      },
+      {
+        "from": "chiara-russo",
+        "to": [
+          "me"
+        ],
+        "date": "2025-08-15T09:23:00+01:00",
+        "read": true,
+        "text": "Hi Luis!\n\nOps only have the room Thursday, so we can drop Friday. I need them to see what a rider does when their nearest dock is empty. If you leave the July version up I can walk in and run that bit myself, and Kate can get on with her day unless something breaks.\n\nThanks, Chiara",
+        "cc": [
+          "kate-sutherland"
+        ]
+      },
+      {
+        "from": "kate-sutherland",
+        "to": [
+          "me"
+        ],
+        "date": "2025-08-15T11:31:00+01:00",
+        "read": true,
+        "text": "Hi,\n\nEmpty Ash Lane dock passed on the July build. Keep that link.\n\nKate",
+        "cc": [
+          "chiara-russo"
+        ]
+      },
+      {
+        "from": "me",
+        "to": [
+          "kate-sutherland",
+          "chiara-russo"
+        ],
+        "date": "2025-08-15T12:06:00+01:00",
+        "read": true,
+        "text": "Leave booked for both days. July link stays.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      }
+    ],
+    "truth": {
+      "summary": "Luis booked 21-22 August off after Kate agreed to cover the Tandem dock demo and Chiara confirmed operations only needed it on the Thursday.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [
+        {
+          "who": "Kate Sutherland",
+          "text": "Test the empty-dock case on the July review build before Chiara uses it.",
+          "kept": true
+        }
+      ],
+      "keyDates": [
+        {
+          "date": "2025-08-21",
+          "what": "Tandem operations demo and first day of Luis’s leave"
+        },
+        {
+          "date": "2025-08-22",
+          "what": "Second day of Luis’s leave"
+        }
+      ],
+      "facts": [
+        "The July workshop build passed the empty-dock test at Ash Lane.",
+        "Chiara planned to run the demo herself in the room and contact Kate if it broke.",
+        "The newer branch showed two Ash Lane pins."
+      ]
+    }
+  },
+  {
+    "id": "s0685",
+    "account": "freelance",
+    "lang": "es",
+    "tags": [
+      "client"
+    ],
+    "subject": "Cuando el precio cambia entre diseño y producción",
+    "state": {
+      "inbox": false
+    },
+    "listId": "comunidad.disenoindependiente.example",
+    "messages": [
+      {
+        "from": "mariana-gomez",
+        "to": [
+          "list"
+        ],
+        "date": "2025-09-25T12:16:00-06:00",
+        "read": true,
+        "text": "Tengo un menú de mostrador que ya quedó aprobado. Antes de mandárselo a Inés para que lo meta a imprenta me cambiaron los precios de once bebidas. La diseñadora me cobra $900 MXN por abrir el archivo y volver a sacar el PDF. ¿Cómo ponen esto en la cotización para que la persona que firma el menú sepa desde el principio qué pasa si cambia un precio?\n\nGracias, Mariana"
+      },
+      {
+        "from": "renata-aguilar",
+        "to": [
+          "list"
+        ],
+        "date": "2025-09-25T18:40:00-06:00",
+        "read": true,
+        "text": "Con quien nos diseña en el hotel lo dejamos así:\n\n- «Dos rondas de ajustes». Eso decía antes.\n- «Ajustes al texto hasta el visto bueno del archivo. Después del visto bueno se cotiza cada actualización». Eso dice ahora.\n\nY si el número mal puesto es error de diseño, lo corrige sin costo aunque ya se haya ido a imprimir.\n\nRena"
+      },
+      {
+        "from": "me",
+        "to": [
+          "list"
+        ],
+        "date": "2025-09-26T17:13:00+01:00",
+        "read": true,
+        "text": "La línea de Renata me sirve. Yo pediría que los precios vengan de una sola hoja aprobada. Si la hoja dice $65 y yo puse $56 en el menú, el costo de corregirlo es mío. Si el martes ya cuesta $70, es otra actualización.\n\nSaludos,\n\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+      },
+      {
+        "from": "mariana-gomez",
+        "to": [
+          "list"
+        ],
+        "date": "2025-09-30T10:52:00-06:00",
+        "read": true,
+        "text": "Ya mandé la hoja de precios a Inés. La diseñadora corrigió también dos acentos que se le habían ido y ésos no los cobró. Voy a usar la frase de Rena para el letrero de temporada. ¿Alguien tiene un ejemplo de cómo anota el visto bueno en la misma hoja? Ahorita el «sí» está enterrado en el correo.\n\nGracias, Mariana"
+      }
+    ],
+    "truth": {
+      "summary": "En la lista acordaron separar los cambios posteriores al visto bueno de los errores de diseño, y quedó sin respuesta la pregunta de Mariana sobre cómo registrar la aprobación en la hoja de precios.",
+      "ownerOwes": [],
+      "othersOwe": [
+        "Alguien de la lista: compartir un ejemplo de visto bueno registrado en la hoja de precios."
+      ],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "La actualización de once bebidas en un menú de mostrador costó $900 MXN.",
+        "La diseñadora corrigió dos acentos propios sin cobrar.",
+        "Mariana le mandó la hoja de precios a Inés."
+      ]
+    }
+  },
+  {
+    "id": "s0686",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "Thursday key handover / unit 6",
+    "state": {
+      "inbox": false
+    },
+    "people": [
+      {
+        "id": "gareth-pike-unit-six",
+        "name": "Gareth Pike",
+        "email": "gareth.pike@fallowyards.example",
+        "lang": "en",
+        "timezone": "Europe/London",
+        "accounts": [
+          "personal"
+        ],
+        "relationship": "property handover coordinator who emailed the wrong Luis",
+        "style": {
+          "register": "straightforward, logistical",
+          "length": "one paragraph",
+          "greeting": "first name alone",
+          "signoff": "Gareth",
+          "signature": null,
+          "quoting": "bottom",
+          "quirks": [
+            "gives the meeting point as a physical landmark"
+          ]
+        },
+        "facts": [
+          "Moved the Unit 6 handover to 4.45 on 16 October and assigned Rhoda to meet the leaseholder."
+        ]
+      }
+    ],
+    "messages": [
+      {
+        "from": "gareth-pike-unit-six",
+        "to": [
+          "me"
+        ],
+        "date": "2025-10-14T15:18:00+01:00",
+        "read": true,
+        "text": "Luis,\n\nGot your note about the train. I've moved the Unit 6 handover to 4.45 on Thursday. Rhoda's doing it now, so wait by the roller shutter at 7 Fallow Lane and she'll come round from the yard. I told her Corderay, with a y, like it is on the lease.\n\nGareth"
+      }
+    ],
+    "truth": {
+      "summary": "Gareth sent a unit handover update meant for a different Luis, whose lease surname is Corderay.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2025-10-16T16:45:00+01:00",
+          "what": "Unit 6 handover for the intended recipient"
+        }
+      ],
+      "facts": [
+        "Rhoda is handling the handover at the roller shutter at 7 Fallow Lane.",
+        "The message was sent to the wrong Luis."
+      ]
+    }
+  },
+  {
+    "id": "s0687",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "EXTENSION LEAD",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "peter-stavros",
+        "to": [
+          "me"
+        ],
+        "date": "2025-10-31T17:49:00+00:00",
+        "read": true,
+        "text": "LUIS\n\nYOUR ORANGE LEAD IS BACK OUTSIDE FLAT 3.\n\nPETER"
+      }
+    ],
+    "truth": {
+      "summary": "Peter returned the orange extension lead he borrowed from Luis, leaving it outside Flat 3.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "Luis lived in Flat 3 on Albion Road at the time."
+      ]
+    }
+  },
+  {
+    "id": "s0688",
+    "account": "acme",
+    "storyline": "kestrel-app-redesign",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Kestrel / leave the diary prompt alone",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "jae-cho",
+        "to": [
+          "me"
+        ],
+        "date": "2025-11-14T15:24:00+00:00",
+        "read": true,
+        "text": "Luis,\n\nI'd leave Freya's first diary prompt as it is. If we put the Kestrel screen in front of them this week we'll get a week of people telling us where they tapped.\n\nI sat in on two of the set-up calls. One owner had a stack of invoices held down by the card reader. She only opened Kestrel when she needed to check whether one particular customer had paid. The other bloke was doing it all on his phone while he waited for a delivery. Both said 'I check it every day', which would have sounded like the same answer if we hadn't seen where they were sitting.\n\nFreya's got 18 small-business owners enrolled. The prompt just asks what made them look for a payment that day. By the end of the two weeks we should have enough examples to decide what belongs on the first screen. For Monday's board I've used a blank rectangle where the home screen would go. It looks a bit ridiculous but it'll stop us spending the review talking about the rectangle.\n\nJae"
+      }
+    ],
+    "truth": {
+      "summary": "Jae recommended leaving Freya’s Kestrel diary prompt open-ended and keeping draft screens out of the study.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2025-11-17",
+          "what": "Review board with a blank home-screen placeholder"
+        }
+      ],
+      "facts": [
+        "The diary study enrolled 18 small-business owners and asked what made them look for a payment that day.",
+        "The diary period was two weeks.",
+        "Jae put a placeholder for the home screen on Monday’s review board."
+      ]
+    }
+  },
+  {
+    "id": "s0689",
+    "account": "acme",
+    "storyline": "kestrel-app-redesign",
+    "lang": "en",
+    "tags": [
+      "client",
+      "work"
+    ],
+    "subject": "move the diary readout?",
+    "state": {
+      "inbox": false,
+      "trash": true
+    },
+    "messages": [
+      {
+        "from": "arjun-sethi",
+        "to": [
+          "me"
+        ],
+        "date": "2025-12-09T08:45:00+00:00",
+        "read": true,
+        "text": "Move the 11 December readout. Risk review has taken the room. Can we do the 16th before noon?\n\nA",
+        "cc": [
+          "rhys-morgan",
+          "gabriel-santos"
+        ]
+      },
+      {
+        "from": "rhys-morgan",
+        "to": [
+          "me"
+        ],
+        "date": "2025-12-09T09:02:00+00:00",
+        "read": true,
+        "text": "10:30 works. Need the last diary upload in before we lock nav.\n\nR",
+        "cc": [
+          "arjun-sethi",
+          "gabriel-santos"
+        ]
+      },
+      {
+        "from": "gabriel-santos",
+        "to": [
+          "me"
+        ],
+        "date": "2025-12-09T10:19:00+00:00",
+        "read": true,
+        "text": "Hey Luis!\n\n10:30 for me too. The diary clips are in the offline build now, so we can lose the projector Wi-Fi and still play them.\n\nGabi"
+      },
+      {
+        "from": "me",
+        "to": [
+          "arjun-sethi",
+          "rhys-morgan",
+          "gabriel-santos"
+        ],
+        "date": "2025-12-10T11:17:00+00:00",
+        "read": true,
+        "text": "Moved the invite to Tuesday 16 December at 10:30. Gabi, bring the offline build.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "arjun-sethi",
+        "to": [
+          "me"
+        ],
+        "date": "2025-12-10T11:41:00+00:00",
+        "read": true,
+        "text": "Accepted. Leave the nav decision off the invite title.\n\nA",
+        "cc": [
+          "rhys-morgan"
+        ],
+        "subject": "Re: Diary readout / 16 Dec"
+      },
+      {
+        "from": "rhys-morgan",
+        "to": [
+          "me"
+        ],
+        "date": "2025-12-16T09:54:00+00:00",
+        "read": true,
+        "text": "Last upload in. Room's open.\n\nR",
+        "cc": [
+          "arjun-sethi",
+          "gabriel-santos"
+        ]
+      }
+    ],
+    "truth": {
+      "summary": "The Kestrel diary readout moved from 11 December to 16 December at 10:30 after a room clash, and the last diary upload arrived before the meeting.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2025-12-11",
+          "what": "Original diary readout date"
+        },
+        {
+          "date": "2025-12-16T10:30:00+00:00",
+          "what": "Rescheduled diary readout"
+        }
+      ],
+      "facts": [
+        "Risk review took the original room.",
+        "Gabriel had the clips in an offline build.",
+        "Arjun asked for the invite title to omit the navigation decision."
+      ]
+    }
+  },
+  {
+    "id": "s0690",
+    "account": "acme",
+    "storyline": "kestrel-app-redesign",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Kestrel notes from yesterday",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "freya-lindgren",
+        "to": [
+          "me"
+        ],
+        "date": "2026-01-17T10:16:00+00:00",
+        "read": true,
+        "text": "Hi Luis,\n\nAttaching the notes while I still have Friday's screens in my head.\n\n1. The diary entries support bringing invoices into the main nav. Owners kept going back to the same invoice; it wasn't a once-a-week admin job for them.\n2. In the January click-through, people found the unpaid filter without a prompt. We didn't test what they would call the tab.\n3. Arjun rejected the first dashboard on Friday. His issue was the weekly total taking up the top half while the actual late invoices were off screen. I've filed that as client feedback in the PDF. It didn't come from a session.\n\nThat's all for Monday's pin-up.\n\nFreya\n\nFreya Lindgren\nSenior UX Researcher, Acme Studio\nacme.example",
+        "attachments": [
+          {
+            "filename": "kestrel-nav-and-invoice-notes-16-jan.pdf",
+            "mime": "application/pdf",
+            "size": 181920
+          }
+        ]
+      }
+    ],
+    "truth": {
+      "summary": "Freya shared January notes supporting invoices in the main navigation and recorded that Arjun rejected the first dashboard.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-01-16",
+          "what": "Arjun rejected the first dashboard"
+        },
+        {
+          "date": "2026-01-19",
+          "what": "Pin-up for the notes"
+        }
+      ],
+      "facts": [
+        "People found the unpaid filter without prompting, but the tab name wasn’t tested.",
+        "Arjun objected to weekly totals pushing late invoices off screen.",
+        "The dashboard objection came from Arjun rather than a research participant."
+      ]
+    }
+  },
+  {
+    "id": "s0691",
+    "account": "acme",
+    "storyline": "kestrel-app-redesign",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Fjell / narrow phones",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "gabriel-santos"
+        ],
+        "date": "2026-02-16T09:38:00+00:00",
+        "read": true,
+        "text": "Hey Gabi,\n\nUse Lena's Fjell file for the next Kestrel build. Can you try an invoice for £12,480.00 at 320px before we put the font across the app? The comma and the currency sign are the bits I haven't seen together.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "gabriel-santos",
+        "to": [
+          "me"
+        ],
+        "date": "2026-02-16T15:12:00+00:00",
+        "read": true,
+        "text": "Hey Luis!\n\nTry https://proto.acme.example/kestrel/fjell-totals with the little 320 switch. The amount fits until you turn on bigger text, then the last zero lands under the decimal. It looks like two different numbers. The invoice number can move onto its own line if we need the room.\n\nGabi"
+      },
+      {
+        "from": "me",
+        "to": [
+          "gabriel-santos"
+        ],
+        "date": "2026-02-17T11:09:00+00:00",
+        "read": true,
+        "text": "Own line for invoice number. Keep the amount intact.\n\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "gabriel-santos",
+        "to": [
+          "me"
+        ],
+        "date": "2026-02-19T17:36:00+00:00",
+        "read": true,
+        "text": "That buys enough room at the first size up. At 200% the action still takes half the row, so I'm trying it underneath the total. Same link; stick with the first frame for now, the other one's got a dummy button.\n\nGabi",
+        "subject": "Re: Fjell / amount at 200%"
+      }
+    ],
+    "truth": {
+      "summary": "Lena’s Fjell typeface went into the Kestrel prototype, and Gabriel is still working on the invoice layout at 200% text size.",
+      "ownerOwes": [],
+      "othersOwe": [
+        "Gabriel Santos: try moving the action below the total at 200% text size."
+      ],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "The test amount was £12,480.00 in a 320px viewport.",
+        "Moving the invoice number to its own line made room at the first text-size increase.",
+        "First frame at https://proto.acme.example/kestrel/fjell-totals is the one to review."
+      ]
+    }
+  },
+  {
+    "id": "s0692",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "collection filters / keyboard",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "rhys-morgan",
+        "to": [
+          "me"
+        ],
+        "date": "2026-03-13T11:52:00+00:00",
+        "read": true,
+        "text": "Audit found focus goes to body after Clear filters. Where should it land on Holloway? Need a rule for the empty result set as well.\n\nR"
+      },
+      {
+        "from": "me",
+        "to": [
+          "rhys-morgan"
+        ],
+        "date": "2026-03-13T12:26:00+00:00",
+        "read": true,
+        "text": "Keep it by the filters. Does the Clear button stay in the DOM once it's done?\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "rhys-morgan",
+        "to": [
+          "me"
+        ],
+        "date": "2026-03-13T13:03:00+00:00",
+        "read": true,
+        "text": "Clear unmounts. First filter or results heading?\n\nR"
+      }
+    ],
+    "truth": {
+      "summary": "Rhys needs Luis to choose the focus target after Holloway’s Clear filters control disappears.",
+      "ownerOwes": [
+        "Choose between the first filter and the results heading as the focus target, including for empty results."
+      ],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "The audit found that focus went to the body after clearing filters.",
+        "Clear unmounts after use."
+      ]
+    }
+  },
+  {
+    "id": "s0693",
+    "account": "acme",
+    "storyline": "kestrel-app-redesign",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Kestrel / one more invoice shortcut?",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "rhys-morgan",
+          "freya-lindgren"
+        ],
+        "date": "2026-03-18T13:02:00+00:00",
+        "read": true,
+        "text": "Could we squeeze a New invoice shortcut into the home header for April? The invoice tab stays as it is.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "rhys-morgan",
+        "to": [
+          "me"
+        ],
+        "date": "2026-03-18T14:04:00+00:00",
+        "read": true,
+        "text": "I'd leave it out of April. Header can't tell which accounts can create an invoice. The tab can.\n\nR",
+        "cc": [
+          "freya-lindgren"
+        ]
+      },
+      {
+        "from": "freya-lindgren",
+        "to": [
+          "me"
+        ],
+        "date": "2026-03-19T09:22:00+00:00",
+        "read": true,
+        "text": "Hi Luis,\n\nWe didn't see anyone miss New invoice once they were in the tab. I'd save that spot for now.\n\nFreya\n\nFreya Lindgren\nSenior UX Researcher, Acme Studio\nacme.example",
+        "cc": [
+          "rhys-morgan"
+        ]
+      },
+      {
+        "from": "me",
+        "to": [
+          "rhys-morgan",
+          "freya-lindgren"
+        ],
+        "date": "2026-03-19T09:35:00+00:00",
+        "read": true,
+        "text": "Agreed, tab only for April.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      }
+    ],
+    "truth": {
+      "summary": "The Kestrel team declined a home-header shortcut for April and kept New invoice in the invoice tab.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "The header couldn’t determine which accounts may create an invoice.",
+        "Freya hadn’t seen anyone miss the action in the tab."
+      ]
+    }
+  },
+  {
+    "id": "s0694",
+    "account": "icloud",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "Cover for a friend's prints on a weekend abroad",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "lorraine-whitby"
+        ],
+        "date": "2026-04-07T18:11:00+01:00",
+        "read": true,
+        "text": "Hi Lorraine,\n\nA quick policy question rather than a claim. On 16 May I'm taking the train to Utrecht for a weekend with friends, and I'd be carrying a flat case of A3 proofs that belong to one of them, Felix Brandt. Would my contents policy cover them while they're with me, or could I add them for the weekend?\n\nThanks,\nLuis"
+      },
+      {
+        "from": "lorraine-whitby",
+        "to": [
+          "me"
+        ],
+        "date": "2026-04-08T10:36:00+01:00",
+        "read": true,
+        "text": "Dear Mr Cordero,\n\nThe personal possessions section of your policy covers your own belongings only. We are unable to add another person's property to it for a weekend. If Mr Brandt arranges cover in his own name, his insurer will need to know that the case will be in your possession while travelling.\n\nYours sincerely,\n\nLorraine Whitby\nClaims Handler, Halyard Insurance\nClaims: claims@halyardinsurance.example (Mon-Fri 8am-6pm)\nPlease quote your claim reference in the subject line."
+      },
+      {
+        "from": "me",
+        "to": [
+          "felix-brandt"
+        ],
+        "date": "2026-04-08T19:05:00+01:00",
+        "read": true,
+        "forward": true,
+        "text": "so halyard won't touch your proofs. either you sort cover your end or i carry them on the train and we hope. have you booked anything yet?\n\nL"
+      },
+      {
+        "from": "felix-brandt",
+        "to": [
+          "me"
+        ],
+        "date": "2026-04-09T22:10:00+02:00",
+        "read": true,
+        "text": "Dear Luis,\n\nThe corner of the green proof on my desk keeps lifting off the paper. Lotte has put a spoon on it and now calls it the office spoon, and nobody is allowed to move it.\n\nI'm sorry, but I have to pull out of Utrecht. The printer can only give us a press slot for the book on that Saturday, the 16th, and after what happened to the blue last time I promised I'd stand there for the first sheet. I tried to move it and they laughed at me, kindly.\n\nSo nobody needs to insure anything. Could you keep the case in London a while longer? Under a bed is fine. The little rip in the handle looks much more serious than it is.\n\nI hadn't bought a ticket and nor had Eva, so I think the whole thing falls over without me, which is flattering and also a shame. If you've booked a room anywhere, cancel it while you still can.\n\nI was looking forward to seeing you in a city neither of us had to tidy first. Another weekend, I hope a long one.\n\nLove, Felix"
+      }
+    ],
+    "truth": {
+      "summary": "Halyard told Luis his contents policy couldn't cover Felix's prints, and Felix then called off the 16 May Utrecht trip because of a press slot, asking Luis to keep his print case in London.",
+      "ownerOwes": [
+        "Keep Felix's print case in London for now."
+      ],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-05-16",
+          "what": "Planned Utrecht weekend, called off; Felix's press slot"
+        }
+      ],
+      "facts": [
+        "Lorraine said the personal possessions section covers only Luis's own belongings and can't be extended to another person's property.",
+        "Felix's A3 proofs are in a flat case with a small rip in the handle.",
+        "Neither Felix nor Eva had bought tickets.",
+        "Felix told Luis to cancel any room he had booked."
+      ]
+    }
+  },
+  {
+    "id": "s0695",
+    "account": "acme",
+    "storyline": "kestrel-app-redesign",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Kestrel Friday / capture",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "gabriel-santos"
+        ],
+        "date": "2026-04-20T07:22:00-06:00",
+        "read": true,
+        "text": "From Mexico, so slow replies this week. Can you grab the new invoice screen once Friday's build is live? Use a dummy amount for the handover page.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "gabriel-santos",
+        "to": [
+          "me"
+        ],
+        "date": "2026-04-23T16:32:00+01:00",
+        "read": true,
+        "text": "Hey Luis!\n\nI'll grab it from the live build tomorrow. The preview still has the old icon.\n\nGabi"
+      },
+      {
+        "from": "gabriel-santos",
+        "to": [
+          "me"
+        ],
+        "date": "2026-04-24T13:57:00+01:00",
+        "read": true,
+        "text": "It's live. I put the capture at https://proto.acme.example/kestrel/live-april. Can you replace the old image on the handover page when you're back? I can see it but I can't edit.\n\nGabi"
+      }
+    ],
+    "truth": {
+      "summary": "Kestrel shipped on 24 April and Gabriel captured the live invoice screen, leaving Luis to swap the image on the handover page.",
+      "ownerOwes": [
+        "Replace the old handover image with Gabriel’s live Kestrel invoice capture."
+      ],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [
+        {
+          "who": "Gabriel Santos",
+          "text": "Capture the invoice screen from the live build.",
+          "due": "2026-04-24",
+          "kept": true
+        }
+      ],
+      "keyDates": [
+        {
+          "date": "2026-04-24",
+          "what": "Redesigned Kestrel app shipped"
+        }
+      ],
+      "facts": [
+        "The capture is at https://proto.acme.example/kestrel/live-april.",
+        "Gabriel could view the handover page but couldn’t edit it."
+      ]
+    }
+  },
+  {
+    "id": "s0696",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Two £18.60s?",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "gabriel-santos",
+        "to": [
+          "me"
+        ],
+        "date": "2026-07-03T16:44:00+01:00",
+        "read": true,
+        "text": "Hey Luis!\n\nDid you already put the £18.60 in for the trip from Holloway? Finance flagged mine as a possible duplicate. I thought I'd covered the ride and you'd paid for the model board. If it's the same receipt, I'll pull mine.\n\nGabi",
+        "cc": [
+          "anil-joshi"
+        ]
+      },
+      {
+        "from": "me",
+        "to": [
+          "anil-joshi",
+          "gabriel-santos"
+        ],
+        "date": "2026-07-03T17:03:00+01:00",
+        "read": true,
+        "text": "Mine was the board from Paper Cask. Same amount. Anil, have you got the cab drop-off in your notes?\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "anil-joshi",
+        "to": [
+          "me"
+        ],
+        "date": "2026-07-06T09:11:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\n- Ride: museum service door to Turnmill Street, 15:28.\n- Board: Paper Cask, 14:52. I remember the card reader asking whether we wanted a bag for something nearly a metre long.\n\nBoth jobs are tagged `HOLLOWAY`. The ride is for the three of us.\n\nAnil",
+        "cc": [
+          "gabriel-santos"
+        ]
+      },
+      {
+        "from": "gabriel-santos",
+        "to": [
+          "me"
+        ],
+        "date": "2026-07-07T10:09:00+01:00",
+        "read": true,
+        "text": "Both cleared. Added 'cab 15:28' to mine.\n\nGabi"
+      }
+    ],
+    "truth": {
+      "summary": "Finance cleared two £18.60 Holloway claims once the cab ride was distinguished from the model board purchase.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "Luis bought the board from Paper Cask at 14:52.",
+        "Gabriel claimed the 15:28 ride from Holloway’s service door to Turnmill Street for all three colleagues.",
+        "Both claims used the HOLLOWAY tag."
+      ]
+    }
+  },
+  {
+    "id": "s0697",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "two mins on the cv",
+    "state": {
+      "inbox": true
+    },
+    "messages": [
+      {
+        "from": "tom-ashworth",
+        "to": [
+          "me"
+        ],
+        "date": "2026-07-09T21:47:00+01:00",
+        "read": true,
+        "text": "mate (and mei lin) does this make sense to anyone who isnt a sound person file:///Users/tomash/Downloads/TOM%20CV%20final%20FINAL.pages",
+        "cc": [
+          "mei-lin-chou"
+        ]
+      },
+      {
+        "from": "me",
+        "to": [
+          "tom-ashworth",
+          "mei-lin-chou"
+        ],
+        "date": "2026-07-09T22:12:00+01:00",
+        "read": true,
+        "text": "it will once you send the actual cv, not a link to your downloads folder."
+      },
+      {
+        "from": "mei-lin-chou",
+        "to": [
+          "me"
+        ],
+        "date": "2026-07-10T08:31:00+01:00",
+        "read": true,
+        "text": "- Can't open it either.\n- From the version you showed me at Ben's: swap 'RF' for 'wireless mics'.\n- Put the venue next to each job.\nM",
+        "cc": [
+          "tom-ashworth"
+        ]
+      },
+      {
+        "from": "tom-ashworth",
+        "to": [
+          "me"
+        ],
+        "date": "2026-07-10T19:04:00+01:00",
+        "read": true,
+        "text": "fair mate ill send the pdf when ive fixed the dates",
+        "cc": [
+          "mei-lin-chou"
+        ]
+      }
+    ],
+    "truth": {
+      "summary": "Tom asked Luis and Mei Lin to check his CV but sent a link to his own downloads folder; he still has to send Luis the PDF after fixing the dates.",
+      "ownerOwes": [],
+      "othersOwe": [
+        "Tom Ashworth: send Luis the CV as a PDF once the dates are fixed."
+      ],
+      "promisesByOwner": [],
+      "promisesToOwner": [
+        {
+          "who": "Tom Ashworth",
+          "text": "Send the CV PDF after fixing the dates.",
+          "kept": false
+        }
+      ],
+      "keyDates": [],
+      "facts": [
+        "Tom's first message linked to a file on his own computer, which neither Luis nor Mei Lin could open.",
+        "From an earlier version Tom showed her at Ben's, Mei Lin suggested writing 'wireless mics' instead of 'RF' and putting the venue next to each job."
+      ]
+    }
+  },
+  {
+    "id": "s0698",
+    "account": "acme",
+    "storyline": "brightwell-annual-report",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Fwd: Brightwell / fold-out",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "zainab-bello",
+        "to": [
+          "me"
+        ],
+        "date": "2026-09-01T09:12:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nCan we say no to the fold-out before Kasia builds it?\n\nZ\n\nZainab Bello\nContent Designer, Acme Studio\nacme.example",
+        "cc": [
+          "kasia-zielinska"
+        ],
+        "forward": {
+          "from": "Helen Ashby <helen.ashby@brightwelltrust.example>",
+          "date": "2026-08-28T16:17:00+01:00",
+          "subject": "Brightwell / fold-out",
+          "to": "Zainab Bello <zainab@acme.example>",
+          "text": "Dear Zainab,\n\nRuth has seen the 32-page outline and is content with the order. She wondered if we could put the map of reading groups on a fold-out at the back. The idea is that someone at the supporters' evening on 26 November can open it while they're still looking at the figures. Would that be possible in the 1,500 we asked Terry for? I haven't said yes to her.\n\nWarmly, Helen\n\nHelen Ashby\nDirector of Communications\nBrightwell Trust - every child a reader\nFor press enquiries: press@brightwelltrust.example"
+        }
+      },
+      {
+        "from": "kasia-zielinska",
+        "to": [
+          "me"
+        ],
+        "date": "2026-09-01T11:38:00+01:00",
+        "read": true,
+        "text": "Luis -\n\nThe map fits across 18–19 if the labels come off the boroughs and go into a key. I can work with that. A fold-out sends Terry back to pricing.\n\nK.",
+        "cc": [
+          "zainab-bello"
+        ]
+      },
+      {
+        "from": "me",
+        "to": [
+          "zainab-bello",
+          "kasia-zielinska"
+        ],
+        "date": "2026-09-01T12:20:00+01:00",
+        "read": true,
+        "text": "Stick with the 32 pages. Z, could you tell Helen we can put the map opposite the figures on 18–19? If she wants people to see both at once, that'll do it without asking Terry to change the job.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "zainab-bello",
+        "to": [
+          "me"
+        ],
+        "date": "2026-09-03T14:19:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nHelen’s fine with a spread. I’ve taken the borough names off the map and put them in the key.\n\nZ\n\nZainab Bello\nContent Designer, Acme Studio\nacme.example",
+        "cc": [
+          "kasia-zielinska"
+        ]
+      }
+    ],
+    "truth": {
+      "summary": "Luis declined Brightwell’s fold-out request, and Helen accepted a two-page map spread in the existing report.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-11-26",
+          "what": "Brightwell supporters’ evening"
+        }
+      ],
+      "facts": [
+        "Ruth approved the order in the 32-page outline and suggested a fold-out.",
+        "The brief called for 1,500 copies.",
+        "The alternative map sits opposite the figures on pages 18–19, with borough names in a key."
+      ]
+    }
+  },
+  {
+    "id": "s0699",
+    "account": "acme",
+    "storyline": "brightwell-annual-report",
+    "lang": "en",
+    "tags": [
+      "client",
+      "work"
+    ],
+    "subject": "Brightwell dummy, Tuesday",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "kasia-zielinska",
+        "to": [
+          "me"
+        ],
+        "date": "2026-09-14T09:04:00+01:00",
+        "read": true,
+        "text": "Luis -\n\nCan we drop tomorrow's dummy review? The captions aren't in and we'd be measuring blank pages.\n\nK.",
+        "cc": [
+          "zainab-bello",
+          "helen-ashby",
+          "terry-nolan"
+        ]
+      },
+      {
+        "from": "zainab-bello",
+        "to": [
+          "me"
+        ],
+        "date": "2026-09-14T09:22:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nYes. Three captions are still with the school.\n\nZ\n\nZainab Bello\nContent Designer, Acme Studio\nacme.example",
+        "cc": [
+          "kasia-zielinska",
+          "helen-ashby"
+        ]
+      },
+      {
+        "from": "terry-nolan",
+        "to": [
+          "me"
+        ],
+        "date": "2026-09-14T10:39:00+01:00",
+        "read": true,
+        "text": "A4. 150gsm uncoated text. Haven't put the dummy on the van.\n\nTerry\n\nTerry Nolan\nFold & Bind Print | Unit 7, Bow Industrial Park, E3\n020 7946 0277",
+        "cc": [
+          "kasia-zielinska",
+          "zainab-bello",
+          "helen-ashby"
+        ]
+      },
+      {
+        "from": "helen-ashby",
+        "to": [
+          "me"
+        ],
+        "date": "2026-09-14T12:53:00+01:00",
+        "read": true,
+        "text": "Dear Luis,\n\nThank you all for flagging this, and yes, let's cancel it. Ruth has seen and approved the map, but she hasn't had the captions yet and I'd rather she read them before any of us look at a dummy. I'm still waiting on the school's wording for three of them and will chase again this afternoon.\n\nWarmly, Helen\n\nHelen Ashby\nDirector of Communications\nBrightwell Trust - every child a reader\nFor press enquiries: press@brightwelltrust.example",
+        "cc": [
+          "kasia-zielinska",
+          "zainab-bello",
+          "terry-nolan"
+        ]
+      },
+      {
+        "from": "me",
+        "to": [
+          "zainab-bello",
+          "terry-nolan",
+          "kasia-zielinska",
+          "helen-ashby"
+        ],
+        "date": "2026-09-14T13:07:00+01:00",
+        "read": true,
+        "text": "Invite cancelled. Terry, nothing to send this week.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "kasia-zielinska",
+        "to": [
+          "me"
+        ],
+        "date": "2026-09-18T11:26:00+01:00",
+        "read": true,
+        "text": "Luis -\n\nThursday's captions are in the file. Pages 6 and 24 have stopped jumping around.\n\nK."
+      }
+    ],
+    "truth": {
+      "summary": "The 15 September Brightwell dummy review was cancelled because three captions were outstanding, and Kasia later confirmed the captions were in the layout.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-09-15",
+          "what": "Cancelled dummy review"
+        },
+        {
+          "date": "2026-09-17",
+          "what": "Date of the captions Kasia added"
+        }
+      ],
+      "facts": [
+        "Ruth approved the map before seeing the captions.",
+        "The dummy was A4 on 150 gsm uncoated text stock and had not gone on the van.",
+        "The new captions settled the layout on pages 6 and 24."
+      ]
+    }
+  },
+  {
+    "id": "s0700",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Can the folio panel open the payment demo?",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "duncan-shaw",
+        "to": [
+          "me"
+        ],
+        "date": "2026-09-23T10:18:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nThe folio panel has cut the evening down to forty minutes, so we're asking for one thing the panel can open before the room fills up. The payment demo you had on the table would do more in two minutes than any of the slides I have. Can we circulate the link to the six reviewers on Friday?\n\nI know it's client work. I can keep it off the event page, but the reviewers would need to open it without an Acme account. If that takes it off the table, tell me before I put it in the running order.\n\nBest, Duncan\n\nDuncan Shaw | Partner, Harlow Search\n+44 7700 900 508",
+        "cc": [
+          "gabriel-santos"
+        ]
+      },
+      {
+        "from": "me",
+        "to": [
+          "duncan-shaw",
+          "gabriel-santos"
+        ],
+        "date": "2026-09-23T14:51:00+01:00",
+        "read": true,
+        "text": "Keep the original link off the running order. The last permission we got was for the folio table, with someone from Acme there. It didn't cover sending people home with a link.\n\nGabi, can you take the first two screens into a separate file and check what's left in the browser tab and the confirmation screen? The part worth showing is the change to the amount when the second item goes in. The customer names and the old logo can go. Duncan, could you hold off forwarding anything until we've checked that version?\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "gabriel-santos",
+        "to": [
+          "me"
+        ],
+        "date": "2026-09-24T16:41:00+01:00",
+        "read": true,
+        "text": "Hey Luis!\n\nI copied the amount interaction. The confirmation screen was still pulling a real customer name from the sample data, so I replaced the whole row with a made-up one. The link at https://proto.acme.example/folio/amount-demo is on its own, and the old tab title is gone. Can you get a yes on that exact link? I'll leave the source file where it is.\n\nGabi"
+      },
+      {
+        "from": "me",
+        "to": [
+          "duncan-shaw",
+          "gabriel-santos"
+        ],
+        "date": "2026-09-30T10:32:00+01:00",
+        "read": true,
+        "text": "Kestrel's legal team cleared that exact demo link for the six reviewers. Duncan, you can include it in the private panel email. Please leave it off the event page and use 'Payment demo' in the running order.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "duncan-shaw",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-02T11:16:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nSix went out this morning. I tried it first from the laptop we use for registration, which has no studio logins on it. The link opens straight on the amount. I've called it Payment demo in the running order and taken the old thumbnail out of the event page.\n\nBest, Duncan\n\nDuncan Shaw | Partner, Harlow Search\n+44 7700 900 508"
+      }
+    ],
+    "truth": {
+      "summary": "The client’s legal team cleared a stripped-down payment demo for six private reviewers, and Duncan circulated only that link.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-09-30",
+          "what": "Luis confirmed the restricted legal clearance"
+        },
+        {
+          "date": "2026-10-02",
+          "what": "Duncan circulated the approved demo"
+        }
+      ],
+      "facts": [
+        "The original demo was cleared only for an Acme-staffed folio table.",
+        "Gabriel replaced a customer name from the original sample data and removed the old tab title from the separate prototype.",
+        "The approved URL was https://proto.acme.example/folio/amount-demo and clearance covered the private panel email only."
+      ]
+    }
+  },
+  {
+    "id": "s0701",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "the key with blue tape",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "chloe-bennett",
+        "to": [
+          "me"
+        ],
+        "date": "2026-09-30T20:49:00+01:00",
+        "read": true,
+        "text": "Hi both!\n\nDid I push your spare through the letterbox or have I brought it back to Bristol with me? I can picture doing it but I was on the phone to work while I was walking to the station (train was at 18:33). I've emptied the front pocket here and all I've got is a tiny spoon from your kitchen. Sorry.\n\nChlo x",
+        "cc": [
+          "niamh-gallagher"
+        ]
+      },
+      {
+        "from": "me",
+        "to": [
+          "chloe-bennett"
+        ],
+        "date": "2026-09-30T21:04:00+01:00",
+        "read": true,
+        "text": "nothing in the letterbox. it's the one with blue tape.",
+        "cc": [
+          "niamh-gallagher"
+        ]
+      },
+      {
+        "from": "chloe-bennett",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-01T18:26:00+01:00",
+        "read": true,
+        "text": "Hi both!\n\nAh, blue tape helps. Could be on the ring with the little padlock key in my work bag. That bag's still at the office. I'll look next time I'm in, but if it turns up with the post before then could you ping me?\n\nChlo x",
+        "cc": [
+          "niamh-gallagher"
+        ]
+      },
+      {
+        "from": "me",
+        "to": [
+          "chloe-bennett"
+        ],
+        "date": "2026-10-02T08:14:00+01:00",
+        "read": true,
+        "text": "checked through the post properly. still no joy.",
+        "cc": [
+          "niamh-gallagher"
+        ]
+      }
+    ],
+    "truth": {
+      "summary": "Luis couldn’t find the blue-taped spare key at home, and Chloe still needs to check her work bag in Bristol.",
+      "ownerOwes": [],
+      "othersOwe": [
+        "Chloe Bennett: check her work bag at the office for the blue-taped spare."
+      ],
+      "promisesByOwner": [],
+      "promisesToOwner": [
+        {
+          "who": "Chloe Bennett",
+          "text": "Look in the work bag the next time she is in the office.",
+          "kept": false
+        }
+      ],
+      "keyDates": [],
+      "facts": [
+        "The spare key has blue tape.",
+        "Luis checked the letterbox and the post.",
+        "Chloe thought the key might be on the ring with her padlock key."
+      ]
+    }
+  },
+  {
+    "id": "s0702",
+    "account": "acme",
+    "storyline": "brightwell-annual-report",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Do we still need the names call?",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "zainab-bello",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-05T10:08:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nThe names are back from Helen. Do we need Tuesday's call if there are only pencil marks left? I've attached the two pages.\n\nZ\n\nZainab Bello\nContent Designer, Acme Studio\nacme.example",
+        "attachments": [
+          {
+            "filename": "brightwell-names-check-p6-p24.pdf",
+            "mime": "application/pdf",
+            "size": 214772
+          }
+        ]
+      },
+      {
+        "from": "me",
+        "to": [
+          "zainab-bello"
+        ],
+        "date": "2026-10-05T10:31:00+01:00",
+        "read": true,
+        "text": "Cancel the call. I've checked 6 and 24 against Helen's names. Both fine.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "zainab-bello",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-05T10:42:00+01:00",
+        "read": true,
+        "text": "Done, it's out of the calendar.\n\nZ\n\nZainab Bello\nContent Designer, Acme Studio\nacme.example"
+      }
+    ],
+    "truth": {
+      "summary": "Luis checked the names on Brightwell pages 6 and 24, and Zainab cancelled the separate call.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-10-06",
+          "what": "Cancelled names call"
+        }
+      ],
+      "facts": [
+        "Helen returned the names before 5 October.",
+        "Zainab attached a PDF containing the two marked pages."
+      ]
+    }
+  },
+  {
+    "id": "s0703",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Tandem SOW note / staff shadowing",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "freya-lindgren",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-13T08:41:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nThe wording in the signed change note is on page 2. I had to read it with the original next to it.\n\n1. We lose the separate half-day of staff shadowing. Operations can still tell us which locks have been swapped, but there won't be someone observing their shift.\n2. No change to the 12 rider sessions running 13–16 October or to the readout on the 28th.\n\nI've put both documents in the study folder. If you're using the SOW to check session numbers, the table in the original still applies.\n\nFreya\n\nFreya Lindgren\nSenior UX Researcher, Acme Studio\nacme.example",
+        "attachments": [
+          {
+            "filename": "tandem-sow-change-02-signed.pdf",
+            "mime": "application/pdf",
+            "size": 147208
+          }
+        ]
+      }
+    ],
+    "truth": {
+      "summary": "A signed Tandem scope change removed half a day of staff shadowing while retaining all 12 rider sessions and the 28 October readout.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-10-13",
+          "what": "First day of rider sessions"
+        },
+        {
+          "date": "2026-10-16",
+          "what": "Last day of rider sessions"
+        },
+        {
+          "date": "2026-10-28",
+          "what": "Readout due"
+        }
+      ],
+      "facts": [
+        "The change is on page 2 of the signed note.",
+        "Operations can still confirm which locks were swapped.",
+        "The original session count remains in force."
+      ]
+    }
+  },
+  {
+    "id": "s0704",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "client",
+      "work"
+    ],
+    "subject": "Holloway / compass on export",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "ian-ferris"
+        ],
+        "date": "2026-10-13T10:50:00+01:00",
+        "read": true,
+        "text": "Hi Ian,\n\nDo you know which version of the compass mark is allowed on the press preview export? The PDF guide only shows the full wordmark, but the old CMS has three compass files in it.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "ian-ferris",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-14T09:13:00+01:00",
+        "read": true,
+        "text": "Export:\nThe press preview has been dropped. They want the full wordmark on the printed invite, which comms are doing.\n\nIan"
+      },
+      {
+        "from": "me",
+        "to": [
+          "ian-ferris"
+        ],
+        "date": "2026-10-14T09:27:00+01:00",
+        "read": true,
+        "text": "Taken the preview export off the list.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      }
+    ],
+    "truth": {
+      "summary": "Holloway dropped the press preview, so Luis no longer needs to settle which compass mark to use on its export.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "Comms is doing the printed invite using the full wordmark.",
+        "The PDF guide only shows the full wordmark.",
+        "The old CMS holds three compass files."
+      ]
+    }
+  },
+  {
+    "id": "s0705",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "yours?",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "sunita-varma"
+        ],
+        "date": "2026-10-12T20:25:00+01:00",
+        "read": true,
+        "text": "sunita, is this your copy? there's a different name pencilled by the back flap and i don't want to give you someone else's book.\n\nL",
+        "attachments": [
+          {
+            "filename": "inside-back-cover.jpg",
+            "mime": "image/jpeg",
+            "size": 856102
+          }
+        ]
+      }
+    ],
+    "truth": {
+      "summary": "Luis sent Sunita a photo of a pencilled name inside a book and is still waiting for her to confirm whether the copy belongs to her.",
+      "ownerOwes": [],
+      "othersOwe": [
+        "Sunita Varma: confirm whether the photographed copy is hers."
+      ],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "The name was pencilled by the back flap.",
+        "Luis attached a photo of the inside back cover."
+      ]
+    }
+  },
+  {
+    "id": "s0706",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "which window?",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "harriet-lowe"
+        ],
+        "date": "2026-10-15T19:31:00+01:00",
+        "read": true,
+        "text": "quick one about the drop-in card. narrow window by the door or the big one? i've marked both on the photo. if it's the narrow one there's a bar right across where the time sits, so i'd move it down.",
+        "attachments": [
+          {
+            "filename": "clinic-window-markup.jpg",
+            "mime": "image/jpeg",
+            "size": 619521
+          }
+        ]
+      }
+    ],
+    "truth": {
+      "summary": "Luis asked Harriet which clinic window will display the drop-in card so he can avoid placing the time behind a bar, and she hasn’t replied.",
+      "ownerOwes": [],
+      "othersOwe": [
+        "Harriet Lowe: confirm which window the free drop-in card will go in."
+      ],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "The photo shows the narrow window by the door and the large window.",
+        "A bar in the narrow window would obscure the time in the current layout."
+      ]
+    }
+  },
+  {
+    "id": "s0707",
+    "account": "freelance",
+    "lang": "es",
+    "tags": [
+      "client"
+    ],
+    "subject": "El cobro del sitio de Laja",
+    "state": {
+      "inbox": true
+    },
+    "messages": [
+      {
+        "from": "mariana-gomez",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-18T13:39:00-06:00",
+        "read": true,
+        "text": "¡Hola Luis!\n\nA Emilio le llegaron dos avisos, el de Registro Nopal y otro de Patio Web por $1,440 MXN. ¿También necesitamos pagar el de Patio Web? Inés quiere poner la dirección del sitio en el letrero de la barra.\n\nGracias, Mariana"
+      },
+      {
+        "from": "me",
+        "to": [
+          "mariana-gomez"
+        ],
+        "date": "2026-10-19T16:02:00+01:00",
+        "read": true,
+        "text": "Hola, Mariana:\n\nEl de Registro Nopal es por el dominio. El de Patio Web suena a hospedaje. ¿Qué nombre de plan viene junto al monto? Con eso puedo revisar si corresponde a la página.\n\nSaludos,\n\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+      },
+      {
+        "from": "mariana-gomez",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-19T12:25:00-06:00",
+        "read": true,
+        "text": "¡Hola Luis!\n\nDice «Patio Base anual». ¿Me confirmas si es el del sitio antes de que Emilio lo pague? Le dejé el aviso en su escritorio.\n\nGracias, Mariana"
+      }
+    ],
+    "truth": {
+      "summary": "Mariana distinguió el cobro del dominio del aviso de Patio Web y espera que Luis confirme si Patio Base anual corresponde al sitio antes de que Emilio lo pague.",
+      "ownerOwes": [
+        "Revisar si el plan Patio Base anual es el hospedaje del sitio de Laja y Niebla y confirmárselo a Mariana."
+      ],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "Registro Nopal cobra por el dominio.",
+        "El aviso de Patio Web dice «Patio Base anual» y marca $1,440 MXN.",
+        "Inés quiere poner la dirección del sitio en el letrero de la barra."
+      ]
+    }
+  },
+  {
+    "id": "s0708",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Pennywort / two screens for the change request",
+    "state": {
+      "inbox": true
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "sam-whitfield"
+        ],
+        "date": "2026-10-20T11:48:00+01:00",
+        "read": true,
+        "text": "Sam,\n\nHere's the beta flow as it stands. Do you want me to mark where scan and go would meet checkout? Page two has both tills on it.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example",
+        "attachments": [
+          {
+            "filename": "pennywort-beta-tills.pdf",
+            "mime": "application/pdf",
+            "size": 318146
+          }
+        ]
+      },
+      {
+        "from": "sam-whitfield",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-21T10:16:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nYes, two screenshots please. 27 Oct: Steve's pricing review. Label the staffed till on one and self-checkout on the other. I can put them with the unsigned change request.\n\nSam"
+      },
+      {
+        "from": "me",
+        "to": [
+          "sam-whitfield"
+        ],
+        "date": "2026-10-21T16:52:00+01:00",
+        "read": true,
+        "text": "Will do. You'll have both by noon on Monday, so they're with you the day before Steve's review.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      }
+    ],
+    "truth": {
+      "summary": "Luis promised Sam two marked Pennywort screenshots by noon on 26 October for Steve’s pricing review, and has only sent the unmarked flow.",
+      "ownerOwes": [
+        "Send Sam one marked screenshot for the staffed till and one for self-checkout."
+      ],
+      "othersOwe": [],
+      "promisesByOwner": [
+        {
+          "text": "Send Sam both marked Pennywort screenshots by noon.",
+          "due": "2026-10-26T12:00:00+00:00",
+          "kept": false
+        }
+      ],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-10-26T12:00:00+00:00",
+          "what": "Luis’s screenshot deadline"
+        },
+        {
+          "date": "2026-10-27",
+          "what": "Steve’s pricing review"
+        }
+      ],
+      "facts": [
+        "The screenshots show where scan and go would meet the two types of till.",
+        "Sam plans to use them with the unsigned change request.",
+        "Both tills are on page two of the unmarked beta flow."
+      ]
+    }
+  },
+  {
+    "id": "s0709",
+    "account": "acme",
+    "storyline": "brightwell-annual-report",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Brightwell proof 2 / which file went?",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "kasia-zielinska"
+        ],
+        "date": "2026-10-19T16:16:00+01:00",
+        "read": true,
+        "text": "Kasia, is the reading-room photo the one in the next proof? The file I can see in the folder is still the first one, with the gate on the cover. Helen asked to change it.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "kasia-zielinska",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-20T11:44:00+01:00",
+        "read": true,
+        "text": "Luis -\n\nReading room, yes. I've sent Helen proof 2. The cover you saw was the one she got on 12 October.\n\nK."
+      },
+      {
+        "from": "kasia-zielinska",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-22T15:43:00+01:00",
+        "read": false,
+        "text": "Luis -\n\nHere's the actual PDF from Tuesday's email, in case the folder is still showing you the gate. It's the reading room, crop just above the coat hooks. Nothing back from Helen on sign-off yet. Terry still needs final PDFs by 30 October for 20 November delivery. He says uncoated is tight this autumn.\n\nK.",
+        "attachments": [
+          {
+            "filename": "brightwell-2026-proof-02-for-helen.pdf",
+            "mime": "application/pdf",
+            "size": 7662914
+          }
+        ]
+      }
+    ],
+    "truth": {
+      "summary": "Kasia confirmed the 20 October Brightwell proof used the reading-room cover and sent Luis the PDF, with Helen’s final approval still outstanding.",
+      "ownerOwes": [],
+      "othersOwe": [
+        "Helen Ashby: sign off the final proof.",
+        "Acme: send the final PDFs to Terry Nolan by 30 October."
+      ],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-10-12",
+          "what": "First proof to Helen with the gate photo"
+        },
+        {
+          "date": "2026-10-20",
+          "what": "Second proof sent to Helen"
+        },
+        {
+          "date": "2026-10-30",
+          "what": "Final PDFs due to Terry"
+        },
+        {
+          "date": "2026-11-20",
+          "what": "Target delivery"
+        }
+      ],
+      "facts": [
+        "Helen requested a different cover photo.",
+        "The second proof uses the reading room, cropped just above the coat hooks.",
+        "Terry warned uncoated stock was tight."
+      ]
+    }
+  },
+  {
+    "id": "s0710",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Railway Arch / the other receipt",
+    "state": {
+      "inbox": true
+    },
+    "messages": [
+      {
+        "from": "philippa-dunn",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-20T10:43:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\n9 October, £186.40. I've attached what's in the claim so you can see the difference. The photo is the card slip. I still need the itemised receipt from Railway Arch, the one with the food and drink on it. It doesn't need to be an invoice.\n\nMany thanks, Philippa\n\nPhilippa Dunn\nFinance Manager, Acme Studio\nacme.example",
+        "attachments": [
+          {
+            "filename": "expense-9-oct-current-upload.pdf",
+            "mime": "application/pdf",
+            "size": 143655
+          }
+        ]
+      },
+      {
+        "from": "me",
+        "to": [
+          "philippa-dunn"
+        ],
+        "date": "2026-10-20T12:18:00+01:00",
+        "read": true,
+        "text": "It'll be later this week. The one in my jacket is another copy of the slip. I'll ring the restaurant.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "philippa-dunn",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-21T14:32:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nFor the £186.40 a reprint is fine, or a photo of one. It can go onto the existing claim; please don't start another.\n\nMany thanks, Philippa\n\nPhilippa Dunn\nFinance Manager, Acme Studio\nacme.example"
+      },
+      {
+        "from": "me",
+        "to": [
+          "philippa-dunn"
+        ],
+        "date": "2026-10-22T15:55:00+01:00",
+        "read": true,
+        "text": "I'll send you the itemised receipt by noon tomorrow. They found the table from the card slip when I rang. I'm picking up the reprint when they open at 11.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      }
+    ],
+    "truth": {
+      "summary": "Luis reached the Railway Arch about the missing itemised receipt for £186.40 and promised to send it to Philippa by noon on 23 October.",
+      "ownerOwes": [
+        "Pick up the reprinted itemised receipt from Railway Arch and send it to Philippa."
+      ],
+      "othersOwe": [],
+      "promisesByOwner": [
+        {
+          "text": "Call the restaurant about the itemised receipt.",
+          "kept": true
+        },
+        {
+          "text": "Send Philippa the itemised receipt by noon.",
+          "due": "2026-10-23T12:00:00+01:00",
+          "kept": false
+        }
+      ],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-10-09",
+          "what": "Railway Arch dinner"
+        },
+        {
+          "date": "2026-10-23T11:00:00+01:00",
+          "what": "Restaurant opens for receipt pickup"
+        },
+        {
+          "date": "2026-10-23T12:00:00+01:00",
+          "what": "Receipt promised to Philippa"
+        }
+      ],
+      "facts": [
+        "The charge was £186.40.",
+        "The existing claim needs the itemised receipt listing food and drink, and Philippa will accept a reprint or a photo of one.",
+        "The restaurant found the table using the card slip."
+      ]
+    }
+  }
+]

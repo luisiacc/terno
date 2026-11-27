@@ -1,0 +1,838 @@
+[
+ {
+  "id": "s0533",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "free: una presentación para inversionistas",
+  "people": [
+   "emilio-cardenas"
+  ],
+  "shape": "forward",
+  "outcome": "rescheduled",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2024-11-12",
+   "2024-11-14"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0534",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a parking fine",
+  "people": [
+   "olivia-marsh"
+  ],
+  "shape": "ask-answer",
+  "outcome": "declined politely",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-01-05",
+   "2025-01-08"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0535",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: retro notes",
+  "people": [
+   "yasmin-farouk"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-02-23",
+   "2025-02-23"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0536",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Missing expense receipts",
+  "people": [
+   "philippa-dunn"
+  ],
+  "shape": "group",
+  "outcome": "decided",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2025-06-24",
+   "2025-07-01"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 3 of the storyline \"Missing expense receipts\": write what happens in this stretch (2025-06-24 to 2025-07-01), consistent with its summary."
+  ],
+  "storyline": "expenses-2025"
+ },
+ {
+  "id": "s0537",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Missing expense receipts",
+  "people": [
+   "philippa-dunn"
+  ],
+  "shape": "ask-answer",
+  "outcome": "rescheduled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-07-10",
+   "2025-07-13"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 3 of the storyline \"Missing expense receipts\": write what happens in this stretch (2025-07-10 to 2025-07-13), consistent with its summary."
+  ],
+  "storyline": "expenses-2025"
+ },
+ {
+  "id": "s0538",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: an RSVP and dietary needs",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "ask-answer",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-07-19",
+   "2025-07-19"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0539",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Missing expense receipts",
+  "people": [
+   "philippa-dunn"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-07-15",
+   "2025-07-25"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 3 of the storyline \"Missing expense receipts\": write what happens in this stretch (2025-07-15 to 2025-07-25), consistent with its summary."
+  ],
+  "storyline": "expenses-2025"
+ },
+ {
+  "id": "s0540",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "a discussion on Comunidad de diseño independiente (una lista de diseñadores independientes en México: tarifas, clientes que no pagan, herramientas, chambas)",
+  "people": [
+   "mariana-gomez",
+   "emilio-cardenas"
+  ],
+  "shape": "list",
+  "outcome": "decided",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2025-10-03",
+   "2025-10-06"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list comunidad@disenoindependiente.example (listId comunidad.disenoindependiente.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "disenio"
+ },
+ {
+  "id": "s0541",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a stag do budget",
+  "people": [
+   "marta-silva"
+  ],
+  "shape": "ask-answer",
+  "outcome": "declined politely",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-12-23",
+   "2025-12-25"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0542",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "a discussion on Comunidad de diseño independiente (una lista de diseñadores independientes en México: tarifas, clientes que no pagan, herramientas, chambas)",
+  "people": [
+   "mariana-gomez",
+   "emilio-cardenas"
+  ],
+  "shape": "list",
+  "outcome": "ongoing",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-02-09",
+   "2026-02-11"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list comunidad@disenoindependiente.example (listId comunidad.disenoindependiente.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "disenio"
+ },
+ {
+  "id": "s0543",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: parental leave cover",
+  "people": [
+   "yasmin-farouk"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-03-05",
+   "2026-03-08"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0544",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a brand guidelines question",
+  "people": [
+   "jake-pemberton"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-03-21",
+   "2026-03-28"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0545",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: hiring a van",
+  "people": [
+   "joanna-kowalczyk"
+  ],
+  "shape": "ask-answer",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-04-25",
+   "2026-04-27"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0546",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Rebrand de Tueste Laja y Niebla",
+  "people": [
+   "andrea-solis",
+   "emilio-cardenas",
+   "mariana-gomez",
+   "ernesto-villasenor"
+  ],
+  "shape": "group",
+  "outcome": "ongoing",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-06-12",
+   "2026-06-19"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 6 of the storyline \"Rebrand de Tueste Laja y Niebla\": write what happens in this stretch (2026-06-12 to 2026-06-19), consistent with its summary."
+  ],
+  "storyline": "barranca-rebrand"
+ },
+ {
+  "id": "s0547",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a broken build",
+  "people": [
+   "lena-hofmann"
+  ],
+  "shape": "ask-answer",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-06-25",
+   "2026-06-28"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0548",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a recommendation",
+  "people": [
+   "marc-tremblay",
+   "ifeoma-nwosu"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "ongoing",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-07-01",
+   "2026-07-06"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0549",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Rebrand de Tueste Laja y Niebla",
+  "people": [
+   "ximena-lara"
+  ],
+  "shape": "ask-answer",
+  "outcome": "cancelled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-07-11",
+   "2026-07-14"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 6 of the storyline \"Rebrand de Tueste Laja y Niebla\": write what happens in this stretch (2026-07-11 to 2026-07-14), consistent with its summary."
+  ],
+  "storyline": "barranca-rebrand"
+ },
+ {
+  "id": "s0550",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Rebrand de Tueste Laja y Niebla",
+  "people": [
+   "ernesto-villasenor"
+  ],
+  "shape": "ask-answer",
+  "outcome": "ongoing",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-08-05",
+   "2026-08-08"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 6 of the storyline \"Rebrand de Tueste Laja y Niebla\": write what happens in this stretch (2026-08-05 to 2026-08-08), consistent with its summary."
+  ],
+  "storyline": "barranca-rebrand"
+ },
+ {
+  "id": "s0551",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Rebrand de Tueste Laja y Niebla",
+  "people": [
+   "ximena-lara"
+  ],
+  "shape": "luis-starts",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-08-28",
+   "2026-09-02"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 4 of 6 of the storyline \"Rebrand de Tueste Laja y Niebla\": write what happens in this stretch (2026-08-28 to 2026-09-02), consistent with its summary."
+  ],
+  "storyline": "barranca-rebrand"
+ },
+ {
+  "id": "s0552",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: an awards submission",
+  "people": [
+   "gabriel-santos"
+  ],
+  "shape": "luis-starts",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-09-17",
+   "2026-09-17"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0553",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a film night",
+  "people": [
+   "tariq-hussain",
+   "hamish-fairweather"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "cancelled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-09-16",
+   "2026-09-24"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0554",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: IT's security training",
+  "people": [
+   "anil-joshi",
+   "terry-nolan"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-09-18",
+   "2026-09-24"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0555",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Rebrand de Tueste Laja y Niebla",
+  "people": [
+   "andrea-solis"
+  ],
+  "shape": "ask-answer",
+  "outcome": "decided",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-09-24",
+   "2026-09-27"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 5 of 6 of the storyline \"Rebrand de Tueste Laja y Niebla\": write what happens in this stretch (2026-09-24 to 2026-09-27), consistent with its summary."
+  ],
+  "storyline": "barranca-rebrand"
+ },
+ {
+  "id": "s0556",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: parental leave cover",
+  "people": [
+   "duncan-shaw"
+  ],
+  "shape": "ask-answer",
+  "outcome": "ongoing",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-01",
+   "2026-10-02"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0557",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: a warranty claim",
+  "people": [
+   "clara-moreau"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-10-04",
+   "2026-10-04"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0558",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a neighbour he hasn't met",
+  "people": [],
+  "shape": "ask-answer",
+  "outcome": "ongoing",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-08"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0559",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: retro notes",
+  "people": [
+   "steve-barlow"
+  ],
+  "shape": "forward",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2026-10-09",
+   "2026-10-10"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0560",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a broken build",
+  "people": [
+   "zainab-bello",
+   "jake-pemberton"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "declined politely",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-02",
+   "2026-10-11"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0561",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Rebrand de Tueste Laja y Niebla",
+  "people": [
+   "ximena-lara",
+   "ernesto-villasenor"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "cancelled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-12",
+   "2026-10-22"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 6 of 6 of the storyline \"Rebrand de Tueste Laja y Niebla\": write what happens in this stretch (2026-10-12 to 2026-10-22), consistent with its summary."
+  ],
+  "unreadFrom": "2026-10-22T02:30:00Z",
+  "storyline": "barranca-rebrand"
+ },
+ {
+  "id": "s0562",
+  "account": "acme",
+  "lang": "en",
+  "kind": "planted: top",
+  "people": [
+   "gabriel-santos"
+  ],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-10-22",
+   "2026-10-22"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "lastFrom": "them",
+  "must": [
+   "the top of the Inbox: someone wrote today, unread, and waits for his reply to a real question. Four are English, two Spanish (Freelance). One is dated exactly 15:30 UTC on the anchor day.",
+   "The last message is dated exactly 2026-10-22T15:30:00Z (that is 15:30 UTC; write it in the sender's own offset)."
+  ],
+  "unreadFrom": "2026-10-22T07:30:00Z",
+  "plant": "top"
+ }
+]

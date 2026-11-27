@@ -1,0 +1,792 @@
+[
+ {
+  "id": "s0448",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Self assessment 2023-24",
+  "people": [
+   "martin-hale"
+  ],
+  "shape": "forward",
+  "outcome": "waiting on Luis",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2024-11-23",
+   "2024-11-26"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 5 of the storyline \"Self assessment 2023-24\": write what happens in this stretch (2024-11-23 to 2024-11-26), consistent with its summary."
+  ],
+  "storyline": "uk-tax-return-2025"
+ },
+ {
+  "id": "s0449",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Self assessment 2023-24",
+  "people": [
+   "martin-hale"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2024-12-02",
+   "2024-12-12"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 5 of the storyline \"Self assessment 2023-24\": write what happens in this stretch (2024-12-02 to 2024-12-12), consistent with its summary."
+  ],
+  "trash": true,
+  "storyline": "uk-tax-return-2025"
+ },
+ {
+  "id": "s0450",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a press request",
+  "people": [
+   "rupert-ashdown"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2024-12-14",
+   "2024-12-14"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0451",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a discussion on Albion Court residents (his building's residents: bins, the lift, parcels, a noisy party, the managing agent)",
+  "people": [
+   "desmond-clarke",
+   "marta-silva",
+   "harriet-lowe"
+  ],
+  "shape": "list",
+  "outcome": "rescheduled",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2024-12-22",
+   "2024-12-28"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list residents@albioncourt.example (listId residents.albioncourt.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "building"
+ },
+ {
+  "id": "s0452",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Self assessment 2023-24",
+  "people": [
+   "martin-hale"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on Luis",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2024-12-25",
+   "2024-12-28"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 5 of the storyline \"Self assessment 2023-24\": write what happens in this stretch (2024-12-25 to 2024-12-28), consistent with its summary."
+  ],
+  "storyline": "uk-tax-return-2025"
+ },
+ {
+  "id": "s0453",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Self assessment 2023-24",
+  "people": [
+   "martin-hale"
+  ],
+  "shape": "group",
+  "outcome": "resolved",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2025-01-06",
+   "2025-01-13"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 4 of 5 of the storyline \"Self assessment 2023-24\": write what happens in this stretch (2025-01-06 to 2025-01-13), consistent with its summary."
+  ],
+  "storyline": "uk-tax-return-2025"
+ },
+ {
+  "id": "s0454",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Self assessment 2023-24",
+  "people": [
+   "martin-hale"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on them",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-01-26",
+   "2025-01-29"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 5 of 5 of the storyline \"Self assessment 2023-24\": write what happens in this stretch (2025-01-26 to 2025-01-29), consistent with its summary."
+  ],
+  "storyline": "uk-tax-return-2025"
+ },
+ {
+  "id": "s0455",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a training plan",
+  "people": [
+   "josh-whitaker"
+  ],
+  "shape": "ask-answer",
+  "outcome": "decided",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-05-28",
+   "2025-05-30"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0456",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a camera lens for sale",
+  "people": [
+   "hamish-fairweather",
+   "joanna-kowalczyk"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on Luis",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-05-29",
+   "2025-06-06"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0457",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: something left behind at a dinner",
+  "people": [
+   "tom-ashworth"
+  ],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-10-29",
+   "2025-10-29"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0458",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "un estudiante que pide consejo",
+  "people": [],
+  "shape": "unanswered",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-12-17",
+   "2025-12-17"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": true,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0459",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a recommendation",
+  "people": [
+   "imogen-barnes"
+  ],
+  "shape": "forward",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2026-01-24",
+   "2026-01-25"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0460",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a visa question",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-03-13",
+   "2026-03-13"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [],
+  "trash": true
+ },
+ {
+  "id": "s0461",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a workshop agenda",
+  "people": [
+   "kate-sutherland"
+  ],
+  "shape": "unanswered",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-04-15",
+   "2026-04-15"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0462",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a house-warming",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "luis-starts",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-05-14",
+   "2026-05-19"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0463",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "a survey from an old university",
+  "people": [],
+  "shape": "ask-answer",
+  "outcome": "ongoing",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-05-18",
+   "2026-05-20"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0464",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: an intro to a potential client",
+  "people": [
+   "philippa-dunn",
+   "arjun-sethi"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-05-16",
+   "2026-05-20"
+  ],
+  "length": "long",
+  "attachments": "some",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0465",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a favour for a friend's CV",
+  "people": [
+   "mei-lin-chou",
+   "hamish-fairweather"
+  ],
+  "shape": "forward",
+  "outcome": "declined politely",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2026-06-05",
+   "2026-06-05"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0466",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "alguien que busca una cotización rápida",
+  "people": [],
+  "shape": "unanswered",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-07-05",
+   "2026-07-05"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": true,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0467",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a recipe",
+  "people": [
+   "gareth-pugh"
+  ],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-08-04",
+   "2026-08-04"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0468",
+  "account": "acme",
+  "lang": "en",
+  "kind": "a conference inviting him to speak",
+  "people": [],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-08-14",
+   "2026-08-14"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0469",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a discussion on Marshgate Runners members (the running club's members list: race entries, kit, lost property, socials)",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "list",
+  "outcome": "waiting on them",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-08-13",
+   "2026-08-20"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "On the list members@marshgaterunners.example (listId members.marshgaterunners.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "harriers"
+ },
+ {
+  "id": "s0470",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Etiqueta 'Ofrenda' de Lobo Gris",
+  "people": [
+   "fernanda-rios"
+  ],
+  "shape": "forward",
+  "outcome": "declined politely",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2026-08-30",
+   "2026-09-02"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 4 of the storyline \"Etiqueta 'Ofrenda' de Lobo Gris\": write what happens in this stretch (2026-08-30 to 2026-09-02), consistent with its summary."
+  ],
+  "storyline": "lobo-gris-ofrenda"
+ },
+ {
+  "id": "s0471",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Etiqueta 'Ofrenda' de Lobo Gris",
+  "people": [
+   "samuel-ortega"
+  ],
+  "shape": "ask-answer",
+  "outcome": "rescheduled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-09-16",
+   "2026-09-19"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 4 of the storyline \"Etiqueta 'Ofrenda' de Lobo Gris\": write what happens in this stretch (2026-09-16 to 2026-09-19), consistent with its summary."
+  ],
+  "storyline": "lobo-gris-ofrenda"
+ },
+ {
+  "id": "s0472",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a discussion on Marshgate Runners members (the running club's members list: race entries, kit, lost property, socials)",
+  "people": [
+   "kerry-simmonds",
+   "ben-hartley"
+  ],
+  "shape": "list",
+  "outcome": "rescheduled",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-09-19",
+   "2026-09-21"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list members@marshgaterunners.example (listId members.marshgaterunners.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "harriers"
+ },
+ {
+  "id": "s0473",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a discussion on Marshgate Runners members (the running club's members list: race entries, kit, lost property, socials)",
+  "people": [
+   "darren-kirby",
+   "mei-lin-chou",
+   "harriet-lowe"
+  ],
+  "shape": "list",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-09-19",
+   "2026-09-24"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list members@marshgaterunners.example (listId members.marshgaterunners.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "harriers"
+ },
+ {
+  "id": "s0474",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Etiqueta 'Ofrenda' de Lobo Gris",
+  "people": [
+   "diego-arreola"
+  ],
+  "shape": "ask-answer",
+  "outcome": "declined politely",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-02",
+   "2026-10-05"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 4 of the storyline \"Etiqueta 'Ofrenda' de Lobo Gris\": write what happens in this stretch (2026-10-02 to 2026-10-05), consistent with its summary."
+  ],
+  "storyline": "lobo-gris-ofrenda"
+ },
+ {
+  "id": "s0475",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Etiqueta 'Ofrenda' de Lobo Gris",
+  "people": [
+   "fernanda-rios",
+   "diego-arreola"
+  ],
+  "shape": "luis-starts",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-10-17",
+   "2026-10-22"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": true,
+  "firstFrom": "me",
+  "must": [
+   "Part 4 of 4 of the storyline \"Etiqueta 'Ofrenda' de Lobo Gris\": write what happens in this stretch (2026-10-17 to 2026-10-22), consistent with its summary."
+  ],
+  "unreadFrom": "2026-10-21T14:30:00Z",
+  "storyline": "lobo-gris-ofrenda"
+ }
+]

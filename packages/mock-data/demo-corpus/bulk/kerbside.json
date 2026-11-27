@@ -1,0 +1,149 @@
+[
+  {
+    "brand": "kerbside",
+    "currency": "£",
+    "account": "personal",
+    "schedule": {
+      "every": "random",
+      "zone": "Europe/London",
+      "perWeek": [
+        3.05,
+        4.35
+      ],
+      "from": "2026-08-15"
+    },
+    "templates": [
+      {
+        "weight": 7,
+        "subject": "{offer} on your next Side Street ride",
+        "text": "{offer} on your next ride\n\nOpen the app and save the offer before requesting a car. The discount is applied automatically to one eligible London ride.\n\nOffer code: SIDE{code}\nMinimum fare: £10\nExpires: Seven days after {date}\n\nExcludes tips, airport fees and scheduled pickups. One use per account. Cannot be combined with another offer.\n\nSee offer terms: https://sidestreetrides.example/offers/SIDE{code}\n\nYou're receiving offers because you opted in to Side Street Rides promotions.\n\nUnsubscribe: https://sidestreetrides.example/unsubscribe\n\nSide Street Rides UK Ltd, 19 Tiller Lane, London E14 8PX. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#f7f8fa;color:#254b3a;border-left:5px solid #254b3a;font-size:19px;font-weight:bold\">Side Street Rides</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">{offer} on your next ride</h1><p style=\"margin:0 0 16px\">Open the app and save the offer before requesting a car. The discount is applied automatically to one eligible London ride.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Offer code</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">SIDE{code}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Minimum fare</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">£10</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Expires</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">Seven days after {date}</td></tr></table><p style=\"margin:0 0 16px\">Excludes tips, airport fees and scheduled pickups. One use per account. Cannot be combined with another offer.</p><p style=\"margin:0\"><a style=\"color:#254b3a;text-decoration:underline\" href=\"https://sidestreetrides.example/offers/SIDE{code}\">See offer terms</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">You're receiving offers because you opted in to Side Street Rides promotions.<br><a style=\"color:#254b3a;text-decoration:underline\" href=\"https://sidestreetrides.example/unsubscribe\">Unsubscribe</a><br>Side Street Rides UK Ltd, 19 Tiller Lane, London E14 8PX. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "offer": [
+            "15% off",
+            "20% off",
+            "£3 off",
+            "£4 off"
+          ],
+          "code": {
+            "int": [
+              100000,
+              999999
+            ]
+          }
+        }
+      },
+      {
+        "weight": 76,
+        "subject": "Your Side Street Rides receipt · {date}",
+        "text": "Trip receipt\n\nYour Side Street Standard ride is complete. We've charged the payment method below.\n\nTrip: SS-{ref}\nCompleted: {date}, {time}\nRoute (pick-up → drop-off): {route}\nDriver: {driver}\nTrip fare, including booking fee: {fare}\nTip: £0.00\nTotal paid: {fare}\nPayment method: Card ending 0938\n\nView your receipt: https://sidestreetrides.example/receipts/SS-{ref}\n\nYou’re receiving this because you paid for a ride through Side Street Rides. For trip or payment help, open the ride in your app.\n\nSide Street Rides UK Ltd, 19 Tiller Lane, London E14 8PX. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#f7f8fa;color:#254b3a;border-left:5px solid #254b3a;font-size:19px;font-weight:bold\">Side Street Rides</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Trip receipt</h1><p style=\"margin:0 0 16px\">Your Side Street Standard ride is complete. We've charged the payment method below.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Trip</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">SS-{ref}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Completed</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{date}, {time}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Route (pick-up → drop-off)</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{route}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Driver</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{driver}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Trip fare, including booking fee</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{fare}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Tip</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">£0.00</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Total paid</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{fare}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Payment method</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">Card ending 0938</td></tr></table><p style=\"margin:0\"><a style=\"color:#254b3a;text-decoration:underline\" href=\"https://sidestreetrides.example/receipts/SS-{ref}\">View your receipt</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">You’re receiving this because you paid for a ride through Side Street Rides. For trip or payment help, open the ride in your app.<br>Side Street Rides UK Ltd, 19 Tiller Lane, London E14 8PX. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "ref": {
+            "int": [
+              10000000,
+              99999999
+            ]
+          },
+          "fare": {
+            "money": [
+              9.8,
+              34.8
+            ]
+          },
+          "route": [
+            "Mallory Road, Clapton → Turnmill Street, Clerkenwell",
+            "Turnmill Street, Clerkenwell → Mallory Road, Clapton",
+            "Mallory Road, Clapton → Stoke Newington Church Street",
+            "Stoke Newington Church Street → Mallory Road, Clapton",
+            "Richmond Road, London Fields → Mallory Road, Clapton",
+            "Mare Street, Hackney → Baring Street, Islington",
+            "Mallory Road, Clapton → Chatsworth Road, Homerton",
+            "Millfields Road, Clapton → Whitecross Street, Barbican",
+            "Upper Street, Islington → Mallory Road, Clapton",
+            "Mallory Road, Clapton → Canonbury Road, Islington",
+            "Mallory Road, Clapton → Morning Lane, Hackney",
+            "Clerkenwell Green → Broadway Market, Hackney",
+            "Mallory Road, Clapton → Pritchard’s Road, Bethnal Green",
+            "Pritchard’s Road, Bethnal Green → Mallory Road, Clapton",
+            "Mallory Road, Clapton → Mabley Street, Homerton",
+            "Rivington Street, Shoreditch → Mallory Road, Clapton",
+            "Kingsland Road, Dalston → Cartwright Gardens, Bloomsbury",
+            "Mallory Road, Clapton → Old Street, Shoreditch",
+            "Lamb’s Conduit Street, Bloomsbury → Mallory Road, Clapton",
+            "Mabley Street, Homerton → De Beauvoir Road",
+            "Mallory Road, Clapton → Newington Green Road",
+            "Crouch Hill, Stroud Green → Mallory Road, Clapton",
+            "Mallory Road, Clapton → King’s Cross Road",
+            "Mallory Road, Clapton → Downham Road, De Beauvoir",
+            "Powerscroft Road, Lower Clapton → Turnmill Street, Clerkenwell",
+            "Mallory Road, Clapton → Columbia Road, Bethnal Green",
+            "Queen’s Yard, Hackney Wick → Mallory Road, Clapton",
+            "Mallory Road, Clapton → Wood Street, Walthamstow"
+          ],
+          "driver": [
+            "Adeel",
+            "Agnieszka",
+            "Amir",
+            "Asha",
+            "Bilal",
+            "Cem",
+            "Dan",
+            "Daria",
+            "Efe",
+            "Faiza",
+            "Farid",
+            "Gurpreet",
+            "Hana",
+            "Idris",
+            "Imran",
+            "Ivo",
+            "Jamil",
+            "Kofi",
+            "Leila",
+            "Marta",
+            "Mehmet",
+            "Mina",
+            "Nadiya",
+            "Nabil",
+            "Niko",
+            "Omar",
+            "Ravi",
+            "Salma",
+            "Tomas",
+            "Yusuf"
+          ]
+        }
+      },
+      {
+        "weight": 17,
+        "subject": "Rate your driver",
+        "text": "How was your ride with {driver}?\n\nYou rode with {driver} recently. Let us know how the trip went by leaving a star rating.\n\nYou can add a comment after choosing a rating. This is optional and takes less than a minute.\n\nRate your driver: https://sidestreetrides.example/rate/SS-{ref}\n\nYou’re receiving this request because you took a trip with Side Street Rides.\n\nSide Street Rides UK Ltd, 19 Tiller Lane, London E14 8PX. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#f7f8fa;color:#254b3a;border-left:5px solid #254b3a;font-size:19px;font-weight:bold\">Side Street Rides</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">How was your ride with {driver}?</h1><p style=\"margin:0 0 16px\">You rode with {driver} recently. Let us know how the trip went by leaving a star rating.</p><p style=\"margin:0 0 16px\">You can add a comment after choosing a rating. This is optional and takes less than a minute.</p><p style=\"margin:0\"><a style=\"color:#254b3a;text-decoration:underline\" href=\"https://sidestreetrides.example/rate/SS-{ref}\">Rate your driver</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">You’re receiving this request because you took a trip with Side Street Rides.<br>Side Street Rides UK Ltd, 19 Tiller Lane, London E14 8PX. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "ref": {
+            "int": [
+              10000000,
+              99999999
+            ]
+          },
+          "driver": [
+            "Adeel",
+            "Asha",
+            "Cem",
+            "Daria",
+            "Efe",
+            "Gurpreet",
+            "Imran",
+            "Kofi",
+            "Marta",
+            "Leila",
+            "Nabil",
+            "Tomas",
+            "Yusuf"
+          ]
+        }
+      }
+    ]
+  }
+]

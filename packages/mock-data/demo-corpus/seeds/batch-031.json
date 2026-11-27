@@ -1,0 +1,292 @@
+[
+ {
+  "id": "s0891",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Brightwell Trust website rebuild",
+  "people": [
+   "anil-joshi",
+   "zainab-bello",
+   "helen-ashby"
+  ],
+  "shape": "group",
+  "outcome": "ongoing",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2024-11-07",
+   "2024-11-14"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 6 of the storyline \"Brightwell Trust website rebuild\": write what happens in this stretch (2024-11-07 to 2024-11-14), consistent with its summary."
+  ],
+  "storyline": "brightwell-website"
+ },
+ {
+  "id": "s0892",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Brightwell Trust website rebuild",
+  "people": [
+   "anil-joshi",
+   "helen-ashby"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "rescheduled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2024-11-28",
+   "2024-12-08"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 6 of the storyline \"Brightwell Trust website rebuild\": write what happens in this stretch (2024-11-28 to 2024-12-08), consistent with its summary."
+  ],
+  "storyline": "brightwell-website"
+ },
+ {
+  "id": "s0893",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Brightwell Trust website rebuild",
+  "people": [
+   "anil-joshi"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on Luis",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2024-12-29",
+   "2025-01-01"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 6 of the storyline \"Brightwell Trust website rebuild\": write what happens in this stretch (2024-12-29 to 2025-01-01), consistent with its summary."
+  ],
+  "trash": true,
+  "storyline": "brightwell-website"
+ },
+ {
+  "id": "s0894",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Brightwell Trust website rebuild",
+  "people": [
+   "anil-joshi",
+   "helen-ashby"
+  ],
+  "shape": "luis-starts",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-01-20",
+   "2025-01-25"
+  ],
+  "length": "medium",
+  "attachments": "some",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 4 of 6 of the storyline \"Brightwell Trust website rebuild\": write what happens in this stretch (2025-01-20 to 2025-01-25), consistent with its summary."
+  ],
+  "storyline": "brightwell-website"
+ },
+ {
+  "id": "s0895",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Brightwell Trust website rebuild",
+  "people": [
+   "anil-joshi"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "ongoing",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-02-08",
+   "2025-02-18"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 5 of 6 of the storyline \"Brightwell Trust website rebuild\": write what happens in this stretch (2025-02-08 to 2025-02-18), consistent with its summary."
+  ],
+  "storyline": "brightwell-website"
+ },
+ {
+  "id": "s0896",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Brightwell Trust website rebuild",
+  "people": [
+   "terry-nolan"
+  ],
+  "shape": "luis-starts",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-03-09",
+   "2025-03-14"
+  ],
+  "length": "long",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 6 of 6 of the storyline \"Brightwell Trust website rebuild\": write what happens in this stretch (2025-03-09 to 2025-03-14), consistent with its summary."
+  ],
+  "storyline": "brightwell-website"
+ },
+ {
+  "id": "s0897",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a parcel delivered to the wrong flat",
+  "people": [
+   "agnieszka-nowak"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-03-17",
+   "2025-03-21"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0898",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a stag do budget",
+  "people": [
+   "emma-pike"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "declined politely",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-10-18",
+   "2025-10-21"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0899",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a client's legal review",
+  "people": [
+   "callie-fraser",
+   "rhys-morgan"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on them",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-05-26",
+   "2026-06-03"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0900",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a client dinner",
+  "people": [
+   "rupert-ashdown"
+  ],
+  "shape": "unanswered",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-06-11",
+   "2026-06-11"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ }
+]

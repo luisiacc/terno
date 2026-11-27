@@ -1,0 +1,1047 @@
+[
+ {
+  "id": "s0891",
+  "account": "acme",
+  "storyline": "brightwell-website",
+  "lang": "en",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "subject": "Our impact page and the report PDF",
+  "folder": "Label_22",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "helen-ashby",
+    "to": [
+     "me"
+    ],
+    "cc": [
+     "zainab-bello",
+     "anil-joshi"
+    ],
+    "date": "2024-11-07T10:12:00+00:00",
+    "read": true,
+    "text": "Dear Luis,\n\nThank you all for Tuesday's walkthrough of the build. Ruth came back to the office saying it was the first time she could picture the new site properly, which from Ruth is high praise.\n\nTwo things, if I may. Ruth has approved the homepage layout. Graham and Priti from the trustees' digital group have seen the desktop draft of the Our impact page but still need to see how it looks on a phone, so could that come to me when it's ready?\n\nSecondly, the printed annual report arrives from Fold & Bind on Monday. We'd love the PDF to sit on the new Our impact page, and on the current site in the meantime. I've attached our comms team's intro text for the page. It's long, I know. Zainab, I'd be grateful for your red pen.\n\nWarmly, Helen\n\nHelen Ashby\nDirector of Communications\nBrightwell Trust - every child a reader\nFor press enquiries: press@brightwelltrust.example",
+    "attachments": [
+     {
+      "filename": "Our_impact_intro_Brightwell_v1.docx",
+      "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "size": 48212
+     }
+    ]
+   },
+   {
+    "from": "zainab-bello",
+    "to": [
+     "helen-ashby"
+    ],
+    "cc": [
+     "me",
+     "anil-joshi"
+    ],
+    "date": "2024-11-07T15:40:00+00:00",
+    "read": true,
+    "text": "Hi Helen,\n\nI've cut the intro from 210 words to 90 and kept your opening line about the 120 schools, because it's the best sentence in it. Tracked changes attached. One question back: the draft says both \"reading volunteers\" and \"volunteer readers\". Which do you use? The report says reading volunteers on every page but one.\n\nZ\n\nZainab Bello\nContent Designer, Acme Studio\nacme.example",
+    "attachments": [
+     {
+      "filename": "Our_impact_intro_v2_ZB.docx",
+      "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "size": 51340
+     }
+    ]
+   },
+   {
+    "from": "anil-joshi",
+    "to": [
+     "me"
+    ],
+    "date": "2024-11-08T09:31:00+00:00",
+    "read": true,
+    "text": "Hi Luis,\n\nOn the report PDF, before Monday:\n- the print file is 38 MB, too heavy to put on a page. Can Kasia export a web version (RGB, under 5 MB)?\n- I'll put it in `/media/reports/` on the new site and link it from Our impact and the footer\n- the old site can just take a direct link in the News sidebar, no template change needed\n\nAnil"
+   },
+   {
+    "from": "me",
+    "to": [
+     "helen-ashby"
+    ],
+    "cc": [
+     "zainab-bello",
+     "anil-joshi"
+    ],
+    "date": "2024-11-08T11:02:00+00:00",
+    "read": true,
+    "text": "Hi Helen,\n\nWe’ll use Zainab’s cut and stick with ‘reading volunteers’. I’ll get the phone screenshots to you next week. Kasia’s making a smaller PDF for us to put up when the boxes arrive.\n\nThanks,\nLuis\n\nLuis Cordero\nSenior Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "helen-ashby",
+    "to": [
+     "me"
+    ],
+    "cc": [
+     "zainab-bello",
+     "anil-joshi"
+    ],
+    "date": "2024-11-11T14:25:00+00:00",
+    "read": true,
+    "text": "Dear Luis,\n\nThe boxes arrived from Fold & Bind this morning and I'm afraid the cover isn't right. The green is much yellower than the proof Ruth signed off, almost lime next to our logo, and it looks a different colour from the inside pages. Ruth has seen it and agrees. The inside pages look lovely, so please pass our thanks to Kasia and Zainab for those.\n\nCould you speak to Fold & Bind? We were planning to send copies to our major donors at the end of the month. And please hold the PDF until we know what's happening, just in case.\n\nWarmly, Helen\n\nHelen Ashby\nDirector of Communications\nBrightwell Trust - every child a reader\nFor press enquiries: press@brightwelltrust.example"
+   },
+   {
+    "from": "me",
+    "to": [
+     "helen-ashby"
+    ],
+    "cc": [
+     "zainab-bello",
+     "anil-joshi"
+    ],
+    "date": "2024-11-11T16:48:00+00:00",
+    "read": true,
+    "text": "Hi Helen,\n\nTerry at Fold & Bind will reprint the 2,000 covers at their cost and rebind, and he's promised them back to you by Friday 22 November. Kasia brought a copy back to the studio this afternoon and you're right: it's well off the Pantone 7741 C on the proof. That one's on the printer.\n\nThe PDF is our file, so the green in it is correct. Up to you whether it goes up now or waits for the reprint.\n\nThanks,\nLuis Cordero\nSenior Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "helen-ashby",
+    "to": [
+     "me"
+    ],
+    "cc": [
+     "zainab-bello",
+     "anil-joshi"
+    ],
+    "date": "2024-11-12T09:05:00+00:00",
+    "read": true,
+    "text": "Dear Luis,\n\nThank you, that's a weight off. The 22nd still gives us time for the donor mailing, just.\n\nRuth is happy for the PDF to go up now. Graham pointed out that nobody reads a cover online anyway, which is very Graham. Priti and Graham are both still waiting to see the phone version of Our impact before they sign it off, so I'll keep an eye out for that.\n\nWarmly, Helen\n\nHelen Ashby\nDirector of Communications\nBrightwell Trust - every child a reader\nFor press enquiries: press@brightwelltrust.example"
+   },
+   {
+    "from": "anil-joshi",
+    "to": [
+     "helen-ashby"
+    ],
+    "cc": [
+     "me",
+     "zainab-bello"
+    ],
+    "date": "2024-11-13T11:20:00+00:00",
+    "read": true,
+    "text": "Hi Helen,\n\nThe report is live on the current site:\n- News sidebar, \"Annual report 2024 (PDF, 4.2 MB)\"\n- on staging it's in `/media/reports/`, linked from Our impact and the footer\n\nAnil"
+   },
+   {
+    "from": "me",
+    "to": [
+     "helen-ashby"
+    ],
+    "cc": [
+     "anil-joshi"
+    ],
+    "date": "2024-11-14T15:10:00+00:00",
+    "read": true,
+    "text": "Hi Helen,\n\nPhone version of Our impact attached for Graham and Priti, two screenshots as it's a long page. It has Zainab's new intro in it.\n\nThanks,\nLuis Cordero\nSenior Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example",
+    "attachments": [
+     {
+      "filename": "our-impact-mobile-1.png",
+      "mime": "image/png",
+      "size": 684113
+     },
+     {
+      "filename": "our-impact-mobile-2.png",
+      "mime": "image/png",
+      "size": 702498
+     }
+    ]
+   }
+  ],
+  "truth": {
+   "summary": "During the Brightwell website build Helen asked for the 2024 annual report PDF on the Our impact page; the printed reports arrived on 11 November 2024 with the cover green too yellow, Fold & Bind agreed to reprint the 2,000 covers free by 22 November, Anil put the PDF live, and Luis sent the phone version of Our impact for the trustees to approve.",
+   "ownerOwes": [],
+   "othersOwe": [
+    "Graham and Priti: review the phone version of Our impact; approval isn't recorded in this thread"
+   ],
+   "promisesByOwner": [
+    {
+     "text": "Send the phone version of the Our impact page for Graham and Priti next week",
+     "due": "2024-11-15",
+     "kept": true
+    },
+    {
+     "text": "Put the lighter report PDF on the current site when the boxes arrive; Helen asked Acme to hold it on delivery day",
+     "due": "2024-11-11",
+     "kept": false
+    }
+   ],
+   "promisesToOwner": [
+    {
+     "who": "anil-joshi",
+     "text": "Put the report PDF in /media/reports/ and link it from Our impact and the footer",
+     "kept": true
+    },
+    {
+     "who": "terry-nolan",
+     "text": "Reprint the 2,000 covers and rebind the reports at Fold & Bind's expense, as relayed by Luis; delivery isn't confirmed in this thread",
+     "due": "2024-11-22",
+     "kept": false
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2024-11-05",
+     "what": "Walkthrough of the website build with Brightwell"
+    },
+    {
+     "date": "2024-11-11",
+     "what": "Printed 2024 annual reports arrived with the wrong cover green"
+    },
+    {
+     "date": "2024-11-22",
+     "what": "Reprinted covers due back to Brightwell"
+    }
+   ],
+   "facts": [
+    "Ruth approved the new homepage layout.",
+    "Graham and Priti, of Brightwell's trustees' digital group, must approve the phone version of Our impact.",
+    "Zainab cut the Our impact intro from 210 words to 90; Luis chose ‘reading volunteers’.",
+    "The print PDF of the report was 38 MB; the web version is 4.2 MB.",
+    "The cover was specified as Pantone 7741 C and came out yellower.",
+    "Fold & Bind is reprinting the 2,000 covers at its cost, back by Friday 22 November 2024.",
+    "The report PDF went live in the current site's News sidebar on 13 November 2024."
+   ]
+  }
+ },
+ {
+  "id": "s0892",
+  "account": "acme",
+  "storyline": "brightwell-website",
+  "lang": "en",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "subject": "Staging walkthrough on 3 December",
+  "folder": "Label_22",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "helen-ashby",
+    "to": [
+     "me"
+    ],
+    "date": "2024-11-28T09:50:00+00:00",
+    "read": true,
+    "text": "Dear Luis,\n\nI'm so sorry to do this, but Ruth's board meeting has been moved to Tuesday 3 December, which is the afternoon we'd booked to come to you and go through the staging site. Could we move it to the following week? Tuesday 10th or Wednesday 11th in the afternoon would suit Ruth and Priti. Graham can only do the Wednesday, and he's the one who'll ask about the school finder, so I'd rather he was there.\n\nWarmly, Helen\n\nHelen Ashby\nDirector of Communications\nBrightwell Trust - every child a reader\nFor press enquiries: press@brightwelltrust.example"
+   },
+   {
+    "from": "me",
+    "to": [
+     "helen-ashby"
+    ],
+    "cc": [
+     "anil-joshi"
+    ],
+    "date": "2024-11-28T11:20:00+00:00",
+    "read": true,
+    "text": "Wednesday 11th, 2pm at Turnmill Street. That works.\n\nThanks,\nLuis\n\nLuis Cordero\nSenior Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "anil-joshi",
+    "to": [
+     "me"
+    ],
+    "date": "2024-11-28T11:46:00+00:00",
+    "read": true,
+    "text": "Hi Luis,\n\n11th is fine. Two things before then:\n- I'll give Ruth, Priti and Graham their own staging logins instead of the shared one\n- the school finder still has dummy data. I need their real list with postcodes, around 120 schools, ideally by the end of next week\n\nAnil"
+   },
+   {
+    "from": "me",
+    "to": [
+     "helen-ashby"
+    ],
+    "cc": [
+     "anil-joshi"
+    ],
+    "date": "2024-12-02T10:05:00+00:00",
+    "read": true,
+    "text": "Helen, one favour before the 11th: could someone send Anil the list of your schools with postcodes by Friday? A spreadsheet is fine. Then the school finder shows real schools when Graham tries it.\n\nThanks,\nLuis Cordero\nSenior Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "helen-ashby",
+    "to": [
+     "me"
+    ],
+    "cc": [
+     "anil-joshi"
+    ],
+    "date": "2024-12-04T16:30:00+00:00",
+    "read": true,
+    "text": "Dear Luis,\n\nOf course. Mira in our programmes team keeps the list and will send it to Anil directly tomorrow. Ruth, Priti and Graham are all confirmed for Wednesday 11th at 2pm, and I'll come too. Ruth has asked whether we can see the news pages as well as the school finder, if they're far enough along.\n\nWarmly, Helen\n\nHelen Ashby\nDirector of Communications\nBrightwell Trust - every child a reader\nFor press enquiries: press@brightwelltrust.example"
+   },
+   {
+    "from": "anil-joshi",
+    "to": [
+     "me"
+    ],
+    "date": "2024-12-06T12:14:00+00:00",
+    "read": true,
+    "text": "Mira’s list is on staging now. 118 schools (two closed over the summer) and I filled in three missing postcodes. Ruth, Priti and Graham have their logins.\n\nNews is fine to show.\n\nAnil"
+   }
+  ],
+  "truth": {
+   "summary": "Helen moved Brightwell's staging walkthrough from 3 December to 11 December 2024 at 2pm at Acme because Ruth's board meeting moved, and Anil loaded Mira's list of 118 schools onto staging.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [
+    {
+     "who": "helen-ashby",
+     "text": "Mira will send Anil the schools with postcodes",
+     "due": "2024-12-05",
+     "kept": true
+    },
+    {
+     "who": "anil-joshi",
+     "text": "Give Ruth, Priti and Graham individual staging logins before the walkthrough",
+     "due": "2024-12-11",
+     "kept": true
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2024-12-03",
+     "what": "Original walkthrough date, moved because of Ruth's board meeting"
+    },
+    {
+     "date": "2024-12-11",
+     "what": "Staging walkthrough at 2pm at Acme, Turnmill Street, with Ruth, Priti, Graham and Helen"
+    }
+   ],
+   "facts": [
+    "The walkthrough was rescheduled to Wednesday 11 December 2024 at 2pm.",
+    "Graham could only do the Wednesday.",
+    "Mira in Brightwell's programmes team keeps the school list.",
+    "The list has 118 schools, not 120; two closed in the summer; three postcodes were missing.",
+    "Ruth wants to see the news pages as well as the school finder.",
+    "Ruth, Priti and Graham have individual staging logins."
+   ]
+  }
+ },
+ {
+  "id": "s0893",
+  "account": "acme",
+  "storyline": "brightwell-website",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Brightwell news cards without images",
+  "folder": "Label_21",
+  "state": {
+   "inbox": false,
+   "trash": true
+  },
+  "messages": [
+   {
+    "from": "anil-joshi",
+    "to": [
+     "me"
+    ],
+    "date": "2024-12-30T10:15:00+00:00",
+    "read": true,
+    "text": "Hi Luis,\n\nSorry, I know you're away. I'm in for a couple of days this week so I'm tidying the Brightwell news template. A question for whenever you're back:\n- 41 of the old posts have no image\n- at the moment they fall back to the logo on grey, which looks broken in the grid\n- two options I can see: a coloured block with the category name on it, or drop the image slot on those cards so they're text only\n\nNothing ships before the freeze anyway.\n\nAnil"
+   },
+   {
+    "from": "me",
+    "to": [
+     "anil-joshi"
+    ],
+    "date": "2024-12-31T08:05:00-06:00",
+    "read": true,
+    "text": "I’ll mock up both on the 6th. Leaning towards the coloured block but I want to see it next to the real cards.\n\nHappy new year from Guadalajara!\nLuis\n\nLuis Cordero\nSenior Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   }
+  ],
+  "truth": {
+   "summary": "Over Christmas 2024 Anil asked how Brightwell news cards for 41 old posts without images should look (coloured block with the category name, or text-only cards); Luis, in Guadalajara, said he'd mock both up on 6 January.",
+   "ownerOwes": [
+    "Mock up both options for Brightwell news cards without images and decide"
+   ],
+   "othersOwe": [],
+   "promisesByOwner": [
+    {
+     "text": "Mock up the coloured-block and text-only news cards on 6 January",
+     "due": "2025-01-06",
+     "kept": false
+    }
+   ],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2025-01-06",
+     "what": "Luis promised mock-ups of both news card options"
+    }
+   ],
+   "facts": [
+    "41 old Brightwell news posts have no image.",
+    "They currently fall back to the logo on grey.",
+    "Options: a coloured block with the category name, or text-only cards.",
+    "Luis was in Guadalajara over Christmas 2024."
+   ]
+  }
+ },
+ {
+  "id": "s0894",
+  "account": "acme",
+  "storyline": "brightwell-website",
+  "lang": "en",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "subject": "Content freeze: Friday 24 January",
+  "folder": "Label_22",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "me",
+    "to": [
+     "helen-ashby"
+    ],
+    "cc": [
+     "anil-joshi"
+    ],
+    "date": "2025-01-20T10:32:00+00:00",
+    "read": true,
+    "text": "Hi Helen,\n\nContent freeze is this Friday, 24 January, at 5pm. After that, changes go on a list for after launch rather than straight onto staging, so Anil can test a site that stays still.\n\nThe checklist attached has every page and what's still missing. It's down to two things now: the three volunteer stories, and the trustees' bios. Everything else is in and checked by Zainab.\n\nLaunch is still pencilled for early March, and we'll fix the exact day once the freeze is done.\n\nThanks,\nLuis Cordero\nSenior Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example",
+    "attachments": [
+     {
+      "filename": "Brightwell_content_freeze_checklist.pdf",
+      "mime": "application/pdf",
+      "size": 236904
+     }
+    ]
+   },
+   {
+    "from": "helen-ashby",
+    "to": [
+     "me"
+    ],
+    "cc": [
+     "anil-joshi"
+    ],
+    "date": "2025-01-22T16:41:00+00:00",
+    "read": true,
+    "text": "Dear Luis,\n\nThank you, the checklist is very clear and has been pinned to the wall by my desk. Mira will send the three volunteer stories tomorrow morning. The trustees' bios are attached: Ruth has approved all of them except Graham's own, which he still needs to see, and he's promised to do that by Thursday.\n\nOne more thing, and I'm sorry it's arriving two days before the freeze. At last night's board meeting the trustees asked for a donate button on every page, not just on Support us. Priti was quite firm about it; she says people decide to give on the story pages, not on the page about giving. Is that something we can still do, or does it count as a change after the freeze? I'd rather know now than promise them something you can't do.\n\nWarmly, Helen\n\nHelen Ashby\nDirector of Communications\nBrightwell Trust - every child a reader\nFor press enquiries: press@brightwelltrust.example",
+    "attachments": [
+     {
+      "filename": "Trustee_bios_Jan2025.docx",
+      "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "size": 39876
+     }
+    ]
+   },
+   {
+    "from": "anil-joshi",
+    "to": [
+     "me"
+    ],
+    "date": "2025-01-23T09:22:00+00:00",
+    "read": true,
+    "text": "Hi Luis,\n\nOn the donate button:\n- in code it's small, it would live in `SiteHeader` so it's on every page\n- but the header is already full at 375px on mobile, so something has to move or we need a different pattern\n- also needs a decision on where it goes: straight to their GiveRoute page, or to our Support us page first\n\nIt's a design question before it's a build one. I wouldn't count it against the freeze, it's layout, not content.\n\nAnil"
+   },
+   {
+    "from": "me",
+    "to": [
+     "anil-joshi"
+    ],
+    "date": "2025-01-23T17:55:00+00:00",
+    "read": true,
+    "text": "Anil, leave `SiteHeader` for now. I’m away from lunchtime tomorrow until the 31st. I’ll do a couple of options the week of 3 Feb and get back to Helen then.\n\nThanks,\nLuis\n\nLuis Cordero\nSenior Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   }
+  ],
+  "truth": {
+   "summary": "Luis set the content freeze for Friday 24 January 2025 at 5pm, and Helen sent the trustees' bios and asked for a donate button on every page; Luis deferred his reply and header options until the week of 3 February.",
+   "ownerOwes": [],
+   "othersOwe": [
+    "Mira (Brightwell): send the three volunteer stories",
+    "Graham: approve his own trustee bio by Thursday 23 January"
+   ],
+   "promisesByOwner": [
+    {
+     "text": "Do the donate button header options the week of 3 February and answer Helen then",
+     "due": "2025-02-07",
+     "kept": true
+    }
+   ],
+   "promisesToOwner": [
+    {
+     "who": "helen-ashby",
+     "text": "Mira will send the three volunteer stories in the morning",
+     "due": "2025-01-23",
+     "kept": false
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2025-01-24",
+     "what": "Content freeze at 5pm"
+    },
+    {
+     "date": "2025-01-24",
+     "what": "Luis off until 31 January"
+    },
+    {
+     "date": "2025-02-03",
+     "what": "Week Luis plans to design the donate button options"
+    }
+   ],
+   "facts": [
+    "Content freeze: Friday 24 January 2025 at 5pm.",
+    "On 20 January the remaining copy was three volunteer stories and the trustees' bios; Helen sent the bios on 22 January.",
+    "Ruth approved all trustee bios except Graham's.",
+    "The trustees want a donate button on every page; Priti pushed for it.",
+    "The header is already full at 375px on mobile; the button would live in SiteHeader.",
+    "Anil asked whether to link straight to GiveRoute or to Support us first.",
+    "Launch was pencilled for early March 2025."
+   ]
+  }
+ },
+ {
+  "id": "s0895",
+  "account": "acme",
+  "storyline": "brightwell-website",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "donate button: header + mobile bar",
+  "folder": "Label_21",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "me",
+    "to": [
+     "anil-joshi"
+    ],
+    "date": "2025-02-10T09:44:00+00:00",
+    "read": true,
+    "text": "Anil, can you size up option B in Header v4? I sent Helen both options last week and she picked B on Friday. Filled Donate button in the desktop header, slim bar fixed to the bottom on mobile. Both go to /support-us/donate/ so people see the Gift Aid line before GiveRoute.\n\nThanks,\nLuis\n\nLuis Cordero\nSenior Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "anil-joshi",
+    "to": [
+     "me"
+    ],
+    "date": "2025-02-10T14:08:00+00:00",
+    "read": true,
+    "text": "Hi Luis,\n\nSized:\n- desktop button: half a day\n- mobile bar: a day, mostly iOS Safari and `env(safe-area-inset-bottom)`\n- the bar should hide while the cookie banner is showing, otherwise the two stack and cover half the screen\n\nAlso, are we still saying 14 March for launch? I'd like it in my calendar before someone books me for something else.\n\nAnil"
+   },
+   {
+    "from": "me",
+    "to": [
+     "anil-joshi"
+    ],
+    "date": "2025-02-10T15:02:00+00:00",
+    "read": true,
+    "text": "Yes, Friday 14 March. Hide the bar while the cookie banner’s up.\n\nThanks,\nLuis\n\nLuis Cordero\nSenior Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "anil-joshi",
+    "to": [
+     "me"
+    ],
+    "date": "2025-02-13T16:37:00+00:00",
+    "read": true,
+    "text": "Both on staging. I’ve hidden the bar on /support-us/donate/ as well. Looked daft asking people to donate again.\n\nAnil"
+   },
+   {
+    "from": "me",
+    "to": [
+     "anil-joshi"
+    ],
+    "date": "2025-02-17T12:31:00+00:00",
+    "read": true,
+    "text": "Sorry, slow. Working from home with a man replacing our boiler.\n\nLooks good, and yes to hiding it on the donate page. On the iPhone SE the bar is 4px taller than the design, can you check?\n\nThanks,\nLuis Cordero\nSenior Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "anil-joshi",
+    "to": [
+     "me"
+    ],
+    "date": "2025-02-18T10:06:00+00:00",
+    "read": true,
+    "text": "Padding was doubled on the SE. Fixed.\n\nHelen’s post-freeze list is up to 22. Do you want me to pick out the design ones?\n\nAnil"
+   }
+  ],
+  "truth": {
+   "summary": "Helen picked a desktop header button and mobile bar for Brightwell's Donate link, Anil put both on staging and fixed the mobile bar's padding, and he asked Luis whether he should pick out the design work on Helen's 22-item list.",
+   "ownerOwes": [
+    "Tell Anil who triages Helen's 22 post-freeze changes"
+   ],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2025-02-07",
+     "what": "Helen signed off option B for the donate button"
+    },
+    {
+     "date": "2025-03-14",
+     "what": "Brightwell website launch"
+    }
+   ],
+   "facts": [
+    "Option B uses a filled button in the desktop header and a slim fixed mobile bar; it's in Header v4.",
+    "Both link to /support-us/donate/ first, not GiveRoute, so people see the Gift Aid line.",
+    "Luis asked Anil to hide the mobile bar while the cookie banner shows; Anil also hid it on the donate page itself.",
+    "The bar was 4px too tall on the iPhone SE because the safe-area padding was added twice.",
+    "Helen's post-freeze list has 22 items.",
+    "Luis worked from home on 17 February 2025 while the boiler was replaced."
+   ]
+  }
+ },
+ {
+  "id": "s0896",
+  "account": "acme",
+  "storyline": "brightwell-website",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Brightwell launch postcards, A6 x 2,000",
+  "folder": "Label_21",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "me",
+    "to": [
+     "terry-nolan"
+    ],
+    "date": "2025-03-10T09:20:00+00:00",
+    "read": true,
+    "text": "Hi Terry,\n\nBrightwell's new website goes live this Friday, 14 March, and Helen would like a postcard to go with it: something volunteers can hand out at their training days and that can go in the next mailing to schools. Web address big on the front over a photo, a QR code to the volunteer sign-up page on the back.\n\nCould you quote for:\nA6, 2,000 copies, printed both sides\na decent card, nothing fancy, whatever you'd recommend for something that gets put in a bag\ndelivered to Brightwell Trust, 2nd floor, 7 Halcombe Yard, London N1 4QS\n\nThe tight bit is timing. Helen's first training day is Tuesday 18 March, so ideally they'd arrive Monday 17th. Our final file would be with you on Wednesday.\n\nDraft attached so you can see what it is. It's full colour and mostly photo, no special inks this time, so CMYK is fine.\n\nThanks,\nLuis Cordero\nSenior Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example",
+    "attachments": [
+     {
+      "filename": "Brightwell_launch_postcard_A6_draft.pdf",
+      "mime": "application/pdf",
+      "size": 3184220
+     }
+    ]
+   },
+   {
+    "from": "terry-nolan",
+    "to": [
+     "me"
+    ],
+    "date": "2025-03-10T13:05:00+00:00",
+    "read": true,
+    "text": "A6. 2,000. 4/4.\n350gsm silk.\n£186 + VAT.\nPrint-ready Wednesday noon, delivered Monday morning.\nCrops and 3mm bleed.\n\nTerry\n\nTerry Nolan\nFold & Bind Print | Unit 7, Bow Industrial Park, E3\n020 7946 0277"
+   },
+   {
+    "from": "me",
+    "to": [
+     "terry-nolan"
+    ],
+    "date": "2025-03-12T11:41:00+00:00",
+    "read": true,
+    "text": "Print-ready file attached, 3mm bleed and crops on. Go ahead at £186 + VAT; Philippa will send the PO this afternoon. Delivery to the Halcombe Yard address for Monday morning, and Brightwell’s office manager is in from 9:30 if you’re sending the driver first thing.\n\nThanks,\nLuis Cordero\nSenior Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example",
+    "attachments": [
+     {
+      "filename": "Brightwell_launch_postcard_A6_PRINT.pdf",
+      "mime": "application/pdf",
+      "size": 5928117
+     }
+    ]
+   },
+   {
+    "from": "terry-nolan",
+    "to": [
+     "me"
+    ],
+    "date": "2025-03-14T09:18:00+00:00",
+    "read": true,
+    "text": "Site’s up. Scanned the QR on the back and it still goes to staging.brightwelltrust.example. Login page.\nNew PDF by noon if you want it there Monday.\n\nTerry\n\nTerry Nolan\nFold & Bind Print | Unit 7, Bow Industrial Park, E3\n020 7946 0277"
+   }
+  ],
+  "truth": {
+   "summary": "Brightwell's new site went live on 14 March 2025, but the QR code on its 2,000 launch postcards points to staging; Terry needs a corrected PDF by noon that day to keep Monday's delivery.",
+   "ownerOwes": [
+    "Send Terry a corrected postcard PDF with the QR code pointing to the live volunteer sign-up page by noon on 14 March 2025"
+   ],
+   "othersOwe": [],
+   "promisesByOwner": [
+    {
+     "text": "Send the final artwork on Wednesday",
+     "due": "2025-03-12",
+     "kept": true
+    }
+   ],
+   "promisesToOwner": [
+    {
+     "who": "terry-nolan",
+     "text": "Deliver the postcards Monday morning if usable artwork arrives in time; Terry extended the artwork deadline to noon on Friday",
+     "due": "2025-03-17",
+     "kept": false
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2025-03-14",
+     "what": "The site went live and Terry asked for a corrected print PDF by noon"
+    },
+    {
+     "date": "2025-03-17",
+     "what": "Target delivery at Brightwell's office if the corrected artwork arrives in time"
+    },
+    {
+     "date": "2025-03-18",
+     "what": "Brightwell's first volunteer training day"
+    }
+   ],
+   "facts": [
+    "Postcards: A6, 2,000, printed 4/4 on 350gsm silk, £186 + VAT.",
+    "Delivery to Brightwell Trust, 2nd floor, 7 Halcombe Yard, London N1 4QS.",
+    "The QR code on the back pointed to staging.brightwelltrust.example (a login page).",
+    "Terry needs crops and 3mm bleed.",
+    "The postcard is CMYK, no special inks."
+   ]
+  }
+ },
+ {
+  "id": "s0897",
+  "account": "personal",
+  "lang": "en",
+  "tags": [
+   "personal"
+  ],
+  "subject": "parcel left at Flat 2?",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "me",
+    "to": [
+     "agnieszka-nowak"
+    ],
+    "date": "2025-03-17T19:42:00+00:00",
+    "read": true,
+    "text": "Hi Aga, Parcelwise says a box for me went to Flat 2 this afternoon. Have you seen it?\n\nL"
+   },
+   {
+    "from": "agnieszka-nowak",
+    "to": [
+     "me"
+    ],
+    "date": "2025-03-18T13:12:00+00:00",
+    "read": true,
+    "text": "Hi Luis\n\nNothing here I'm afraid. I've looked in the hall and on top of the meters. I was on nights so I was asleep, but Kuba was home all afternoon and says nobody knocked. Are you sure it says Flat 2 and not number 2 next door?\n\nAga"
+   },
+   {
+    "from": "me",
+    "to": [
+     "agnieszka-nowak"
+    ],
+    "date": "2025-03-18T18:25:00+00:00",
+    "read": true,
+    "text": "Yep, Flat 2 at number 14. Photo’s a bit of blue door and a mat that says HELLO. Ours is the green door. I’ll ring them tomorrow if it doesn’t turn up. Only a foam roller.\n\nL"
+   },
+   {
+    "from": "agnieszka-nowak",
+    "to": [
+     "me"
+    ],
+    "date": "2025-03-19T08:14:00+00:00",
+    "read": true,
+    "text": "Hi Luis\n\nIt’s on the chair in Kuba’s room. That’s our mat. He signed for it, went to football and forgot to tell me. Are you in tonight? I can bring it up.\n\nAga"
+   },
+   {
+    "from": "me",
+    "to": [
+     "agnieszka-nowak"
+    ],
+    "date": "2025-03-19T20:33:00+00:00",
+    "read": true,
+    "text": "got it, thanks! tell kuba he's forgiven\n\nL"
+   }
+  ],
+  "truth": {
+   "summary": "Parcelwise left Luis's foam roller at Flat 2 on 17 March 2025; Aga found it in Kuba's room two days later, and Luis confirmed he got it.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [
+    {
+     "who": "agnieszka-nowak",
+     "text": "Bring the parcel up on the evening of 19 March",
+     "due": "2025-03-19",
+     "kept": true
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2025-03-17",
+     "what": "Parcel delivered to Flat 2"
+    },
+    {
+     "date": "2025-03-19",
+     "what": "Parcel found in Kuba's room and handed over"
+    }
+   ],
+   "facts": [
+    "The courier was Parcelwise.",
+    "The parcel was a foam roller.",
+    "Aga's door is blue with a HELLO mat; Luis's door is green.",
+    "Kuba signed for it, put it in his room and forgot.",
+    "Aga was working nights when the parcel arrived."
+   ]
+  }
+ },
+ {
+  "id": "s0898",
+  "account": "personal",
+  "lang": "en",
+  "tags": [
+   "personal"
+  ],
+  "subject": "Biscuit's booster",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "emma-pike",
+    "to": [
+     "me"
+    ],
+    "date": "2025-10-18T09:36:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nBiscuit's yearly booster is due in November. I can do Tuesday 4 November at 17:40 or Saturday 8 November at 10:20. Reply by Wednesday if you’d like me to book either one.\n\nBiscuit could also join our Lauriston Care Plan if you'd like: £15.50 a month covers his booster, two health checks a year, flea and worm treatment every month and 10% off everything else at the practice. I can set it up at the appointment, or send you the form now so you can look at it first.\n\nEmma\n\nEmma Pike | Lauriston Vets | 020 7946 0168"
+   },
+   {
+    "from": "me",
+    "to": [
+     "emma-pike"
+    ],
+    "date": "2025-10-19T20:18:00+01:00",
+    "read": true,
+    "text": "Hi Emma, Saturday at 10:20 please. I’m in Margate with work at the end of that week, so Niamh might bring him.\n\nWe’ll leave the plan for now, thanks. Niamh’s got our costs at about £140 a year and he’s insured. Can he have breakfast before he comes in? He was sick in the carrier on the way to his first visit in May.\n\nLuis"
+   },
+   {
+    "from": "emma-pike",
+    "to": [
+     "me"
+    ],
+    "date": "2025-10-20T10:04:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nSaturday at 10:20 is booked. No fasting for the booster, but if he gets carsick you can give him a small breakfast two hours before.\n\nEmma\n\nEmma Pike | Lauriston Vets | 020 7946 0168"
+   },
+   {
+    "from": "me",
+    "to": [
+     "emma-pike"
+    ],
+    "date": "2025-10-20T18:47:00+01:00",
+    "read": true,
+    "text": "Thanks Emma. Small breakfast it is.\nLuis"
+   }
+  ],
+  "truth": {
+   "summary": "Luis booked Biscuit's yearly booster at Lauriston Vets for Saturday 8 November 2025 at 10:20 and politely declined the £15.50-a-month Lauriston Care Plan.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2025-11-08",
+     "what": "Biscuit's booster at Lauriston Vets, 10:20"
+    }
+   ],
+   "facts": [
+    "Emma offered Tuesday 4 November 2025 at 17:40 or Saturday 8 November at 10:20.",
+    "The Lauriston Care Plan costs £15.50 a month (£186 a year): booster, two health checks, monthly flea and worm treatment, 10% off.",
+    "Niamh worked out their current costs at about £140 a year; Biscuit is already insured.",
+    "No need to fast Biscuit for a booster; a small breakfast two hours before is fine.",
+    "Biscuit was sick in the carrier on his first visit in May 2025."
+   ]
+  }
+ },
+ {
+  "id": "s0899",
+  "account": "acme",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "React Native contractor for Pennywort",
+  "folder": "Label_21",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "callie-fraser",
+    "to": [
+     "me"
+    ],
+    "cc": [
+     "rhys-morgan"
+    ],
+    "date": "2026-05-26T10:21:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nRoss Kettering can start on 15 June: two weeks' notice on his current contract, and he's built two loyalty apps in React Native, one of them for a coffee chain. £500 a day through us. It's exactly the profile Rhys described, so I've copied him in.\n\nBefore I put him forward formally I need our updated terms of business signed. They've changed since Nell's placement last year; Philippa has had them since last Tuesday. Could we do 15 minutes on it? Wednesday at 11:00 or 16:30.\n\nSpeak soon, Callie\n\nCallie Fraser\nSenior Consultant, Northlight Talent\n+44 7700 900 231"
+   },
+   {
+    "from": "rhys-morgan",
+    "to": [
+     "me"
+    ],
+    "cc": [
+     "callie-fraser"
+    ],
+    "date": "2026-05-26T11:03:00+01:00",
+    "read": true,
+    "text": "CV's good. Need him by the 15th or Pennywort's build slips.\nR"
+   },
+   {
+    "from": "me",
+    "to": [
+     "callie-fraser"
+    ],
+    "cc": [
+     "rhys-morgan"
+    ],
+    "date": "2026-05-26T14:30:00+01:00",
+    "read": true,
+    "text": "Hi Callie, Ross looks right. I’ll chase our solicitor. Can we leave the call till I’ve heard back?\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "me",
+    "to": [
+     "callie-fraser"
+    ],
+    "cc": [
+     "rhys-morgan"
+    ],
+    "date": "2026-06-01T17:46:00+01:00",
+    "read": true,
+    "text": "Callie, I chased our solicitor. It’s clause 11 holding this up: 20% if we hire the contractor within 12 months. We’d sign at 12% and six months. Can you get that agreed?\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "rhys-morgan",
+    "to": [
+     "me"
+    ],
+    "date": "2026-06-02T08:12:00+01:00",
+    "read": true,
+    "text": "12% fine by me. Not my budget.\nR"
+   },
+   {
+    "from": "callie-fraser",
+    "to": [
+     "me"
+    ],
+    "cc": [
+     "rhys-morgan"
+    ],
+    "date": "2026-06-02T12:15:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nRoss is still free from the 15th, I spoke to him this morning. I'll take clause 11 to our MD at Wednesday's partners' meeting and come back to you by Friday. If it's a yes I can have the amended terms over to Philippa the same afternoon.\n\nSpeak soon, Callie\n\nCallie Fraser\nSenior Consultant, Northlight Talent\n+44 7700 900 231"
+   }
+  ],
+  "truth": {
+   "summary": "Callie identified Ross Kettering for Pennywort from 15 June at £500 a day, but Northlight needs signed terms before she can put him forward and she owes Luis a response by 5 June to his counteroffer on clause 11.",
+   "ownerOwes": [],
+   "othersOwe": [
+    "Callie Fraser: answer on clause 11 by Friday 5 June 2026; if agreed, she can send the amended terms to Philippa that afternoon"
+   ],
+   "promisesByOwner": [
+    {
+     "text": "Chase the solicitor about Northlight's terms",
+     "kept": true
+    }
+   ],
+   "promisesToOwner": [
+    {
+     "who": "callie-fraser",
+     "text": "Take clause 11 to Northlight's MD on Wednesday and come back by Friday",
+     "due": "2026-06-05",
+     "kept": false
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2026-06-03",
+     "what": "Northlight partners' meeting where Callie raises clause 11"
+    },
+    {
+     "date": "2026-06-05",
+     "what": "Callie's answer on clause 11 due"
+    },
+    {
+     "date": "2026-06-15",
+     "what": "Ross Kettering could start on Pennywort"
+    }
+   ],
+   "facts": [
+    "Ross Kettering: React Native contractor, two weeks' notice, two loyalty apps built, £500 a day through Northlight.",
+    "Northlight's terms changed since Nell's placement in 2025; Philippa has them.",
+    "Clause 11: 20% fee if Acme hires a contractor permanently within 12 months; Acme wants 12% and six months.",
+    "Rhys needs the contractor by 15 June or Pennywort's build slips."
+   ]
+  }
+ },
+ {
+  "id": "s0900",
+  "account": "acme",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Summer supper at Merefurrow, 9 July",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "rupert-ashdown",
+    "to": [
+     "me"
+    ],
+    "date": "2026-06-11T11:40:00+01:00",
+    "read": true,
+    "text": "Dear Luis,\n\nYour colleague Miss Whyte came down to look round the barn on the 28th of May, and mentioned in passing that you sometimes take clients to dinner away from London. I hope you will forgive a direct approach.\n\nWe are holding a small summer supper on Thursday the ninth of July for people who arrange this sort of evening, in the barn at seven o'clock, with a look round the bedrooms beforehand for anyone who would like one. The food is cooked in the farmhouse kitchen from whatever the farm and the neighbours have that week. There is a train from St Pancras that reaches Faversham at a quarter past six, and we would collect you from the station.\n\nIf you would like to come, and to bring a colleague, a line in reply is all I need.\n\nWith kind regards, Rupert Ashdown"
+   }
+  ],
+  "truth": {
+   "summary": "Rupert Ashdown invited Luis and a colleague to the 9 July 2026 summer supper at Merefurrow Farm; the date passed without a reply in the thread.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-05-28",
+     "what": "Natasha Whyte visited the barn at Merefurrow Farm"
+    },
+    {
+     "date": "2026-07-09",
+     "what": "Summer supper in the barn at 7pm"
+    }
+   ],
+   "facts": [
+    "The supper is in the barn at seven o'clock on Thursday 9 July 2026, with a look round the bedrooms beforehand.",
+    "A train from St Pancras reaches Faversham at 18:15; Rupert would collect from the station.",
+    "Luis may bring a colleague."
+   ]
+  }
+ }
+]

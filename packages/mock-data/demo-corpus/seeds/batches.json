@@ -1,0 +1,219 @@
+[
+ {
+  "batch": "batch-001",
+  "writer": "claude",
+  "seeds": 27,
+  "planted": 1,
+  "spanish": 7
+ },
+ {
+  "batch": "batch-002",
+  "writer": "codex",
+  "seeds": 30,
+  "planted": 4,
+  "spanish": 9
+ },
+ {
+  "batch": "batch-003",
+  "writer": "claude",
+  "seeds": 30,
+  "planted": 3,
+  "spanish": 3
+ },
+ {
+  "batch": "batch-004",
+  "writer": "codex",
+  "seeds": 30,
+  "planted": 3,
+  "spanish": 6
+ },
+ {
+  "batch": "batch-005",
+  "writer": "claude",
+  "seeds": 30,
+  "planted": 2,
+  "spanish": 1
+ },
+ {
+  "batch": "batch-006",
+  "writer": "codex",
+  "seeds": 30,
+  "planted": 2,
+  "spanish": 1
+ },
+ {
+  "batch": "batch-007",
+  "writer": "claude",
+  "seeds": 30,
+  "planted": 1,
+  "spanish": 1
+ },
+ {
+  "batch": "batch-008",
+  "writer": "codex",
+  "seeds": 30,
+  "planted": 2,
+  "spanish": 6
+ },
+ {
+  "batch": "batch-009",
+  "writer": "claude",
+  "seeds": 30,
+  "planted": 3,
+  "spanish": 11
+ },
+ {
+  "batch": "batch-010",
+  "writer": "codex",
+  "seeds": 30,
+  "planted": 2,
+  "spanish": 2
+ },
+ {
+  "batch": "batch-011",
+  "writer": "claude",
+  "seeds": 30,
+  "planted": 2,
+  "spanish": 2
+ },
+ {
+  "batch": "batch-012",
+  "writer": "codex",
+  "seeds": 30,
+  "planted": 3,
+  "spanish": 5
+ },
+ {
+  "batch": "batch-013",
+  "writer": "claude",
+  "seeds": 30,
+  "planted": 2,
+  "spanish": 0
+ },
+ {
+  "batch": "batch-014",
+  "writer": "codex",
+  "seeds": 30,
+  "planted": 2,
+  "spanish": 3
+ },
+ {
+  "batch": "batch-015",
+  "writer": "claude",
+  "seeds": 30,
+  "planted": 1,
+  "spanish": 8
+ },
+ {
+  "batch": "batch-016",
+  "writer": "codex",
+  "seeds": 28,
+  "planted": 0,
+  "spanish": 6
+ },
+ {
+  "batch": "batch-017",
+  "writer": "claude",
+  "seeds": 30,
+  "planted": 2,
+  "spanish": 9
+ },
+ {
+  "batch": "batch-018",
+  "writer": "codex",
+  "seeds": 27,
+  "planted": 1,
+  "spanish": 2
+ },
+ {
+  "batch": "batch-019",
+  "writer": "claude",
+  "seeds": 30,
+  "planted": 1,
+  "spanish": 9
+ },
+ {
+  "batch": "batch-020",
+  "writer": "codex",
+  "seeds": 28,
+  "planted": 1,
+  "spanish": 8
+ },
+ {
+  "batch": "batch-021",
+  "writer": "claude",
+  "seeds": 30,
+  "planted": 2,
+  "spanish": 4
+ },
+ {
+  "batch": "batch-022",
+  "writer": "codex",
+  "seeds": 30,
+  "planted": 1,
+  "spanish": 4
+ },
+ {
+  "batch": "batch-023",
+  "writer": "claude",
+  "seeds": 30,
+  "planted": 4,
+  "spanish": 8
+ },
+ {
+  "batch": "batch-024",
+  "writer": "codex",
+  "seeds": 30,
+  "planted": 4,
+  "spanish": 2
+ },
+ {
+  "batch": "batch-025",
+  "writer": "claude",
+  "seeds": 30,
+  "planted": 2,
+  "spanish": 5
+ },
+ {
+  "batch": "batch-026",
+  "writer": "codex",
+  "seeds": 30,
+  "planted": 2,
+  "spanish": 11
+ },
+ {
+  "batch": "batch-027",
+  "writer": "claude",
+  "seeds": 30,
+  "planted": 3,
+  "spanish": 4
+ },
+ {
+  "batch": "batch-028",
+  "writer": "codex",
+  "seeds": 30,
+  "planted": 3,
+  "spanish": 3
+ },
+ {
+  "batch": "batch-029",
+  "writer": "claude",
+  "seeds": 30,
+  "planted": 1,
+  "spanish": 2
+ },
+ {
+  "batch": "batch-030",
+  "writer": "codex",
+  "seeds": 30,
+  "planted": 4,
+  "spanish": 5
+ },
+ {
+  "batch": "batch-031",
+  "writer": "claude",
+  "seeds": 10,
+  "planted": 0,
+  "spanish": 0
+ }
+]

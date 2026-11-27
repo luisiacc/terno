@@ -1,0 +1,837 @@
+[
+ {
+  "id": "s0418",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a contractor's invoice",
+  "people": [
+   "anil-joshi",
+   "kasia-zielinska"
+  ],
+  "shape": "luis-starts",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-03-18",
+   "2025-03-22"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0419",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a mentoring session",
+  "people": [
+   "gabriel-santos",
+   "terry-nolan"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "decided",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-09-04",
+   "2025-09-14"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0420",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Offsite in Margate",
+  "people": [
+   "jonathan-ellery",
+   "natasha-whyte",
+   "priya-raman"
+  ],
+  "shape": "group",
+  "outcome": "cancelled",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2025-10-05",
+   "2025-10-12"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 3 of the storyline \"Offsite in Margate\": write what happens in this stretch (2025-10-05 to 2025-10-12), consistent with its summary."
+  ],
+  "storyline": "acme-offsite-2025"
+ },
+ {
+  "id": "s0421",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Offsite in Margate",
+  "people": [
+   "jonathan-ellery"
+  ],
+  "shape": "luis-starts",
+  "outcome": "waiting on them",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-10-20",
+   "2025-10-25"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 2 of 3 of the storyline \"Offsite in Margate\": write what happens in this stretch (2025-10-20 to 2025-10-25), consistent with its summary."
+  ],
+  "storyline": "acme-offsite-2025"
+ },
+ {
+  "id": "s0422",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Offsite in Margate",
+  "people": [
+   "jonathan-ellery"
+  ],
+  "shape": "ask-answer",
+  "outcome": "rescheduled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-11-04",
+   "2025-11-07"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 3 of the storyline \"Offsite in Margate\": write what happens in this stretch (2025-11-04 to 2025-11-07), consistent with its summary."
+  ],
+  "storyline": "acme-offsite-2025"
+ },
+ {
+  "id": "s0423",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: an intro to a potential client",
+  "people": [
+   "rupert-ashdown",
+   "zainab-bello"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on Luis",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-03-24",
+   "2026-03-28"
+  ],
+  "length": "medium",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0424",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Prospecto: Montessori Patio del Fresno",
+  "people": [
+   "ricardo-sandoval"
+  ],
+  "shape": "group",
+  "outcome": "waiting on them",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-05-17",
+   "2026-05-24"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 3 of the storyline \"Prospecto: Montessori Patio del Fresno\": write what happens in this stretch (2026-05-17 to 2026-05-24), consistent with its summary."
+  ],
+  "storyline": "lead-montessori"
+ },
+ {
+  "id": "s0425",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Prospecto: Montessori Patio del Fresno",
+  "people": [
+   "ricardo-sandoval"
+  ],
+  "shape": "ask-answer",
+  "outcome": "rescheduled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-06-03",
+   "2026-06-06"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 3 of the storyline \"Prospecto: Montessori Patio del Fresno\": write what happens in this stretch (2026-06-03 to 2026-06-06), consistent with its summary."
+  ],
+  "storyline": "lead-montessori"
+ },
+ {
+  "id": "s0426",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Prospecto: Montessori Patio del Fresno",
+  "people": [
+   "ricardo-sandoval"
+  ],
+  "shape": "luis-starts",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-06-13",
+   "2026-06-18"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 3 of 3 of the storyline \"Prospecto: Montessori Patio del Fresno\": write what happens in this stretch (2026-06-13 to 2026-06-18), consistent with its summary."
+  ],
+  "storyline": "lead-montessori"
+ },
+ {
+  "id": "s0427",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "alguien que busca una cotización rápida",
+  "people": [],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-06-20",
+   "2026-06-20"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0428",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a parking fine",
+  "people": [
+   "niamh-gallagher"
+  ],
+  "shape": "unanswered",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-07-26",
+   "2026-07-26"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0429",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a candidate's portfolio",
+  "people": [
+   "kasia-zielinska"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on Luis",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-08-02",
+   "2026-08-03"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0430",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: dog-sitting",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on them",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-08-03",
+   "2026-08-10"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0431",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: a shared album",
+  "people": [
+   "felix-brandt"
+  ],
+  "shape": "ask-answer",
+  "outcome": "rescheduled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-08-13",
+   "2026-08-15"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0432",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a plumber's quote",
+  "people": [
+   "niamh-gallagher"
+  ],
+  "shape": "ask-answer",
+  "outcome": "cancelled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-09-06",
+   "2026-09-06"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0433",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Lupita y los papeles de otoño",
+  "people": [
+   "fernanda-rios"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on them",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-09-21",
+   "2026-09-24"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 3 of the storyline \"Lupita y los papeles de otoño\": write what happens in this stretch (2026-09-21 to 2026-09-24), consistent with its summary."
+  ],
+  "storyline": "contadora-otono-2026"
+ },
+ {
+  "id": "s0434",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: an accessibility audit",
+  "people": [
+   "marcus-adeyemi"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-09-25",
+   "2026-09-25"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0435",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a plumber's quote",
+  "people": [
+   "niamh-gallagher"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on them",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-09-27",
+   "2026-09-29"
+  ],
+  "length": "short",
+  "attachments": "forgotten",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0436",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a bug on staging",
+  "people": [
+   "lauren-gage"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "rescheduled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-09-21",
+   "2026-10-01"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0437",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Lupita y los papeles de otoño",
+  "people": [
+   "fernanda-rios"
+  ],
+  "shape": "ask-answer",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-05",
+   "2026-10-08"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": true,
+  "must": [
+   "Part 2 of 3 of the storyline \"Lupita y los papeles de otoño\": write what happens in this stretch (2026-10-05 to 2026-10-08), consistent with its summary."
+  ],
+  "storyline": "contadora-otono-2026"
+ },
+ {
+  "id": "s0438",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a client's feedback round",
+  "people": [
+   "ian-ferris",
+   "hollie-tran"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-01",
+   "2026-10-09"
+  ],
+  "length": "medium",
+  "attachments": "some",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0439",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a performance review",
+  "people": [
+   "yasmin-farouk",
+   "anil-joshi",
+   "natasha-whyte",
+   "helen-ashby",
+   "dan-whelan",
+   "gabriel-santos"
+  ],
+  "shape": "group",
+  "outcome": "waiting on them",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-10-02",
+   "2026-10-09"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0440",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a client dinner",
+  "people": [
+   "philippa-dunn"
+  ],
+  "shape": "ask-answer",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-10"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0441",
+  "account": "acme",
+  "lang": "en",
+  "kind": "planted: facts",
+  "people": [
+   "terry-nolan",
+   "yasmin-farouk"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-05",
+   "2026-10-14"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "must": [
+   "rich in facts a question could find, stated plainly with a distinctive word or name: who paid what and when, an address, a booking reference, a time, a decision and who made it."
+  ],
+  "plant": "facts"
+ },
+ {
+  "id": "s0442",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "un prospecto que vio su portafolio",
+  "people": [],
+  "shape": "ask-answer",
+  "outcome": "resolved",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-13",
+   "2026-10-15"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0443",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: an old photo found",
+  "people": [
+   "rita-valente",
+   "harriet-lowe"
+  ],
+  "shape": "luis-starts",
+  "outcome": "cancelled",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-10-11",
+   "2026-10-16"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0444",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: the deposit from a previous flat",
+  "people": [
+   "felix-brandt"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "decided",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-09",
+   "2026-10-16"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0445",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a recommendation",
+  "people": [
+   "niamh-gallagher",
+   "kerry-simmonds"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "decided",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-15",
+   "2026-10-19"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [],
+  "unreadFrom": "2026-10-19T15:30:00Z"
+ },
+ {
+  "id": "s0446",
+  "account": "acme",
+  "lang": "en",
+  "kind": "a podcast invitation",
+  "people": [],
+  "shape": "unanswered",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-10-21",
+   "2026-10-21"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0447",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Lupita y los papeles de otoño",
+  "people": [
+   "fernanda-rios"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-12",
+   "2026-10-22"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 3 of the storyline \"Lupita y los papeles de otoño\": write what happens in this stretch (2026-10-12 to 2026-10-22), consistent with its summary."
+  ],
+  "storyline": "contadora-otono-2026"
+ }
+]

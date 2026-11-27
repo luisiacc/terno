@@ -1,0 +1,862 @@
+[
+ {
+  "id": "s0268",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Aisha and Oliver's wedding",
+  "people": [
+   "aisha-rahman"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on them",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-02-18",
+   "2025-02-21"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "Part 1 of 6 of the storyline \"Aisha and Oliver's wedding\": write what happens in this stretch (2025-02-18 to 2025-02-21), consistent with its summary."
+  ],
+  "storyline": "aisha-oliver-wedding"
+ },
+ {
+  "id": "s0269",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Aisha and Oliver's wedding",
+  "people": [
+   "oliver-grant",
+   "niamh-gallagher",
+   "aisha-rahman"
+  ],
+  "shape": "group",
+  "outcome": "waiting on Luis",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2025-03-24",
+   "2025-03-31"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 6 of the storyline \"Aisha and Oliver's wedding\": write what happens in this stretch (2025-03-24 to 2025-03-31), consistent with its summary."
+  ],
+  "storyline": "aisha-oliver-wedding"
+ },
+ {
+  "id": "s0270",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Aisha and Oliver's wedding",
+  "people": [
+   "oliver-grant",
+   "niamh-gallagher"
+  ],
+  "shape": "luis-starts",
+  "outcome": "resolved",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-05-02",
+   "2025-05-07"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 3 of 6 of the storyline \"Aisha and Oliver's wedding\": write what happens in this stretch (2025-05-02 to 2025-05-07), consistent with its summary."
+  ],
+  "storyline": "aisha-oliver-wedding"
+ },
+ {
+  "id": "s0271",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Adopting Biscuit",
+  "people": [
+   "niamh-gallagher"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-06-08",
+   "2025-06-08"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "Part 1 of 6 of the storyline \"Adopting Biscuit\": write what happens in this stretch (2025-06-08 to 2025-06-08), consistent with its summary."
+  ],
+  "storyline": "biscuit-the-cat"
+ },
+ {
+  "id": "s0272",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Aisha and Oliver's wedding",
+  "people": [
+   "niamh-gallagher"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-06-14",
+   "2025-06-14"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "Part 4 of 6 of the storyline \"Aisha and Oliver's wedding\": write what happens in this stretch (2025-06-14 to 2025-06-14), consistent with its summary."
+  ],
+  "storyline": "aisha-oliver-wedding"
+ },
+ {
+  "id": "s0273",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Aisha and Oliver's wedding",
+  "people": [
+   "niamh-gallagher"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-07-22",
+   "2025-07-22"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "Part 5 of 6 of the storyline \"Aisha and Oliver's wedding\": write what happens in this stretch (2025-07-22 to 2025-07-22), consistent with its summary."
+  ],
+  "storyline": "aisha-oliver-wedding"
+ },
+ {
+  "id": "s0274",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Adopting Biscuit",
+  "people": [
+   "niamh-gallagher",
+   "emma-pike",
+   "olivia-marsh"
+  ],
+  "shape": "group",
+  "outcome": "waiting on them",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2025-07-18",
+   "2025-07-25"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 6 of the storyline \"Adopting Biscuit\": write what happens in this stretch (2025-07-18 to 2025-07-25), consistent with its summary."
+  ],
+  "storyline": "biscuit-the-cat"
+ },
+ {
+  "id": "s0275",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a weekend away",
+  "people": [
+   "martin-hale"
+  ],
+  "shape": "ask-answer",
+  "outcome": "resolved",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-07-27",
+   "2025-07-27"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0276",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a discussion on Marshgate Runners members (the running club's members list: race entries, kit, lost property, socials)",
+  "people": [
+   "bernadette-gallagher"
+  ],
+  "shape": "list",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2025-07-29",
+   "2025-07-31"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list members@marshgaterunners.example (listId members.marshgaterunners.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "harriers"
+ },
+ {
+  "id": "s0277",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Aisha and Oliver's wedding",
+  "people": [
+   "niamh-gallagher"
+  ],
+  "shape": "ask-answer",
+  "outcome": "cancelled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-08-25",
+   "2025-08-28"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 6 of 6 of the storyline \"Aisha and Oliver's wedding\": write what happens in this stretch (2025-08-25 to 2025-08-28), consistent with its summary."
+  ],
+  "storyline": "aisha-oliver-wedding"
+ },
+ {
+  "id": "s0278",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Adopting Biscuit",
+  "people": [
+   "emma-pike",
+   "niamh-gallagher"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-08-31",
+   "2025-09-10"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 6 of the storyline \"Adopting Biscuit\": write what happens in this stretch (2025-08-31 to 2025-09-10), consistent with its summary."
+  ],
+  "storyline": "biscuit-the-cat"
+ },
+ {
+  "id": "s0279",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: the rate card",
+  "people": [
+   "sam-whitfield",
+   "callie-fraser"
+  ],
+  "shape": "luis-starts",
+  "outcome": "waiting on them",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-10-06",
+   "2025-10-11"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0280",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Adopting Biscuit",
+  "people": [
+   "olivia-marsh"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-10-18",
+   "2025-10-28"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 4 of 6 of the storyline \"Adopting Biscuit\": write what happens in this stretch (2025-10-18 to 2025-10-28), consistent with its summary."
+  ],
+  "storyline": "biscuit-the-cat"
+ },
+ {
+  "id": "s0281",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "a survey from an old university",
+  "people": [],
+  "shape": "unanswered",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-11-28",
+   "2025-11-28"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0282",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a bake sale",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "ask-answer",
+  "outcome": "rescheduled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-12-01",
+   "2025-12-02"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0283",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Adopting Biscuit",
+  "people": [
+   "emma-pike"
+  ],
+  "shape": "luis-starts",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-12-09",
+   "2025-12-14"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 5 of 6 of the storyline \"Adopting Biscuit\": write what happens in this stretch (2025-12-09 to 2025-12-14), consistent with its summary."
+  ],
+  "storyline": "biscuit-the-cat"
+ },
+ {
+  "id": "s0284",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Adopting Biscuit",
+  "people": [
+   "olivia-marsh"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-01-30",
+   "2026-01-30"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "Part 6 of 6 of the storyline \"Adopting Biscuit\": write what happens in this stretch (2026-01-30 to 2026-01-30), consistent with its summary."
+  ],
+  "storyline": "biscuit-the-cat"
+ },
+ {
+  "id": "s0285",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a stag do budget",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "declined politely",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-07-17",
+   "2026-07-27"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0286",
+  "account": "acme",
+  "lang": "en",
+  "kind": "a discussion on Acme everyone (the whole studio: announcements, leaving drinks, office notices, the odd reply-all)",
+  "people": [
+   "anil-joshi",
+   "dev-malhotra"
+  ],
+  "shape": "list",
+  "outcome": "decided",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-07-28",
+   "2026-08-01"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list everyone@acme.example (listId everyone.acme.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "allstudio"
+ },
+ {
+  "id": "s0287",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a recipe",
+  "people": [
+   "harriet-lowe",
+   "ifeoma-nwosu",
+   "mei-lin-chou"
+  ],
+  "shape": "group",
+  "outcome": "waiting on them",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-08-20",
+   "2026-08-23"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0288",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a seller on a marketplace",
+  "people": [],
+  "shape": "ask-answer",
+  "outcome": "cancelled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-08-29",
+   "2026-08-31"
+  ],
+  "length": "medium",
+  "attachments": "forgotten",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0289",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: the rate card",
+  "people": [
+   "margaret-okafor"
+  ],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-09-24",
+   "2026-09-24"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0290",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: borrowing something",
+  "people": [
+   "josh-whitaker"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on Luis",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-07",
+   "2026-10-09"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0291",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Informe anual de Semilla Viva",
+  "people": [
+   "andrea-solis"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-10-10",
+   "2026-10-10"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "Part 1 of 2 of the storyline \"Informe anual de Semilla Viva\": write what happens in this stretch (2026-10-10 to 2026-10-10), consistent with its summary."
+  ],
+  "storyline": "semilla-informe-2026"
+ },
+ {
+  "id": "s0292",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a volunteering shift",
+  "people": [
+   "ifeoma-nwosu",
+   "hamish-fairweather"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "declined politely",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-05",
+   "2026-10-12"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0293",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a neighbour he hasn't met",
+  "people": [],
+  "shape": "unanswered",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-10-13",
+   "2026-10-13"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0294",
+  "account": "acme",
+  "lang": "en",
+  "kind": "planted: promise-to-owner",
+  "people": [
+   "anil-joshi"
+  ],
+  "shape": "ask-answer",
+  "outcome": "they owe what they promised",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-21"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "must": [
+   "in the 14 days before the anchor someone promised Luis something with a time (I'll send the deck Monday); about half are already due and nothing came."
+  ],
+  "plant": "promise-to-owner",
+  "lastFrom": "them"
+ },
+ {
+  "id": "s0295",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: a reunion",
+  "people": [
+   "andrei-popescu"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on Luis",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-18",
+   "2026-10-21"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0296",
+  "account": "personal",
+  "lang": "en",
+  "kind": "planted: promise-to-owner",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "they owe what they promised",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-21"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "in the 14 days before the anchor someone promised Luis something with a time (I'll send the deck Monday); about half are already due and nothing came."
+  ],
+  "unreadFrom": "2026-10-20T07:47:51Z",
+  "plant": "promise-to-owner",
+  "lastFrom": "them"
+ },
+ {
+  "id": "s0297",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Informe anual de Semilla Viva",
+  "people": [
+   "andrea-solis"
+  ],
+  "shape": "ask-answer",
+  "outcome": "resolved",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-19",
+   "2026-10-22"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 2 of the storyline \"Informe anual de Semilla Viva\": write what happens in this stretch (2026-10-19 to 2026-10-22), consistent with its summary."
+  ],
+  "storyline": "semilla-informe-2026"
+ }
+]

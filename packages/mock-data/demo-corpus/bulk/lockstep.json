@@ -1,0 +1,168 @@
+[
+  {
+    "brand": "lockstep",
+    "account": "personal",
+    "schedule": {
+      "every": "random",
+      "zone": "Europe/London",
+      "perWeek": [
+        0.04,
+        0.12
+      ]
+    },
+    "templates": [
+      {
+        "weight": 4,
+        "subject": "New sign-in to your Pin & Latch account",
+        "text": "Your account was just signed in to from a new device.\n\nDevice: {device}\nLocation: {place} (approximate)\nTime: {weekday} {date}, {time}\n\nIf this was you, there's nothing to do. If it wasn't, change your master password now and sign out of all devices.\n\nReview devices: https://pinandlatch.example/account/devices\n\nSecurity settings: https://pinandlatch.example/account/security\nPin and Latch Security Ltd, 19 Bloomsbury Way, London WC1A 2TH\nWe will never ask for your master password by email.",
+        "html": "<!doctype html><html><body style=\"margin:0;padding:0;background:#f4f4f4;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f4f4;\"><tr><td align=\"center\" style=\"padding:24px 12px;\"><table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;\"><tr><td style=\"padding:18px 28px;background:#1e3a5f;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#ffffff;\"><a href=\"https://pinandlatch.example/\" style=\"color:#ffffff;text-decoration:none;\">Pin &amp; Latch</a></td></tr><tr><td style=\"padding:28px 28px 12px;\"><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">Your account was just signed in to from a new device.</p><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 16px;border-top:1px solid #e5e5e5;\"><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Device</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{device}</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Location</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{place} (approximate)</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Time</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{weekday} {date}, {time}</td></tr></table><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">If this was you, there's nothing to do. If it wasn't, change your master password now and sign out of all devices.</p><p style=\"margin:0 0 20px;\"><a href=\"https://pinandlatch.example/account/devices\" style=\"display:inline-block;padding:10px 18px;background:#1e3a5f;color:#ffffff;text-decoration:none;border-radius:4px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;\">Review devices</a></p></td></tr><tr><td style=\"padding:16px 28px 24px;border-top:1px solid #eeeeee;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#666;\">Security settings: <a href=\"https://pinandlatch.example/account/security\" style=\"color:#666;\">https://pinandlatch.example/account/security</a><br>Pin and Latch Security Ltd, 19 Bloomsbury Way, London WC1A 2TH<br>We will never ask for your master password by email.</td></tr></table></td></tr></table></body></html>",
+        "slots": {
+          "device": [
+            "Safari on macOS",
+            "Firefox on macOS",
+            "Pin & Latch for iPhone",
+            "Chrome on Windows",
+            "Pin & Latch for iPad",
+            "Browser extension on macOS"
+          ],
+          "place": [
+            "London, United Kingdom",
+            "London, United Kingdom",
+            "Cork, Ireland",
+            "Guadalajara, Mexico",
+            "Inverness, United Kingdom"
+          ]
+        }
+      },
+      {
+        "weight": 1.2,
+        "subject": "A site where you have a login was breached",
+        "text": "{site} reported a data breach. One login in your vault uses an address that was in it.\n\nSite: {site}\nExposed: {data}\nReported: {month} {year}\n\nChange the password for this site, and anywhere else you've used it. Pin & Latch can generate a new one for you.\n\nOpen Watchtower report: https://pinandlatch.example/vault/watchtower\n\nSecurity settings: https://pinandlatch.example/account/security\nPin and Latch Security Ltd, 19 Bloomsbury Way, London WC1A 2TH\nWe will never ask for your master password by email.",
+        "html": "<!doctype html><html><body style=\"margin:0;padding:0;background:#f4f4f4;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f4f4;\"><tr><td align=\"center\" style=\"padding:24px 12px;\"><table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;\"><tr><td style=\"padding:18px 28px;background:#1e3a5f;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#ffffff;\"><a href=\"https://pinandlatch.example/\" style=\"color:#ffffff;text-decoration:none;\">Pin &amp; Latch</a></td></tr><tr><td style=\"padding:28px 28px 12px;\"><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">{site} reported a data breach. One login in your vault uses an address that was in it.</p><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 16px;border-top:1px solid #e5e5e5;\"><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Site</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{site}</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Exposed</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{data}</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Reported</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{month} {year}</td></tr></table><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">Change the password for this site, and anywhere else you've used it. Pin &amp; Latch can generate a new one for you.</p><p style=\"margin:0 0 20px;\"><a href=\"https://pinandlatch.example/vault/watchtower\" style=\"display:inline-block;padding:10px 18px;background:#1e3a5f;color:#ffffff;text-decoration:none;border-radius:4px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;\">Open Watchtower report</a></p></td></tr><tr><td style=\"padding:16px 28px 24px;border-top:1px solid #eeeeee;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#666;\">Security settings: <a href=\"https://pinandlatch.example/account/security\" style=\"color:#666;\">https://pinandlatch.example/account/security</a><br>Pin and Latch Security Ltd, 19 Bloomsbury Way, London WC1A 2TH<br>We will never ask for your master password by email.</td></tr></table></td></tr></table></body></html>",
+        "slots": {
+          "site": [
+            "shopfront-tickets.example",
+            "kettlebell-forum.example",
+            "photobin.example",
+            "routeplanner.example",
+            "recipebox.example"
+          ],
+          "data": [
+            "email addresses, hashed passwords",
+            "email addresses, names",
+            "email addresses, phone numbers, hashed passwords"
+          ]
+        }
+      },
+      {
+        "weight": 0.8,
+        "subject": "Your security summary",
+        "text": "A quick look at your vault.\n\nWeak passwords: {weak}\nReused passwords: {reused}\nLogins without two-step: {twofa}\n\nFix them now: https://pinandlatch.example/vault/watchtower\n\nYou can turn these summaries off in your security settings.\n\nSecurity settings: https://pinandlatch.example/account/security\nPin and Latch Security Ltd, 19 Bloomsbury Way, London WC1A 2TH\nWe will never ask for your master password by email.",
+        "html": "<!doctype html><html><body style=\"margin:0;padding:0;background:#f4f4f4;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f4f4;\"><tr><td align=\"center\" style=\"padding:24px 12px;\"><table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;\"><tr><td style=\"padding:18px 28px;background:#1e3a5f;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#ffffff;\"><a href=\"https://pinandlatch.example/\" style=\"color:#ffffff;text-decoration:none;\">Pin &amp; Latch</a></td></tr><tr><td style=\"padding:28px 28px 12px;\"><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">A quick look at your vault.</p><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 16px;border-top:1px solid #e5e5e5;\"><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Weak passwords</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{weak}</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Reused passwords</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{reused}</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Logins without two-step</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{twofa}</td></tr></table><p style=\"margin:0 0 20px;\"><a href=\"https://pinandlatch.example/vault/watchtower\" style=\"display:inline-block;padding:10px 18px;background:#1e3a5f;color:#ffffff;text-decoration:none;border-radius:4px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;\">Fix them now</a></p><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:13px;line-height:19px;color:#666;white-space:pre-line;\">You can turn these summaries off in your security settings.</p></td></tr><tr><td style=\"padding:16px 28px 24px;border-top:1px solid #eeeeee;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#666;\">Security settings: <a href=\"https://pinandlatch.example/account/security\" style=\"color:#666;\">https://pinandlatch.example/account/security</a><br>Pin and Latch Security Ltd, 19 Bloomsbury Way, London WC1A 2TH<br>We will never ask for your master password by email.</td></tr></table></td></tr></table></body></html>",
+        "slots": {
+          "weak": {
+            "int": [
+              0,
+              6
+            ]
+          },
+          "reused": {
+            "int": [
+              1,
+              11
+            ]
+          },
+          "twofa": {
+            "int": [
+              3,
+              19
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "brand": "lockstep",
+    "account": "icloud",
+    "schedule": {
+      "every": "random",
+      "zone": "Europe/London",
+      "perWeek": [
+        0.03,
+        0.08
+      ]
+    },
+    "templates": [
+      {
+        "weight": 4,
+        "subject": "New sign-in to your Pin & Latch account",
+        "text": "Your account was just signed in to from a new device.\n\nDevice: {device}\nLocation: {place} (approximate)\nTime: {weekday} {date}, {time}\n\nIf this was you, there's nothing to do. If it wasn't, change your master password now and sign out of all devices.\n\nReview devices: https://pinandlatch.example/account/devices\n\nSecurity settings: https://pinandlatch.example/account/security\nPin and Latch Security Ltd, 19 Bloomsbury Way, London WC1A 2TH\nWe will never ask for your master password by email.",
+        "html": "<!doctype html><html><body style=\"margin:0;padding:0;background:#f4f4f4;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f4f4;\"><tr><td align=\"center\" style=\"padding:24px 12px;\"><table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;\"><tr><td style=\"padding:18px 28px;background:#1e3a5f;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#ffffff;\"><a href=\"https://pinandlatch.example/\" style=\"color:#ffffff;text-decoration:none;\">Pin &amp; Latch</a></td></tr><tr><td style=\"padding:28px 28px 12px;\"><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">Your account was just signed in to from a new device.</p><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 16px;border-top:1px solid #e5e5e5;\"><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Device</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{device}</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Location</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{place} (approximate)</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Time</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{weekday} {date}, {time}</td></tr></table><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">If this was you, there's nothing to do. If it wasn't, change your master password now and sign out of all devices.</p><p style=\"margin:0 0 20px;\"><a href=\"https://pinandlatch.example/account/devices\" style=\"display:inline-block;padding:10px 18px;background:#1e3a5f;color:#ffffff;text-decoration:none;border-radius:4px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;\">Review devices</a></p></td></tr><tr><td style=\"padding:16px 28px 24px;border-top:1px solid #eeeeee;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#666;\">Security settings: <a href=\"https://pinandlatch.example/account/security\" style=\"color:#666;\">https://pinandlatch.example/account/security</a><br>Pin and Latch Security Ltd, 19 Bloomsbury Way, London WC1A 2TH<br>We will never ask for your master password by email.</td></tr></table></td></tr></table></body></html>",
+        "slots": {
+          "device": [
+            "Safari on macOS",
+            "Firefox on macOS",
+            "Pin & Latch for iPhone",
+            "Chrome on Windows",
+            "Pin & Latch for iPad",
+            "Browser extension on macOS"
+          ],
+          "place": [
+            "London, United Kingdom",
+            "London, United Kingdom",
+            "Cork, Ireland",
+            "Guadalajara, Mexico",
+            "Inverness, United Kingdom"
+          ]
+        }
+      },
+      {
+        "weight": 1.2,
+        "subject": "A site where you have a login was breached",
+        "text": "{site} reported a data breach. One login in your vault uses an address that was in it.\n\nSite: {site}\nExposed: {data}\nReported: {month} {year}\n\nChange the password for this site, and anywhere else you've used it. Pin & Latch can generate a new one for you.\n\nOpen Watchtower report: https://pinandlatch.example/vault/watchtower\n\nSecurity settings: https://pinandlatch.example/account/security\nPin and Latch Security Ltd, 19 Bloomsbury Way, London WC1A 2TH\nWe will never ask for your master password by email.",
+        "html": "<!doctype html><html><body style=\"margin:0;padding:0;background:#f4f4f4;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f4f4;\"><tr><td align=\"center\" style=\"padding:24px 12px;\"><table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;\"><tr><td style=\"padding:18px 28px;background:#1e3a5f;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#ffffff;\"><a href=\"https://pinandlatch.example/\" style=\"color:#ffffff;text-decoration:none;\">Pin &amp; Latch</a></td></tr><tr><td style=\"padding:28px 28px 12px;\"><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">{site} reported a data breach. One login in your vault uses an address that was in it.</p><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 16px;border-top:1px solid #e5e5e5;\"><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Site</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{site}</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Exposed</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{data}</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Reported</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{month} {year}</td></tr></table><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">Change the password for this site, and anywhere else you've used it. Pin &amp; Latch can generate a new one for you.</p><p style=\"margin:0 0 20px;\"><a href=\"https://pinandlatch.example/vault/watchtower\" style=\"display:inline-block;padding:10px 18px;background:#1e3a5f;color:#ffffff;text-decoration:none;border-radius:4px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;\">Open Watchtower report</a></p></td></tr><tr><td style=\"padding:16px 28px 24px;border-top:1px solid #eeeeee;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#666;\">Security settings: <a href=\"https://pinandlatch.example/account/security\" style=\"color:#666;\">https://pinandlatch.example/account/security</a><br>Pin and Latch Security Ltd, 19 Bloomsbury Way, London WC1A 2TH<br>We will never ask for your master password by email.</td></tr></table></td></tr></table></body></html>",
+        "slots": {
+          "site": [
+            "shopfront-tickets.example",
+            "kettlebell-forum.example",
+            "photobin.example",
+            "routeplanner.example",
+            "recipebox.example"
+          ],
+          "data": [
+            "email addresses, hashed passwords",
+            "email addresses, names",
+            "email addresses, phone numbers, hashed passwords"
+          ]
+        }
+      },
+      {
+        "weight": 0.8,
+        "subject": "Your security summary",
+        "text": "A quick look at your vault.\n\nWeak passwords: {weak}\nReused passwords: {reused}\nLogins without two-step: {twofa}\n\nFix them now: https://pinandlatch.example/vault/watchtower\n\nYou can turn these summaries off in your security settings.\n\nSecurity settings: https://pinandlatch.example/account/security\nPin and Latch Security Ltd, 19 Bloomsbury Way, London WC1A 2TH\nWe will never ask for your master password by email.",
+        "html": "<!doctype html><html><body style=\"margin:0;padding:0;background:#f4f4f4;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f4f4;\"><tr><td align=\"center\" style=\"padding:24px 12px;\"><table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;\"><tr><td style=\"padding:18px 28px;background:#1e3a5f;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#ffffff;\"><a href=\"https://pinandlatch.example/\" style=\"color:#ffffff;text-decoration:none;\">Pin &amp; Latch</a></td></tr><tr><td style=\"padding:28px 28px 12px;\"><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">A quick look at your vault.</p><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 16px;border-top:1px solid #e5e5e5;\"><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Weak passwords</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{weak}</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Reused passwords</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{reused}</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Logins without two-step</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{twofa}</td></tr></table><p style=\"margin:0 0 20px;\"><a href=\"https://pinandlatch.example/vault/watchtower\" style=\"display:inline-block;padding:10px 18px;background:#1e3a5f;color:#ffffff;text-decoration:none;border-radius:4px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;\">Fix them now</a></p><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:13px;line-height:19px;color:#666;white-space:pre-line;\">You can turn these summaries off in your security settings.</p></td></tr><tr><td style=\"padding:16px 28px 24px;border-top:1px solid #eeeeee;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#666;\">Security settings: <a href=\"https://pinandlatch.example/account/security\" style=\"color:#666;\">https://pinandlatch.example/account/security</a><br>Pin and Latch Security Ltd, 19 Bloomsbury Way, London WC1A 2TH<br>We will never ask for your master password by email.</td></tr></table></td></tr></table></body></html>",
+        "slots": {
+          "weak": {
+            "int": [
+              0,
+              6
+            ]
+          },
+          "reused": {
+            "int": [
+              1,
+              11
+            ]
+          },
+          "twofa": {
+            "int": [
+              3,
+              19
+            ]
+          }
+        }
+      }
+    ]
+  }
+]

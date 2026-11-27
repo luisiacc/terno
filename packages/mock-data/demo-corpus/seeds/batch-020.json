@@ -1,0 +1,814 @@
+[
+ {
+  "id": "s0563",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Empaque de Tueste Laja y Niebla",
+  "people": [
+   "ernesto-villasenor"
+  ],
+  "shape": "ask-answer",
+  "outcome": "declined politely",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2024-11-13",
+   "2024-11-16"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 6 of the storyline \"Empaque de Tueste Laja y Niebla\": write what happens in this stretch (2024-11-13 to 2024-11-16), consistent with its summary."
+  ],
+  "storyline": "barranca-empaque"
+ },
+ {
+  "id": "s0564",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Ski week in Les Arcs",
+  "people": [
+   "tom-ashworth"
+  ],
+  "shape": "ask-answer",
+  "outcome": "resolved",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2024-11-17",
+   "2024-11-20"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 6 of the storyline \"Ski week in Les Arcs\": write what happens in this stretch (2024-11-17 to 2024-11-20), consistent with its summary."
+  ],
+  "storyline": "ski-les-arcs"
+ },
+ {
+  "id": "s0565",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Empaque de Tueste Laja y Niebla",
+  "people": [
+   "emilio-cardenas",
+   "mariana-gomez",
+   "ernesto-villasenor"
+  ],
+  "shape": "group",
+  "outcome": "waiting on them",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2024-11-28",
+   "2024-12-05"
+  ],
+  "length": "mixed",
+  "attachments": "forgotten",
+  "tags": [
+   "client"
+  ],
+  "inbox": true,
+  "must": [
+   "Part 2 of 6 of the storyline \"Empaque de Tueste Laja y Niebla\": write what happens in this stretch (2024-11-28 to 2024-12-05), consistent with its summary."
+  ],
+  "storyline": "barranca-empaque"
+ },
+ {
+  "id": "s0566",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Ski week in Les Arcs",
+  "people": [
+   "josh-whitaker",
+   "tom-ashworth"
+  ],
+  "shape": "forward",
+  "outcome": "decided",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2024-12-08",
+   "2024-12-11"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 6 of the storyline \"Ski week in Les Arcs\": write what happens in this stretch (2024-12-08 to 2024-12-11), consistent with its summary."
+  ],
+  "trash": true,
+  "storyline": "ski-les-arcs"
+ },
+ {
+  "id": "s0567",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Empaque de Tueste Laja y Niebla",
+  "people": [
+   "emilio-cardenas",
+   "mariana-gomez"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on Luis",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2024-12-15",
+   "2024-12-25"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 6 of the storyline \"Empaque de Tueste Laja y Niebla\": write what happens in this stretch (2024-12-15 to 2024-12-25), consistent with its summary."
+  ],
+  "storyline": "barranca-empaque"
+ },
+ {
+  "id": "s0568",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Ski week in Les Arcs",
+  "people": [
+   "josh-whitaker"
+  ],
+  "shape": "ask-answer",
+  "outcome": "declined politely",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2024-12-30",
+   "2025-01-02"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 6 of the storyline \"Ski week in Les Arcs\": write what happens in this stretch (2024-12-30 to 2025-01-02), consistent with its summary."
+  ],
+  "storyline": "ski-les-arcs"
+ },
+ {
+  "id": "s0569",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Empaque de Tueste Laja y Niebla",
+  "people": [
+   "emilio-cardenas",
+   "ernesto-villasenor",
+   "mariana-gomez"
+  ],
+  "shape": "group",
+  "outcome": "declined politely",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2025-01-06",
+   "2025-01-13"
+  ],
+  "length": "medium",
+  "attachments": "some",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 4 of 6 of the storyline \"Empaque de Tueste Laja y Niebla\": write what happens in this stretch (2025-01-06 to 2025-01-13), consistent with its summary."
+  ],
+  "storyline": "barranca-empaque"
+ },
+ {
+  "id": "s0570",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Ski week in Les Arcs",
+  "people": [
+   "callum-reid"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "ongoing",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-01-13",
+   "2025-01-23"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 4 of 6 of the storyline \"Ski week in Les Arcs\": write what happens in this stretch (2025-01-13 to 2025-01-23), consistent with its summary."
+  ],
+  "storyline": "ski-les-arcs"
+ },
+ {
+  "id": "s0571",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Empaque de Tueste Laja y Niebla",
+  "people": [
+   "ernesto-villasenor",
+   "mariana-gomez"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "decided",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-01-23",
+   "2025-02-02"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 5 of 6 of the storyline \"Empaque de Tueste Laja y Niebla\": write what happens in this stretch (2025-01-23 to 2025-02-02), consistent with its summary."
+  ],
+  "storyline": "barranca-empaque"
+ },
+ {
+  "id": "s0572",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Ski week in Les Arcs",
+  "people": [
+   "josh-whitaker",
+   "tom-ashworth"
+  ],
+  "shape": "luis-starts",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-02-09",
+   "2025-02-14"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 5 of 6 of the storyline \"Ski week in Les Arcs\": write what happens in this stretch (2025-02-09 to 2025-02-14), consistent with its summary."
+  ],
+  "storyline": "ski-les-arcs"
+ },
+ {
+  "id": "s0573",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Empaque de Tueste Laja y Niebla",
+  "people": [
+   "ernesto-villasenor"
+  ],
+  "shape": "ask-answer",
+  "outcome": "cancelled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-02-18",
+   "2025-02-21"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 6 of 6 of the storyline \"Empaque de Tueste Laja y Niebla\": write what happens in this stretch (2025-02-18 to 2025-02-21), consistent with its summary."
+  ],
+  "storyline": "barranca-empaque"
+ },
+ {
+  "id": "s0574",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Ski week in Les Arcs",
+  "people": [
+   "tom-ashworth"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on Luis",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-02-25",
+   "2025-03-07"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 6 of 6 of the storyline \"Ski week in Les Arcs\": write what happens in this stretch (2025-02-25 to 2025-03-07), consistent with its summary."
+  ],
+  "storyline": "ski-les-arcs"
+ },
+ {
+  "id": "s0575",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: photos from a weekend",
+  "people": [
+   "hamish-fairweather",
+   "imogen-barnes"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-05-26",
+   "2025-06-04"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0576",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: moving a dentist appointment",
+  "people": [
+   "kerry-simmonds"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "decided",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-07-30",
+   "2025-07-31"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0577",
+  "account": "acme",
+  "lang": "en",
+  "kind": "a discussion on Acme everyone (the whole studio: announcements, leaving drinks, office notices, the odd reply-all)",
+  "people": [
+   "callie-fraser",
+   "rupert-ashdown",
+   "marcus-adeyemi"
+  ],
+  "shape": "list",
+  "outcome": "declined politely",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-04-17",
+   "2026-04-22"
+  ],
+  "length": "long",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list everyone@acme.example (listId everyone.acme.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "allstudio"
+ },
+ {
+  "id": "s0578",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: splitting a bill",
+  "people": [
+   "hamish-fairweather",
+   "harriet-lowe"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "rescheduled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-04-28",
+   "2026-04-30"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0579",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a discussion on Albion Court residents (his building's residents: bins, the lift, parcels, a noisy party, the managing agent)",
+  "people": [
+   "emma-pike",
+   "kerry-simmonds"
+  ],
+  "shape": "list",
+  "outcome": "cancelled",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-07-17",
+   "2026-07-18"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list residents@albioncourt.example (listId residents.albioncourt.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "building"
+ },
+ {
+  "id": "s0580",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: an intro to a potential client",
+  "people": [
+   "jae-cho",
+   "arjun-sethi"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on them",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-08-22",
+   "2026-09-01"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0581",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a team lunch",
+  "people": [
+   "jake-pemberton",
+   "jae-cho"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "ongoing",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-09-03",
+   "2026-09-12"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0582",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a conference ticket",
+  "people": [
+   "jae-cho"
+  ],
+  "shape": "unanswered",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-09-26",
+   "2026-09-26"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0583",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: a museum membership",
+  "people": [
+   "clara-moreau"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "cancelled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-02",
+   "2026-10-03"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0584",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "a discussion on Comunidad de diseño independiente (una lista de diseñadores independientes en México: tarifas, clientes que no pagan, herramientas, chambas)",
+  "people": [
+   "mariana-gomez",
+   "emilio-cardenas",
+   "fernanda-rios"
+  ],
+  "shape": "list",
+  "outcome": "waiting on Luis",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-10-09",
+   "2026-10-15"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": true,
+  "must": [
+   "On the list comunidad@disenoindependiente.example (listId comunidad.disenoindependiente.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "disenio"
+ },
+ {
+  "id": "s0585",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a letter from the GP",
+  "people": [
+   "rita-valente",
+   "chloe-bennett"
+  ],
+  "shape": "luis-starts",
+  "outcome": "resolved",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-10-12",
+   "2026-10-15"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0586",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: splitting a bill",
+  "people": [
+   "marta-silva",
+   "harriet-lowe"
+  ],
+  "shape": "luis-starts",
+  "outcome": "cancelled",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-10-14",
+   "2026-10-17"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0587",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a discussion on Albion Court residents (his building's residents: bins, the lift, parcels, a noisy party, the managing agent)",
+  "people": [
+   "hamish-fairweather",
+   "josh-whitaker",
+   "tom-ashworth"
+  ],
+  "shape": "list",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-10-17",
+   "2026-10-18"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list residents@albioncourt.example (listId residents.albioncourt.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "building"
+ },
+ {
+  "id": "s0588",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "a discussion on Comunidad de diseño independiente (una lista de diseñadores independientes en México: tarifas, clientes que no pagan, herramientas, chambas)",
+  "people": [
+   "mariana-gomez"
+  ],
+  "shape": "list",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-10-13",
+   "2026-10-19"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "client"
+  ],
+  "inbox": true,
+  "must": [
+   "On the list comunidad@disenoindependiente.example (listId comunidad.disenoindependiente.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "disenio"
+ },
+ {
+  "id": "s0589",
+  "account": "personal",
+  "lang": "en",
+  "kind": "planted: promise-to-owner",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "they owe what they promised",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-21"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "in the 14 days before the anchor someone promised Luis something with a time (I'll send the deck Monday); about half are already due and nothing came."
+  ],
+  "plant": "promise-to-owner",
+  "lastFrom": "them"
+ },
+ {
+  "id": "s0590",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a broken build",
+  "people": [
+   "jake-pemberton",
+   "margaret-okafor"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-20",
+   "2026-10-22"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": true,
+  "must": []
+ }
+]

@@ -1,0 +1,872 @@
+[
+ {
+  "id": "s0476",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a recommendation",
+  "people": [
+   "hamish-fairweather"
+  ],
+  "shape": "luis-starts",
+  "outcome": "rescheduled",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-01-28",
+   "2025-01-29"
+  ],
+  "length": "medium",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0477",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "free: el hosting",
+  "people": [
+   "mariana-gomez"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-02-14",
+   "2025-02-14"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [],
+  "trash": true
+ },
+ {
+  "id": "s0478",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: a reunion",
+  "people": [
+   "rita-valente"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on Luis",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-02-10",
+   "2025-02-19"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0479",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Marca de Cervecería Lobo Gris",
+  "people": [
+   "diego-arreola"
+  ],
+  "shape": "luis-starts",
+  "outcome": "ongoing",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-03-20",
+   "2025-03-25"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 1 of 6 of the storyline \"Marca de Cervecería Lobo Gris\": write what happens in this stretch (2025-03-20 to 2025-03-25), consistent with its summary."
+  ],
+  "storyline": "lobo-gris-marca"
+ },
+ {
+  "id": "s0480",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Marca de Cervecería Lobo Gris",
+  "people": [
+   "fernanda-rios"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on them",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-04-14",
+   "2025-04-17"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 6 of the storyline \"Marca de Cervecería Lobo Gris\": write what happens in this stretch (2025-04-14 to 2025-04-17), consistent with its summary."
+  ],
+  "storyline": "lobo-gris-marca"
+ },
+ {
+  "id": "s0481",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Marca de Cervecería Lobo Gris",
+  "people": [
+   "samuel-ortega",
+   "fernanda-rios"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on Luis",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-04-30",
+   "2025-05-10"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 6 of the storyline \"Marca de Cervecería Lobo Gris\": write what happens in this stretch (2025-04-30 to 2025-05-10), consistent with its summary."
+  ],
+  "storyline": "lobo-gris-marca"
+ },
+ {
+  "id": "s0482",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Marca de Cervecería Lobo Gris",
+  "people": [
+   "diego-arreola"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-05-23",
+   "2025-06-02"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 4 of 6 of the storyline \"Marca de Cervecería Lobo Gris\": write what happens in this stretch (2025-05-23 to 2025-06-02), consistent with its summary."
+  ],
+  "storyline": "lobo-gris-marca"
+ },
+ {
+  "id": "s0483",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Marca de Cervecería Lobo Gris",
+  "people": [
+   "fernanda-rios"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on them",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-06-22",
+   "2025-06-25"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 5 of 6 of the storyline \"Marca de Cervecería Lobo Gris\": write what happens in this stretch (2025-06-22 to 2025-06-25), consistent with its summary."
+  ],
+  "storyline": "lobo-gris-marca"
+ },
+ {
+  "id": "s0484",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "a hotel asking for a review in person",
+  "people": [],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-07-10",
+   "2025-07-10"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0485",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Marca de Cervecería Lobo Gris",
+  "people": [
+   "fernanda-rios"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "cancelled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-07-08",
+   "2025-07-18"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 6 of 6 of the storyline \"Marca de Cervecería Lobo Gris\": write what happens in this stretch (2025-07-08 to 2025-07-18), consistent with its summary."
+  ],
+  "storyline": "lobo-gris-marca"
+ },
+ {
+  "id": "s0486",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a spare concert ticket",
+  "people": [
+   "harriet-lowe",
+   "olivia-marsh"
+  ],
+  "shape": "luis-starts",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-10-12",
+   "2025-10-15"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0487",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Winning the Holloway Museum",
+  "people": [
+   "jonathan-ellery",
+   "fiona-achterberg",
+   "margaret-okafor"
+  ],
+  "shape": "group",
+  "outcome": "resolved",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2025-11-24",
+   "2025-12-01"
+  ],
+  "length": "mixed",
+  "attachments": "forgotten",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 4 of the storyline \"Winning the Holloway Museum\": write what happens in this stretch (2025-11-24 to 2025-12-01), consistent with its summary."
+  ],
+  "storyline": "holloway-pitch"
+ },
+ {
+  "id": "s0488",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Winning the Holloway Museum",
+  "people": [
+   "jonathan-ellery",
+   "priya-raman"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "declined politely",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-12-05",
+   "2025-12-15"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 4 of the storyline \"Winning the Holloway Museum\": write what happens in this stretch (2025-12-05 to 2025-12-15), consistent with its summary."
+  ],
+  "storyline": "holloway-pitch"
+ },
+ {
+  "id": "s0489",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Winning the Holloway Museum",
+  "people": [
+   "jonathan-ellery",
+   "fiona-achterberg",
+   "margaret-okafor",
+   "priya-raman"
+  ],
+  "shape": "group",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2025-12-22",
+   "2025-12-29"
+  ],
+  "length": "mixed",
+  "attachments": "forgotten",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 4 of the storyline \"Winning the Holloway Museum\": write what happens in this stretch (2025-12-22 to 2025-12-29), consistent with its summary."
+  ],
+  "trash": true,
+  "storyline": "holloway-pitch"
+ },
+ {
+  "id": "s0490",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Winning the Holloway Museum",
+  "people": [
+   "fiona-achterberg"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-01-12",
+   "2026-01-12"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "Part 4 of 4 of the storyline \"Winning the Holloway Museum\": write what happens in this stretch (2026-01-12 to 2026-01-12), consistent with its summary."
+  ],
+  "storyline": "holloway-pitch"
+ },
+ {
+  "id": "s0491",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Tuesday Book Club",
+  "people": [
+   "ifeoma-nwosu"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on them",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-02-13",
+   "2026-02-23"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 6 of the storyline \"Tuesday Book Club\": write what happens in this stretch (2026-02-13 to 2026-02-23), consistent with its summary."
+  ],
+  "storyline": "book-club-2026"
+ },
+ {
+  "id": "s0492",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Tuesday Book Club",
+  "people": [
+   "hamish-fairweather",
+   "mei-lin-chou"
+  ],
+  "shape": "luis-starts",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-04-07",
+   "2026-04-12"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 2 of 6 of the storyline \"Tuesday Book Club\": write what happens in this stretch (2026-04-07 to 2026-04-12), consistent with its summary."
+  ],
+  "storyline": "book-club-2026"
+ },
+ {
+  "id": "s0493",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Tuesday Book Club",
+  "people": [
+   "mei-lin-chou",
+   "hamish-fairweather"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-05-20",
+   "2026-05-30"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 6 of the storyline \"Tuesday Book Club\": write what happens in this stretch (2026-05-20 to 2026-05-30), consistent with its summary."
+  ],
+  "storyline": "book-club-2026"
+ },
+ {
+  "id": "s0494",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Tuesday Book Club",
+  "people": [
+   "hamish-fairweather",
+   "sunita-varma"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "decided",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-07-08",
+   "2026-07-18"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 4 of 6 of the storyline \"Tuesday Book Club\": write what happens in this stretch (2026-07-08 to 2026-07-18), consistent with its summary."
+  ],
+  "storyline": "book-club-2026"
+ },
+ {
+  "id": "s0495",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a plumber's quote",
+  "people": [
+   "rita-valente",
+   "harriet-lowe"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "rescheduled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-08-22",
+   "2026-08-24"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0496",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Tuesday Book Club",
+  "people": [
+   "hamish-fairweather",
+   "sunita-varma"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-08-25",
+   "2026-09-04"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 5 of 6 of the storyline \"Tuesday Book Club\": write what happens in this stretch (2026-08-25 to 2026-09-04), consistent with its summary."
+  ],
+  "storyline": "book-club-2026"
+ },
+ {
+  "id": "s0497",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "una agencia que busca colaborar",
+  "people": [],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-09-23",
+   "2026-09-23"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": true,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0498",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "una agencia que busca colaborar",
+  "people": [],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-09-23",
+   "2026-09-23"
+  ],
+  "length": "short",
+  "attachments": "forgotten",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0499",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a sick pet",
+  "people": [
+   "tariq-hussain"
+  ],
+  "shape": "ask-answer",
+  "outcome": "cancelled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-09-27",
+   "2026-09-27"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0500",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a client's legal review",
+  "people": [
+   "steve-barlow"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-09-27",
+   "2026-09-27"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0501",
+  "account": "acme",
+  "lang": "en",
+  "kind": "someone asking for a reference for an ex-colleague",
+  "people": [],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-09-29",
+   "2026-09-29"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0502",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a holiday request",
+  "people": [
+   "natasha-whyte"
+  ],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-10-02",
+   "2026-10-02"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0503",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "planted: top",
+  "people": [
+   "andrei-popescu"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on Luis",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-19",
+   "2026-10-22"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "the top of the Inbox: someone wrote today, unread, and waits for his reply to a real question. Four are English, two Spanish (Freelance). One is dated exactly 15:30 UTC on the anchor day.",
+   "The last message is dated today, the anchor day, before 15:30 UTC."
+  ],
+  "unreadFrom": "2026-10-22T07:30:00Z",
+  "plant": "top",
+  "lastFrom": "them"
+ },
+ {
+  "id": "s0504",
+  "account": "acme",
+  "lang": "en",
+  "kind": "planted: owner-promise",
+  "people": [
+   "margaret-okafor"
+  ],
+  "shape": "ask-answer",
+  "outcome": "Luis owes what he promised",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-22"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": true,
+  "must": [
+   "in the 14 days before the anchor Luis promised something with a time (I'll send it Friday, I'll call you tomorrow), in his own message; due between 7 days before the anchor and 10 days after; nothing in the thread shows it done."
+  ],
+  "plant": "owner-promise",
+  "lastFrom": "me"
+ },
+ {
+  "id": "s0505",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Tuesday Book Club",
+  "people": [
+   "ifeoma-nwosu"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on them",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-12",
+   "2026-10-22"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "Part 6 of 6 of the storyline \"Tuesday Book Club\": write what happens in this stretch (2026-10-12 to 2026-10-22), consistent with its summary."
+  ],
+  "storyline": "book-club-2026"
+ }
+]

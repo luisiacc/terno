@@ -1,0 +1,336 @@
+[
+  {
+    "brand": "meridian-rail",
+    "currency": "£",
+    "account": "personal",
+    "schedule": {
+      "every": "random",
+      "zone": "Europe/London",
+      "perWeek": [
+        0.31,
+        0.59
+      ]
+    },
+    "templates": [
+      {
+        "weight": 68,
+        "subject": "Your Tollwick Rail e-ticket · TW-{ref}",
+        "text": "Your e-ticket is ready\n\nOpen the barcode from your booking page or use the attached e-ticket. Keep it available until you've left the destination station.\n\nBooking: TW-{ref}\nJourney: {route}\nTicket type: {ticket}\nPassenger: 1 adult\nPaid: {total}\n\nDetails of the departure, route restrictions and any reserved seat are on the ticket.\n\nView ticket and journey times: https://tollwickrail.example/bookings/TW-{ref}\n\nWe sent this service email to the address provided with your booking or Delay Repay claim.\n\nTollwick Rail Ltd, 4 Platform Court, Ashford TN23 1BN. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#f7f8fa;color:#793660;border-left:5px solid #793660;font-size:19px;font-weight:bold\">Tollwick Rail</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Your e-ticket is ready</h1><p style=\"margin:0 0 16px\">Open the barcode from your booking page or use the attached e-ticket. Keep it available until you've left the destination station.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Booking</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">TW-{ref}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Journey</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{route}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Ticket type</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{ticket}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Passenger</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">1 adult</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Paid</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{total}</td></tr></table><p style=\"margin:0 0 16px\">Details of the departure, route restrictions and any reserved seat are on the ticket.</p><p style=\"margin:0\"><a style=\"color:#793660;text-decoration:underline\" href=\"https://tollwickrail.example/bookings/TW-{ref}\">View ticket and journey times</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">We sent this service email to the address provided with your booking or Delay Repay claim.<br>Tollwick Rail Ltd, 4 Platform Court, Ashford TN23 1BN. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "ref": {
+            "int": [
+              10000000,
+              99999999
+            ]
+          },
+          "route": [
+            "London Victoria → Whitstable",
+            "London Victoria → Canterbury East",
+            "London Victoria → Rochester",
+            "London Victoria → Maidstone East",
+            "London Victoria → Faversham",
+            "London Victoria → Swanley",
+            "London St Pancras → Margate",
+            "London St Pancras → Ashford International",
+            "London St Pancras → Folkestone Central",
+            "London St Pancras → Ramsgate",
+            "London St Pancras → Broadstairs",
+            "London St Pancras → Deal",
+            "Stratford International → Canterbury West",
+            "Stratford International → Ebbsfleet International",
+            "Stratford International → Gravesend",
+            "London Charing Cross → Tonbridge",
+            "London Charing Cross → Sevenoaks",
+            "London Charing Cross → Tunbridge Wells",
+            "London Bridge → Paddock Wood",
+            "London Bridge → Orpington",
+            "London Bridge → Hastings",
+            "London Charing Cross → Robertsbridge"
+          ],
+          "ticket": [
+            "Off-Peak Day Return",
+            "Advance Single",
+            "Anytime Day Single",
+            "Off-Peak Single",
+            "Super Off-Peak Day Return"
+          ],
+          "total": {
+            "money": [
+              13.6,
+              61.9
+            ]
+          }
+        },
+        "attachments": [
+          {
+            "filename": "Tollwick-TW-{ref}.pdf",
+            "mime": "application/pdf",
+            "size": 48378
+          }
+        ]
+      },
+      {
+        "weight": 20,
+        "subject": "Tollwick Rail booking confirmed · TW-{ref}",
+        "text": "Your tickets are booked\n\nYour order has been paid. You can open your tickets in the app or download a copy.\n\nBooking: TW-{ref}\nJourney: {route}\nBooked on: {date}\nAmount paid: {total}\n\nIf you need to change your travel plans, check the conditions for each ticket under Manage booking.\n\nManage booking: https://tollwickrail.example/bookings/TW-{ref}\n\nWe sent this service email to the address provided with your booking or Delay Repay claim.\n\nTollwick Rail Ltd, 4 Platform Court, Ashford TN23 1BN. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#f7f8fa;color:#793660;border-left:5px solid #793660;font-size:19px;font-weight:bold\">Tollwick Rail</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Your tickets are booked</h1><p style=\"margin:0 0 16px\">Your order has been paid. You can open your tickets in the app or download a copy.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Booking</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">TW-{ref}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Journey</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{route}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Booked on</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{date}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Amount paid</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{total}</td></tr></table><p style=\"margin:0 0 16px\">If you need to change your travel plans, check the conditions for each ticket under Manage booking.</p><p style=\"margin:0\"><a style=\"color:#793660;text-decoration:underline\" href=\"https://tollwickrail.example/bookings/TW-{ref}\">Manage booking</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">We sent this service email to the address provided with your booking or Delay Repay claim.<br>Tollwick Rail Ltd, 4 Platform Court, Ashford TN23 1BN. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "ref": {
+            "int": [
+              10000000,
+              99999999
+            ]
+          },
+          "route": [
+            "London Victoria → Whitstable",
+            "London Victoria → Canterbury East",
+            "London Victoria → Rochester",
+            "London Victoria → Maidstone East",
+            "London Victoria → Faversham",
+            "London Victoria → Swanley",
+            "London St Pancras → Margate",
+            "London St Pancras → Ashford International",
+            "London St Pancras → Folkestone Central",
+            "London St Pancras → Ramsgate",
+            "London St Pancras → Broadstairs",
+            "London St Pancras → Deal",
+            "Stratford International → Canterbury West",
+            "Stratford International → Ebbsfleet International",
+            "Stratford International → Gravesend",
+            "London Charing Cross → Tonbridge",
+            "London Charing Cross → Sevenoaks",
+            "London Charing Cross → Tunbridge Wells",
+            "London Bridge → Paddock Wood",
+            "London Bridge → Orpington",
+            "London Bridge → Hastings",
+            "London Charing Cross → Robertsbridge"
+          ],
+          "total": {
+            "money": [
+              14.8,
+              73.7
+            ]
+          }
+        }
+      },
+      {
+        "weight": 12,
+        "subject": "Delay Repay claim DR-{ref} approved",
+        "text": "Your delay compensation is approved\n\nWe've checked the journey in your claim and approved your compensation.\n\nClaim number: DR-{ref}\nJourney: {route}\nDelay at destination: {minutes} minutes\nCompensation: {amount}\n\nPlease allow five working days for the payment to reach the account you selected when you submitted the claim.\n\nView claim: https://tollwickrail.example/delay-repay/DR-{ref}\n\nWe sent this service email to the address provided with your booking or Delay Repay claim.\n\nTollwick Rail Ltd, 4 Platform Court, Ashford TN23 1BN. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#f7f8fa;color:#793660;border-left:5px solid #793660;font-size:19px;font-weight:bold\">Tollwick Rail</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Your delay compensation is approved</h1><p style=\"margin:0 0 16px\">We've checked the journey in your claim and approved your compensation.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Claim number</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">DR-{ref}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Journey</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{route}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Delay at destination</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{minutes} minutes</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Compensation</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{amount}</td></tr></table><p style=\"margin:0 0 16px\">Please allow five working days for the payment to reach the account you selected when you submitted the claim.</p><p style=\"margin:0\"><a style=\"color:#793660;text-decoration:underline\" href=\"https://tollwickrail.example/delay-repay/DR-{ref}\">View claim</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">We sent this service email to the address provided with your booking or Delay Repay claim.<br>Tollwick Rail Ltd, 4 Platform Court, Ashford TN23 1BN. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "ref": {
+            "int": [
+              10000000,
+              99999999
+            ]
+          },
+          "route": [
+            "London Victoria → Whitstable",
+            "London Victoria → Canterbury East",
+            "London Victoria → Rochester",
+            "London Victoria → Maidstone East",
+            "London Victoria → Faversham",
+            "London Victoria → Swanley",
+            "London St Pancras → Margate",
+            "London St Pancras → Ashford International",
+            "London St Pancras → Folkestone Central",
+            "London St Pancras → Ramsgate",
+            "London St Pancras → Broadstairs",
+            "London St Pancras → Deal",
+            "Stratford International → Canterbury West",
+            "Stratford International → Ebbsfleet International",
+            "Stratford International → Gravesend",
+            "London Charing Cross → Tonbridge",
+            "London Charing Cross → Sevenoaks",
+            "London Charing Cross → Tunbridge Wells",
+            "London Bridge → Paddock Wood",
+            "London Bridge → Orpington",
+            "London Bridge → Hastings",
+            "London Charing Cross → Robertsbridge"
+          ],
+          "minutes": {
+            "int": [
+              31,
+              76
+            ]
+          },
+          "amount": {
+            "money": [
+              7.1,
+              29.5
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "brand": "meridian-rail",
+    "currency": "£",
+    "account": "icloud",
+    "schedule": {
+      "every": "random",
+      "zone": "Europe/London",
+      "perWeek": [
+        0.08,
+        0.22
+      ]
+    },
+    "templates": [
+      {
+        "weight": 68,
+        "subject": "Your Tollwick Rail e-ticket · TW-{ref}",
+        "text": "Your e-ticket is ready\n\nOpen the barcode from your booking page or use the attached e-ticket. Keep it available until you've left the destination station.\n\nBooking: TW-{ref}\nJourney: {route}\nTicket type: {ticket}\nPassenger: 1 adult\nPaid: {total}\n\nDetails of the departure, route restrictions and any reserved seat are on the ticket.\n\nView ticket and journey times: https://tollwickrail.example/bookings/TW-{ref}\n\nWe sent this service email to the address provided with your booking or Delay Repay claim.\n\nTollwick Rail Ltd, 4 Platform Court, Ashford TN23 1BN. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#f7f8fa;color:#793660;border-left:5px solid #793660;font-size:19px;font-weight:bold\">Tollwick Rail</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Your e-ticket is ready</h1><p style=\"margin:0 0 16px\">Open the barcode from your booking page or use the attached e-ticket. Keep it available until you've left the destination station.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Booking</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">TW-{ref}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Journey</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{route}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Ticket type</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{ticket}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Passenger</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">1 adult</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Paid</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{total}</td></tr></table><p style=\"margin:0 0 16px\">Details of the departure, route restrictions and any reserved seat are on the ticket.</p><p style=\"margin:0\"><a style=\"color:#793660;text-decoration:underline\" href=\"https://tollwickrail.example/bookings/TW-{ref}\">View ticket and journey times</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">We sent this service email to the address provided with your booking or Delay Repay claim.<br>Tollwick Rail Ltd, 4 Platform Court, Ashford TN23 1BN. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "ref": {
+            "int": [
+              10000000,
+              99999999
+            ]
+          },
+          "route": [
+            "London Victoria → Whitstable",
+            "London Victoria → Canterbury East",
+            "London Victoria → Rochester",
+            "London Victoria → Maidstone East",
+            "London Victoria → Faversham",
+            "London Victoria → Swanley",
+            "London St Pancras → Margate",
+            "London St Pancras → Ashford International",
+            "London St Pancras → Folkestone Central",
+            "London St Pancras → Ramsgate",
+            "London St Pancras → Broadstairs",
+            "London St Pancras → Deal",
+            "Stratford International → Canterbury West",
+            "Stratford International → Ebbsfleet International",
+            "Stratford International → Gravesend",
+            "London Charing Cross → Tonbridge",
+            "London Charing Cross → Sevenoaks",
+            "London Charing Cross → Tunbridge Wells",
+            "London Bridge → Paddock Wood",
+            "London Bridge → Orpington",
+            "London Bridge → Hastings",
+            "London Charing Cross → Robertsbridge"
+          ],
+          "ticket": [
+            "Off-Peak Day Return",
+            "Advance Single",
+            "Anytime Day Single",
+            "Off-Peak Single",
+            "Super Off-Peak Day Return"
+          ],
+          "total": {
+            "money": [
+              13.6,
+              61.9
+            ]
+          }
+        },
+        "attachments": [
+          {
+            "filename": "Tollwick-TW-{ref}.pdf",
+            "mime": "application/pdf",
+            "size": 48378
+          }
+        ]
+      },
+      {
+        "weight": 20,
+        "subject": "Tollwick Rail booking confirmed · TW-{ref}",
+        "text": "Your tickets are booked\n\nYour order has been paid. You can open your tickets in the app or download a copy.\n\nBooking: TW-{ref}\nJourney: {route}\nBooked on: {date}\nAmount paid: {total}\n\nIf you need to change your travel plans, check the conditions for each ticket under Manage booking.\n\nManage booking: https://tollwickrail.example/bookings/TW-{ref}\n\nWe sent this service email to the address provided with your booking or Delay Repay claim.\n\nTollwick Rail Ltd, 4 Platform Court, Ashford TN23 1BN. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#f7f8fa;color:#793660;border-left:5px solid #793660;font-size:19px;font-weight:bold\">Tollwick Rail</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Your tickets are booked</h1><p style=\"margin:0 0 16px\">Your order has been paid. You can open your tickets in the app or download a copy.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Booking</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">TW-{ref}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Journey</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{route}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Booked on</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{date}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Amount paid</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{total}</td></tr></table><p style=\"margin:0 0 16px\">If you need to change your travel plans, check the conditions for each ticket under Manage booking.</p><p style=\"margin:0\"><a style=\"color:#793660;text-decoration:underline\" href=\"https://tollwickrail.example/bookings/TW-{ref}\">Manage booking</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">We sent this service email to the address provided with your booking or Delay Repay claim.<br>Tollwick Rail Ltd, 4 Platform Court, Ashford TN23 1BN. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "ref": {
+            "int": [
+              10000000,
+              99999999
+            ]
+          },
+          "route": [
+            "London Victoria → Whitstable",
+            "London Victoria → Canterbury East",
+            "London Victoria → Rochester",
+            "London Victoria → Maidstone East",
+            "London Victoria → Faversham",
+            "London Victoria → Swanley",
+            "London St Pancras → Margate",
+            "London St Pancras → Ashford International",
+            "London St Pancras → Folkestone Central",
+            "London St Pancras → Ramsgate",
+            "London St Pancras → Broadstairs",
+            "London St Pancras → Deal",
+            "Stratford International → Canterbury West",
+            "Stratford International → Ebbsfleet International",
+            "Stratford International → Gravesend",
+            "London Charing Cross → Tonbridge",
+            "London Charing Cross → Sevenoaks",
+            "London Charing Cross → Tunbridge Wells",
+            "London Bridge → Paddock Wood",
+            "London Bridge → Orpington",
+            "London Bridge → Hastings",
+            "London Charing Cross → Robertsbridge"
+          ],
+          "total": {
+            "money": [
+              14.8,
+              73.7
+            ]
+          }
+        }
+      },
+      {
+        "weight": 12,
+        "subject": "Delay Repay claim DR-{ref} approved",
+        "text": "Your delay compensation is approved\n\nWe've checked the journey in your claim and approved your compensation.\n\nClaim number: DR-{ref}\nJourney: {route}\nDelay at destination: {minutes} minutes\nCompensation: {amount}\n\nPlease allow five working days for the payment to reach the account you selected when you submitted the claim.\n\nView claim: https://tollwickrail.example/delay-repay/DR-{ref}\n\nWe sent this service email to the address provided with your booking or Delay Repay claim.\n\nTollwick Rail Ltd, 4 Platform Court, Ashford TN23 1BN. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#f7f8fa;color:#793660;border-left:5px solid #793660;font-size:19px;font-weight:bold\">Tollwick Rail</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Your delay compensation is approved</h1><p style=\"margin:0 0 16px\">We've checked the journey in your claim and approved your compensation.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Claim number</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">DR-{ref}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Journey</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{route}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Delay at destination</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{minutes} minutes</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Compensation</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{amount}</td></tr></table><p style=\"margin:0 0 16px\">Please allow five working days for the payment to reach the account you selected when you submitted the claim.</p><p style=\"margin:0\"><a style=\"color:#793660;text-decoration:underline\" href=\"https://tollwickrail.example/delay-repay/DR-{ref}\">View claim</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">We sent this service email to the address provided with your booking or Delay Repay claim.<br>Tollwick Rail Ltd, 4 Platform Court, Ashford TN23 1BN. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "ref": {
+            "int": [
+              10000000,
+              99999999
+            ]
+          },
+          "route": [
+            "London Victoria → Whitstable",
+            "London Victoria → Canterbury East",
+            "London Victoria → Rochester",
+            "London Victoria → Maidstone East",
+            "London Victoria → Faversham",
+            "London Victoria → Swanley",
+            "London St Pancras → Margate",
+            "London St Pancras → Ashford International",
+            "London St Pancras → Folkestone Central",
+            "London St Pancras → Ramsgate",
+            "London St Pancras → Broadstairs",
+            "London St Pancras → Deal",
+            "Stratford International → Canterbury West",
+            "Stratford International → Ebbsfleet International",
+            "Stratford International → Gravesend",
+            "London Charing Cross → Tonbridge",
+            "London Charing Cross → Sevenoaks",
+            "London Charing Cross → Tunbridge Wells",
+            "London Bridge → Paddock Wood",
+            "London Bridge → Orpington",
+            "London Bridge → Hastings",
+            "London Charing Cross → Robertsbridge"
+          ],
+          "minutes": {
+            "int": [
+              31,
+              76
+            ]
+          },
+          "amount": {
+            "money": [
+              7.1,
+              29.5
+            ]
+          }
+        }
+      }
+    ]
+  }
+]

@@ -1,0 +1,2527 @@
+[
+ {
+  "id": "s0358",
+  "account": "personal",
+  "lang": "en",
+  "tags": [
+   "personal"
+  ],
+  "subject": "Cracked tooth, any emergency appointments this week?",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "me",
+    "to": [
+     "kerry-simmonds"
+    ],
+    "date": "2024-10-29T22:07:00+00:00",
+    "read": true,
+    "text": "Hi,\n\nI cracked a back tooth on some brittle this evening. Lower left, I think. There's a sharp edge but it's not too painful. Have you got an emergency slot this week? Anything before 10 works.\n\nThanks,\nLuis Cordero\n07700 900418"
+   },
+   {
+    "from": "kerry-simmonds",
+    "to": [
+     "me"
+    ],
+    "date": "2024-10-30T09:12:00+00:00",
+    "read": true,
+    "text": "Dear Mr Cordero,\n\nThank you for your email. We can offer you an emergency appointment with Dr Farah Siddiqui on Thursday 31 October at 08:15. Your booking reference is WCD-48213.\n\nThis is a private emergency appointment and the fee is £68, payable at reception on the day. Any further treatment will be quoted separately. Please arrive ten minutes early.\n\nKind regards,\nKerry Simmonds\nReception, Whitlock Cut Dental\n8 Wilton Way, London E8 1BG | 020 7946 0745\nPlease give 48 hours' notice of cancellations or a £35 fee applies."
+   },
+   {
+    "from": "me",
+    "to": [
+     "kerry-simmonds"
+    ],
+    "date": "2024-10-30T09:31:00+00:00",
+    "read": true,
+    "text": "Thursday at 08:15 works, thanks.\n\nLuis"
+   },
+   {
+    "from": "kerry-simmonds",
+    "to": [
+     "me"
+    ],
+    "date": "2024-10-31T10:04:00+00:00",
+    "read": true,
+    "text": "Dear Mr Cordero,\n\nFurther to your appointment this morning, here is your receipt and a summary from Dr Siddiqui.\n\nBooking reference: WCD-48213\nPaid: £68.00 by card, 31/10/2024 at 08:52\nTreatment today: temporary filling, lower left first molar\nRecommended: a crown on the same tooth within the next 12 months. Estimate £545 (private), two appointments.\n\nIf you would like to book the crown, please reply to this email or call reception.\n\nKind regards,\nKerry Simmonds\nReception, Whitlock Cut Dental\n8 Wilton Way, London E8 1BG | 020 7946 0745\nPlease give 48 hours' notice of cancellations or a £35 fee applies."
+   },
+   {
+    "from": "me",
+    "to": [
+     "joanna-kowalczyk"
+    ],
+    "date": "2024-10-31T12:48:00+00:00",
+    "read": true,
+    "text": "exhibit A. £545 can wait till i'm back from Mexico",
+    "subject": "Fwd: Cracked tooth, any emergency appointments this week?",
+    "forward": true
+   },
+   {
+    "from": "joanna-kowalczyk",
+    "to": [
+     "me"
+    ],
+    "date": "2024-11-01T19:26:00+00:00",
+    "read": true,
+    "text": "Hiya Luis,\n\nBen put the brittle on top of the fridge after you left on Tuesday, as if that was going to stop me. I've sent you the £68, BRITTLE TAX. Leave it there please.\n\nI've got Little Sorrel for four at 7.30 on Sat the 9th (LS-7731). They've got polenta, or we could do soup at ours if your tooth's still bothering you. Let me know by Wednesday if I should cancel?\n\nJo x"
+   }
+  ],
+  "truth": {
+   "summary": "Luis cracked his lower left molar on Jo's brittle on 29 October 2024, had an emergency appointment at Whitlock Cut Dental on 31 October (temporary filling, £68 paid by card) and chose to put off the £545 crown until he was back from Mexico; Jo sent him the £68 and is waiting for him to choose between Little Sorrel and dinner at hers on Saturday 9 November.",
+   "ownerOwes": [
+    "Tell Jo whether to keep the Little Sorrel table (Saturday 9 November, 7.30, ref LS-7731) or cancel it for dinner at hers; she needs to know by Wednesday 6 November."
+   ],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2024-10-29",
+     "what": "Luis cracks the tooth on Jo's brittle at her and Ben's"
+    },
+    {
+     "date": "2024-10-31T08:15:00+00:00",
+     "what": "Emergency appointment with Dr Farah Siddiqui, ref WCD-48213"
+    },
+    {
+     "date": "2024-11-01",
+     "what": "Jo transfers £68 to Luis, reference BRITTLE TAX"
+    },
+    {
+     "date": "2024-11-06",
+     "what": "Jo needs to know whether to cancel Little Sorrel"
+    },
+    {
+     "date": "2024-11-09T19:30:00+00:00",
+     "what": "Little Sorrel table for four, ref LS-7731 (unless cancelled)"
+    }
+   ],
+   "facts": [
+    "Emergency booking reference WCD-48213, Thursday 31 October 2024 at 08:15 with Dr Farah Siddiqui at Whitlock Cut Dental, 8 Wilton Way, London E8 1BG.",
+    "Luis paid £68.00 by card at 08:52 on 31 October 2024.",
+    "Treatment: a temporary filling on the lower left first molar; a crown is recommended within 12 months, estimated at £545 private, two appointments.",
+    "Luis decided the crown can wait until after his Christmas trip to Mexico.",
+    "Jo sent Luis £68 on 1 November 2024 with the reference BRITTLE TAX.",
+    "Jo booked Little Sorrel for four on Saturday 9 November 2024 at 7.30, ref LS-7731.",
+    "Ben hid the rest of the brittle."
+   ]
+  }
+ },
+ {
+  "id": "s0359",
+  "account": "acme",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Motion and illustration partnership for Acme",
+  "state": {
+   "inbox": false
+  },
+  "people": [
+   {
+    "id": "odile-fairbairn-mothlantern",
+    "name": "Odile Fairbairn",
+    "email": "odile@mothandlantern.example",
+    "lang": "en",
+    "timezone": "Europe/London",
+    "accounts": [
+     "acme"
+    ],
+    "relationship": "partnerships lead at a Bristol motion studio, cold pitch",
+    "style": {
+     "register": "polished, a little salesy",
+     "length": "long",
+     "greeting": "Hi Luis,",
+     "signoff": "All the best,",
+     "signature": "Odile Fairbairn\nPartnerships, Moth & Lantern\nMotion and illustration for product teams\nUnit 4, Paintworks, Bristol BS4 3EH | mothandlantern.example",
+     "quoting": "bottom",
+     "quirks": [
+      "names a fixed price early"
+     ]
+    },
+    "facts": [
+     "Moth & Lantern is a nine-person motion and illustration studio in Bristol"
+    ]
+   }
+  ],
+  "messages": [
+   {
+    "from": "odile-fairbairn-mothlantern",
+    "to": [
+     "me"
+    ],
+    "date": "2024-12-31T10:42:00+00:00",
+    "read": true,
+    "text": "Hi Luis,\n\nOdd day to send this, I know, but the studio is quiet and I'm finally getting to the list I made in November.\n\nI'm Odile, I look after partnerships at Moth & Lantern. We're a nine-person motion and illustration studio in Bristol, and most of our work is for product teams who need their interfaces to move well but don't have a motion designer of their own: onboarding sequences, empty states, small loading moments, the explainer that sits on a pricing page. We work mostly as a quiet second team, under the agency's name, and the client never needs to know we exist.\n\nFor overflow it's £650 a day, or £3,500 a month for six days. We'd work in your files and hand over Lottie and video exports. The little jobs usually take about three working days.\n\nI found Acme through the Brightwell Trust report. The year's figures on that fold-out spread caught my eye. I'd be curious to see what your team would do with the same material on screen.\n\nIf you have a screen that's been sitting in the 'animate later' pile, send it over and we'll try a free pass on it.\n\nNo need to reply now, and certainly not today. If it's useful in the new year, I'll be around from the 6th.\n\nHappy new year when it comes.\n\nAll the best,\nOdile Fairbairn\nPartnerships, Moth & Lantern\nMotion and illustration for product teams\nUnit 4, Paintworks, Bristol BS4 3EH | mothandlantern.example"
+   }
+  ],
+  "truth": {
+   "summary": "Odile Fairbairn of Moth & Lantern, a Bristol motion and illustration studio, pitched a white-label motion partnership to Acme on 31 December 2024; no reply was needed and none was sent.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2025-01-06",
+     "what": "Odile back at work and available to talk"
+    }
+   ],
+   "facts": [
+    "Moth & Lantern is a nine-person motion and illustration studio at Unit 4, Paintworks, Bristol BS4 3EH.",
+    "Their offer: a day rate of £650, or a retainer of six days a month for £3,500.",
+    "Turnaround on small pieces is usually three working days; they hand over Lottie and video exports.",
+    "They offered a free motion pass on one existing Acme screen.",
+    "Odile found Acme through the Brightwell Trust annual report case study."
+   ]
+  }
+ },
+ {
+  "id": "s0360",
+  "account": "acme",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Brightwell 2024 report: what we'd change next time",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "me",
+    "to": [
+     "terry-nolan"
+    ],
+    "date": "2025-04-10T10:18:00+01:00",
+    "read": true,
+    "text": "Hi Terry,\n\nCan we get a green drawdown on the actual cover board next time? We'd have caught the Pantone 7741 C coming out yellow that way. Kasia can sign it off. Thanks again for rerunning all 2,000 covers free in November.\n\nWould you be able to hold the same board for the next edition? And can we make sure there's a delivery note? The office manager rang me last time because she had no idea what she'd signed for.\n\nThanks,\nLuis Cordero\nSenior Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "terry-nolan",
+    "to": [
+     "me"
+    ],
+    "date": "2025-04-10T11:02:00+01:00",
+    "read": true,
+    "text": "Drawdowns fine. Two days' notice before the run.\nDelivery note - my end, sorry. Sorted.\nBoard - Fenner Smooth 350gsm. Can't hold it a year but it's a stock line.\n\nTerry\nTerry Nolan\nFold & Bind Print | Unit 7, Bow Industrial Park, E3\n020 7946 0277"
+   },
+   {
+    "from": "me",
+    "to": [
+     "terry-nolan"
+    ],
+    "date": "2025-04-14T09:40:00+01:00",
+    "read": true,
+    "text": "Would a wet proof have caught the green too? Wondering if it's overkill for 2,000.\n\nThanks,\nLuis Cordero\nSenior Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "terry-nolan",
+    "to": [
+     "me"
+    ],
+    "date": "2025-04-15T14:25:00+01:00",
+    "read": true,
+    "text": "Wet proof would have caught it. £180, adds three days.\nHard proof off the Epson is free but won't show the board.\nYour call.\n\nTerry\nTerry Nolan\nFold & Bind Print | Unit 7, Bow Industrial Park, E3\n020 7946 0277"
+   }
+  ],
+  "truth": {
+   "summary": "Luis sent Terry the retro on the 2024 Brightwell report (wrong green on the covers, reprinted free by 22 November 2024; missing delivery note); Terry agreed to drawdowns and a delivery note, and Luis still has to decide between a £180 wet proof and a free hard proof for the next edition.",
+   "ownerOwes": [
+    "Decide whether the next Brightwell report gets a wet proof of the cover (£180, adds three days) or the free hard proof."
+   ],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2024-11-22",
+     "what": "Fold & Bind reprinted the 2,000 covers free of charge"
+    }
+   ],
+   "facts": [
+    "The 2024 Brightwell report covers were specified as Pantone 7741 C and the first run came out too yellow.",
+    "Fold & Bind reprinted the 2,000 covers at no charge, back by 22 November 2024.",
+    "Next time: a drawdown of the green on the actual cover stock, signed off by Kasia, with two days' notice before the run.",
+    "The cover board is Fenner Smooth 350gsm, a stock line that can't be held for a year.",
+    "A wet proof costs £180 and adds three days; a hard proof off the Epson is free but doesn't show the board."
+   ]
+  }
+ },
+ {
+  "id": "s0361",
+  "account": "acme",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Front-end capacity when you need it",
+  "state": {
+   "inbox": false
+  },
+  "people": [
+   {
+    "id": "kieran-doyle-pinewell",
+    "name": "Kieran Doyle",
+    "email": "kieran@pinewelllabs.example",
+    "lang": "en",
+    "timezone": "Europe/London",
+    "accounts": [
+     "acme"
+    ],
+    "relationship": "founder of a Manchester development shop, cold pitch",
+    "style": {
+     "register": "breezy, direct",
+     "length": "medium",
+     "greeting": "Hey Luis,",
+     "signoff": "Cheers,",
+     "signature": "Kieran Doyle\nFounder, Pinewell Labs\nManchester | pinewelllabs.example",
+     "quoting": "bottom",
+     "quirks": [
+      "short paragraphs"
+     ]
+    },
+    "facts": [
+     "Pinewell Labs is a nine-developer front-end shop in Manchester"
+    ]
+   }
+  ],
+  "messages": [
+   {
+    "from": "kieran-doyle-pinewell",
+    "to": [
+     "me"
+    ],
+    "date": "2025-05-09T16:22:00+01:00",
+    "read": true,
+    "text": "Hey Luis,\n\nQuick one before the weekend. I run Pinewell Labs, nine front-end developers in Manchester. We build web and mobile front ends for design studios that sell the design but don't want to staff the build.\n\nTwo studios in London use us as overflow at the moment. We pick up from your design files, work in your repo, and your developers review our PRs. £520 a day per developer, two-week minimum.\n\nIf Acme ever has more build than people, I'd love 20 minutes to show you what we've done.\n\nCheers,\nKieran Doyle\nFounder, Pinewell Labs\nManchester | pinewelllabs.example"
+   }
+  ],
+  "truth": {
+   "summary": "Kieran Doyle of Pinewell Labs, a Manchester front-end shop, offered Acme overflow development at £520 a day per developer on 9 May 2025; Luis never replied and nobody followed up.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [],
+   "facts": [
+    "Pinewell Labs has nine front-end developers in Manchester.",
+    "Rate: £520 a day per developer, two-week minimum.",
+    "Two London studios already use them as overflow.",
+    "Kieran asked for a 20-minute call."
+   ]
+  }
+ },
+ {
+  "id": "s0362",
+  "account": "acme",
+  "storyline": "design-system-v2",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Design system v2: who owns what",
+  "folder": "Label_21",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "me",
+    "to": [
+     "kasia-zielinska",
+     "anil-joshi",
+     "kate-sutherland",
+     "lauren-gage"
+    ],
+    "date": "2025-06-27T10:12:00+01:00",
+    "read": true,
+    "text": "Hey all,\n\nAfter Monday's session, I'd like us to rebuild the shared library. Let's aim to show v2 at the Christmas show-and-tell.\n\nCould we split it like this?\nKasia owns the colour tokens, light and dark.\nAnil owns the component library.\nKate, could you own the token export, so the apps get a JSON file at build time instead of people copying hex values by hand?\nLauren, could you look at library seats? We'd need a separate published library and I don't know what that does to our licence count.\n\nShout by Wednesday if any of that is wrong.\n\nThanks,\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "kasia-zielinska",
+    "to": [
+     "me",
+     "anil-joshi",
+     "kate-sutherland",
+     "lauren-gage"
+    ],
+    "date": "2025-06-27T11:03:00+01:00",
+    "read": true,
+    "text": "Luis - fine by me. I want to cut the 14 greys down to 9 while we're at it.\n\nK."
+   },
+   {
+    "from": "anil-joshi",
+    "to": [
+     "me",
+     "kasia-zielinska",
+     "kate-sutherland",
+     "lauren-gage"
+    ],
+    "date": "2025-06-30T09:41:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nHappy to own it. A few things:\n- v1 has 61 components; my guess is about 40 survive\n- I'd rebuild `Button` and `Input` first, since nearly everything else leans on them\n- one ask: no new components go into v1 from now on, or we'll be chasing two libraries until December\n\nAnil"
+   },
+   {
+    "from": "kate-sutherland",
+    "to": [
+     "me",
+     "kasia-zielinska",
+     "anil-joshi",
+     "lauren-gage"
+    ],
+    "date": "2025-06-30T12:16:00+01:00",
+    "read": true,
+    "text": "Hi\n\nClient only, no API change on our side: the apps would read one JSON file at build. I can make the export run on every merge to the tokens repo.\n\nThe failure case I'd test first is a token that exists in light but not in dark. The build should stop rather than ship a blank colour.\n\nKate"
+   },
+   {
+    "from": "lauren-gage",
+    "to": [
+     "me"
+    ],
+    "date": "2025-07-01T10:30:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nSeats, checked:\n- a separate published library costs no extra seats\n- viewers are free, so developers don't need edit seats\n- I'll set up an \"Acme DS v2\" team space this week\n- it needs a named library admin. Anil?\n\nLauren\nLauren Gage\nDesign Operations, Acme Studio\nacme.example"
+   },
+   {
+    "from": "me",
+    "to": [
+     "kasia-zielinska",
+     "anil-joshi",
+     "kate-sutherland",
+     "lauren-gage"
+    ],
+    "date": "2025-07-02T16:05:00+01:00",
+    "read": true,
+    "text": "Right, new library it is.\n\nKasia: colour tokens, and nine greys it is.\nAnil: component library, and library admin (Lauren asked).\nKate: token export, failing the build on a missing dark value.\nv1 is frozen from today: fixes only, no new components.\n\nTarget is still the Christmas show-and-tell.\n\nThanks,\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "anil-joshi",
+    "to": [
+     "me",
+     "kasia-zielinska",
+     "kate-sutherland",
+     "lauren-gage"
+    ],
+    "date": "2025-07-03T09:12:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nFrozen. I've put a note on the v1 page. Lauren's made the v2 space and I can publish in it.\n\nAnil"
+   }
+  ],
+  "truth": {
+   "summary": "Luis decided to rebuild the Acme design system as v2 for the Christmas show-and-tell: Kasia owns colour tokens, Anil the component library (and is library admin), Kate the token export, and v1 is frozen from 2 July 2025.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [
+    {
+     "who": "lauren-gage",
+     "text": "Set up an \"Acme DS v2\" team space that week",
+     "due": "2025-07-04",
+     "kept": true
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2025-07-02",
+     "what": "v1 frozen: fixes only, no new components"
+    },
+    {
+     "date": "2025-12",
+     "what": "Target: v2 released at the Christmas show-and-tell"
+    }
+   ],
+   "facts": [
+    "Kasia owns the colour tokens and is cutting 14 greys down to 9.",
+    "Anil owns the component library and is its library admin; v1 has 61 components and he expects about 40 to survive.",
+    "Anil rebuilds Button and Input first.",
+    "Kate owns the token export: the apps read one JSON file at build, and a token missing from dark stops the build.",
+    "A separate published library costs no extra seats and viewers are free."
+   ]
+  }
+ },
+ {
+  "id": "s0363",
+  "account": "acme",
+  "storyline": "design-system-v2",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "token export keeps stopping the build",
+  "folder": "Label_21",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "kate-sutherland",
+    "to": [
+     "me"
+    ],
+    "date": "2025-07-28T07:12:00+01:00",
+    "read": true,
+    "text": "Hi\n\nThe new token export stopped Friday's builds. Both times it was `surface.raised`, which only exists in light. Can you find out who added it? The error only gives me the key.\n\nKate"
+   },
+   {
+    "from": "me",
+    "to": [
+     "kate-sutherland"
+    ],
+    "date": "2025-07-28T09:44:00+01:00",
+    "read": true,
+    "text": "That's me, sorry. I added it from the Tandem pitch file in a hurry. Fixed now.\n\nCould the error say which file is missing the value? Took me a while to work out it was mine.\n\nThanks,\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "kate-sutherland",
+    "to": [
+     "me"
+    ],
+    "date": "2025-07-29T07:31:00+01:00",
+    "read": true,
+    "text": "Hi\n\nDone. It now reads `missing in dark: surface.raised (tokens/color/dark.json)`.\n\nFound something else while I was in there: light has `text.subtle` and dark has `text.subdued`, which I'm fairly sure are the same thing. Which name is right?\n\nKate"
+   },
+   {
+    "from": "me",
+    "to": [
+     "kate-sutherland"
+    ],
+    "date": "2025-07-29T10:02:00+01:00",
+    "read": true,
+    "text": "`text.subtle`, it's the one on Kasia's naming list. Could you alias the other until Anil's moved the components over?\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "kate-sutherland",
+    "to": [
+     "me"
+    ],
+    "date": "2025-08-05T07:06:00+01:00",
+    "read": true,
+    "text": "Hi\n\nAliased. The alias stays until v2 ships and then I'll delete it. No failed builds since Friday.\n\nKate"
+   }
+  ],
+  "truth": {
+   "summary": "Kate's token export kept stopping the build because Luis had added surface.raised without a dark value; he fixed it, Kate made the error name the file, and text.subdued is now aliased to text.subtle until v2 ships.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [
+    {
+     "who": "kate-sutherland",
+     "text": "Delete the text.subdued alias once v2 ships",
+     "kept": false
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2025-08-05",
+     "what": "Alias in place, no failed builds since 1 August"
+    }
+   ],
+   "facts": [
+    "The build stopped twice on 25 July 2025 because surface.raised had no dark value; Luis had added it from the Tandem pitch file.",
+    "The error now reads: missing in dark: surface.raised (tokens/color/dark.json).",
+    "text.subtle is the right name (Kasia's naming list); text.subdued is an alias until v2 ships."
+   ]
+  }
+ },
+ {
+  "id": "s0364",
+  "account": "acme",
+  "storyline": "design-system-v2",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "dark theme vs client palettes",
+  "state": {
+   "inbox": false,
+   "trash": true
+  },
+  "messages": [
+   {
+    "from": "kasia-zielinska",
+    "to": [
+     "me"
+    ],
+    "date": "2025-08-28T16:41:00+01:00",
+    "read": true,
+    "text": "Luis -\n\nRan the v2 dark set against every client palette we have on file. Three fail.\n\nBrightwell: their orange on our dark surface is 2.9:1. Links in body text are unreadable.\nTandem City: the teal is fine as a fill, but text set in it drops to 3.4:1 in dark.\nOrchard Lane Housing: their purple more or less disappears on `surface.raised`. 2.1:1.\n\nEverything else passes 4.5:1.\n\nTwo ways out. A: we keep one dark surface and we give the colours that fail their own on-dark values. B: we lighten the dark surface for everyone, which fixes these three and makes the whole dark theme look grey and tired.\n\nI want A. It does mean somebody tells Brightwell their orange gets lighter at night.\n\nK."
+   },
+   {
+    "from": "me",
+    "to": [
+     "kasia-zielinska"
+    ],
+    "date": "2025-09-01T09:22:00+01:00",
+    "read": true,
+    "text": "Kasia,\n\nGo with A. Keep the new colours in the client files so we can drop them when the work ends. I'll ask Fiona to mention the lighter orange to Brightwell.\n\nCan we leave Tandem's teal alone? In dark it can still be a fill. Anil can keep it out of text. For Orchard Lane, can you see how light we'd have to go? Their purple already gives us trouble on the live site.\n\nCould you put the decision in the DS doc for Anil by Friday?\n\nThanks,\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "kasia-zielinska",
+    "to": [
+     "me"
+    ],
+    "date": "2025-09-02T08:55:00+01:00",
+    "read": true,
+    "text": "Luis - fills only for Tandem, agreed. Orchard Lane's purple is #5B2A86. The lightest version that passes on `surface.raised` is #B38AE0. They will hate it.\n\nK."
+   },
+   {
+    "from": "me",
+    "to": [
+     "kasia-zielinska"
+    ],
+    "date": "2025-09-02T11:34:00+01:00",
+    "read": true,
+    "text": "Use #B38AE0 and let them hate it in a meeting rather than in an email. I'll put it on the agenda for their review on the 16th and bring the before and after.\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "kasia-zielinska",
+    "to": [
+     "me"
+    ],
+    "date": "2025-09-05T17:12:00+01:00",
+    "read": true,
+    "text": "Written up, DS v2 doc, section 4. Anil has it and says the components can take it next sprint.\n\nK."
+   }
+  ],
+  "truth": {
+   "summary": "Kasia found that the v2 dark theme fails contrast on three client palettes (Brightwell, Tandem City, Orchard Lane Housing); Luis chose option A, per-client on-dark colours in the clients' own token files, with Tandem's teal for fills only, and Kasia wrote it up for Anil in section 4 of the DS v2 doc.",
+   "ownerOwes": [
+    "Ask Fiona to tell Brightwell about the lighter on-dark orange."
+   ],
+   "othersOwe": [],
+   "promisesByOwner": [
+    {
+     "text": "Ask Fiona to tell Brightwell about the orange",
+     "kept": false
+    },
+    {
+     "text": "Put the Orchard Lane purple on the agenda for their review on 16 September with a before and after",
+     "due": "2025-09-16",
+     "kept": false
+    }
+   ],
+   "promisesToOwner": [
+    {
+     "who": "kasia-zielinska",
+     "text": "Write the dark-theme fix up for Anil by Friday",
+     "due": "2025-09-05",
+     "kept": true
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2025-09-05",
+     "what": "Kasia's write-up in the DS v2 doc, section 4"
+    },
+    {
+     "date": "2025-09-16",
+     "what": "Orchard Lane Housing review"
+    }
+   ],
+   "facts": [
+    "Brightwell's orange on the dark surface: 2.9:1. Tandem City's teal as text in dark: 3.4:1. Orchard Lane Housing's purple on surface.raised: 2.1:1.",
+    "Decision: option A, one dark surface and on-dark values where needed, kept in each client's own token file.",
+    "Tandem's teal is for fills only in dark, never text.",
+    "Orchard Lane's purple is #5B2A86; the lightest passing on-dark version is #B38AE0.",
+    "Luis said he'd ask Fiona to tell Brightwell about the orange."
+   ]
+  }
+ },
+ {
+  "id": "s0365",
+  "account": "acme",
+  "storyline": "design-system-v2",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "v2 library at Margate?",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "me",
+    "to": [
+     "anil-joshi"
+    ],
+    "date": "2025-10-06T09:15:00+01:00",
+    "read": true,
+    "text": "Hey Anil, could you show the v2 component library at the Margate offsite? 15 minutes, nothing polished, just where it is.\n\nThanks,\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "anil-joshi",
+    "to": [
+     "me"
+    ],
+    "date": "2025-10-07T14:02:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nMaybe. Depends where the date picker is by then:\n- `Select` is done\n- `DatePicker` still breaks in dark\n\nI'll tell you by the end of next week.\n\nAnil"
+   }
+  ],
+  "truth": {
+   "summary": "Luis asked Anil to show the v2 component library at the Margate offsite; Anil said maybe, depending on the date picker, and promised an answer by the end of the following week, with no answer in the thread.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [
+    {
+     "who": "anil-joshi",
+     "text": "Tell Luis by the end of next week whether he can show the library at Margate",
+     "due": "2025-10-17",
+     "kept": false
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2025-10-17",
+     "what": "Anil's promised answer about the demo"
+    },
+    {
+     "date": "2025-11-06",
+     "what": "Margate offsite, 6-7 November"
+    }
+   ],
+   "facts": [
+    "Select is done in v2; DatePicker still breaks in dark (7 October 2025).",
+    "Luis asked for a 15-minute, unpolished demo."
+   ]
+  }
+ },
+ {
+  "id": "s0366",
+  "account": "acme",
+  "storyline": "design-system-v2",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "does v2 change the token JSON?",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "kate-sutherland",
+    "to": [
+     "me"
+    ],
+    "date": "2025-11-07T07:48:00+00:00",
+    "read": true,
+    "text": "Hi\n\nAPI unchanged, this is a client question. Does v2 change the shape of the token JSON? Tandem's app pulls it at build and I'd like to know before Monday. The case I'm worried about: a renamed key quietly falling back to the default colour.\n\nKate"
+   },
+   {
+    "from": "me",
+    "to": [
+     "kate-sutherland"
+    ],
+    "date": "2025-11-10T09:30:00+00:00",
+    "read": true,
+    "text": "Same shape, 14 extra keys. The old `brand.*` names still resolve until January. Kasia's changelog is in the DS doc, section 6.\n\nThanks,\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "kate-sutherland",
+    "to": [
+     "me"
+    ],
+    "date": "2025-11-10T09:41:00+00:00",
+    "read": true,
+    "text": "Good. Adding a test for it anyway.\n\nKate"
+   }
+  ],
+  "truth": {
+   "summary": "Kate asked whether design system v2 changes the token JSON; Luis confirmed the shape is the same, 14 tokens are added and the old brand.* names stay as aliases until January, and Kate is adding a test anyway.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-01",
+     "what": "The old brand.* aliases are due to expire"
+    }
+   ],
+   "facts": [
+    "v2 keeps the token JSON's shape, adds 14 tokens and keeps brand.* aliases until January 2026.",
+    "Kasia's changelog is in the DS doc, section 6.",
+    "Tandem's app pulls the tokens at build."
+   ]
+  }
+ },
+ {
+  "id": "s0367",
+  "account": "acme",
+  "storyline": "design-system-v2",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "tokens freeze on Thursday?",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "kate-sutherland",
+    "to": [
+     "me"
+    ],
+    "date": "2025-12-09T07:20:00+00:00",
+    "read": true,
+    "text": "Hi\n\nCan I merge a colour fix for the Tandem pins on Thursday or is the tokens repo still freezing before the release?\n\nKate"
+   },
+   {
+    "from": "me",
+    "to": [
+     "kate-sutherland"
+    ],
+    "date": "2025-12-09T11:05:00+00:00",
+    "read": true,
+    "text": "Go ahead with the pins. Anil merged the last v2 changes this morning, so let's drop Thursday's freeze.\n\nRelease is still Friday at the show-and-tell, 4pm in the kitchen.\n\nThanks,\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "kate-sutherland",
+    "to": [
+     "me"
+    ],
+    "date": "2025-12-09T11:22:00+00:00",
+    "read": true,
+    "text": "Merged.\n\nKate"
+   }
+  ],
+  "truth": {
+   "summary": "Luis cancelled Thursday's merge freeze on the tokens repo because Anil had already merged the last v2 changes; Kate merged her Tandem map pin fix, and v2 still releases at Friday's show-and-tell.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2025-12-12T16:00:00+00:00",
+     "what": "Design system v2 due to be released at the Christmas show-and-tell, in the kitchen"
+    }
+   ],
+   "facts": [
+    "The tokens freeze planned for Thursday 11 December 2025 was cancelled.",
+    "Anil merged the last v2 changes on 9 December.",
+    "Kate's fix was for the Tandem map pins."
+   ]
+  }
+ },
+ {
+  "id": "s0368",
+  "account": "acme",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "FORMFEST tickets, Thursday 11 June",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "natasha-whyte",
+    "to": [
+     "me",
+     "hollie-tran"
+    ],
+    "date": "2026-05-15T11:32:00+01:00",
+    "read": true,
+    "text": "Hi all,\n\nYou're both booked for FORMFEST at the Harbour Sheds in Bristol on THURSDAY 11 JUNE. Doors at 9:00, first talk 9:30.\n\nTrain: 07:00 from PADDINGTON, back on the 18:30. E-tickets for the train come separately from the booking site.\n\nConference tickets attached, one each. Lunch is included, dinner isn't. Receipts for anything else to Philippa by FRIDAY 19 JUNE.\n\nTash\nNatasha Whyte\nStudio Operations Manager, Acme Studio\nacme.example",
+    "attachments": [
+     {
+      "filename": "FORMFEST-2026-ticket-Cordero.pdf",
+      "mime": "application/pdf",
+      "size": 184320
+     },
+     {
+      "filename": "FORMFEST-2026-ticket-Tran.pdf",
+      "mime": "application/pdf",
+      "size": 183904
+     }
+    ]
+   },
+   {
+    "from": "me",
+    "to": [
+     "natasha-whyte"
+    ],
+    "date": "2026-05-18T09:48:00+01:00",
+    "read": true,
+    "text": "Hey Tash, Hollie can't make it any more, she's on the Holloway content sprint that week. Could Dev have her ticket instead?\n\nThanks,\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "natasha-whyte",
+    "to": [
+     "me"
+    ],
+    "date": "2026-05-18T10:21:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nNames can be changed until MONDAY 1 JUNE, £15 admin fee. It comes out of Priya's budget line, so I need her OK first. Once she's said yes, send me Dev's email and I'll do the swap.\n\nTash\nNatasha Whyte\nStudio Operations Manager, Acme Studio\nacme.example"
+   }
+  ],
+  "truth": {
+   "summary": "Natasha booked Luis and Hollie for FORMFEST in Bristol on 11 June 2026; Luis asked to move Hollie's ticket to Dev, Natasha needed Priya's OK and Dev's email by 1 June, and nobody followed up.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [
+    {
+     "who": "natasha-whyte",
+     "text": "Swap Hollie's ticket to Dev once Priya agrees and Luis sends Dev's email",
+     "kept": false
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2026-06-01",
+     "what": "Last day to change ticket names (£15 fee)"
+    },
+    {
+     "date": "2026-06-11",
+     "what": "FORMFEST at the Harbour Sheds, Bristol: doors 9:00, train 07:00 from Paddington, back 18:30"
+    },
+    {
+     "date": "2026-06-19",
+     "what": "Receipts to Philippa"
+    }
+   ],
+   "facts": [
+    "FORMFEST is at the Harbour Sheds in Bristol on Thursday 11 June 2026; lunch included, dinner not.",
+    "Hollie couldn't go because of the Holloway content sprint.",
+    "A name change costs £15 and comes out of Priya's budget line."
+   ]
+  }
+ },
+ {
+  "id": "s0369",
+  "account": "acme",
+  "storyline": "pennywort-loyalty-app",
+  "lang": "en",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "subject": "Screens for our board",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "steve-barlow",
+    "to": [
+     "me"
+    ],
+    "date": "2026-06-17T08:10:00+01:00",
+    "read": true,
+    "text": "Morning,\n\nNeed screens for the board by 2 JULY. Board meets on the 3rd. If the interviews hold that up, skip them, we know our customers.\n\nSteve\nSteve Barlow | Head of E-commerce | Pennywort Grocers\nPennywort House, Kirkstall Road, Leeds LS4\nM: 07700 900 662",
+    "cc": [
+     "marcus-adeyemi",
+     "freya-lindgren",
+     "sam-whitfield",
+     "dev-malhotra"
+    ]
+   },
+   {
+    "from": "sam-whitfield",
+    "to": [
+     "steve-barlow",
+     "me"
+    ],
+    "date": "2026-06-17T10:05:00+01:00",
+    "read": true,
+    "text": "Hi all,\n\nFor reference, the plan we agreed at the kickoff:\n- 7 and 9 July: Freya's six in-store interviews, Harrogate and Durham\n- 20 July: concept screens\n- 3 August: designs for sign-off\n\nSam",
+    "cc": [
+     "marcus-adeyemi",
+     "freya-lindgren",
+     "dev-malhotra"
+    ]
+   },
+   {
+    "from": "me",
+    "to": [
+     "steve-barlow"
+    ],
+    "date": "2026-06-17T14:32:00+01:00",
+    "read": true,
+    "text": "Hi Steve,\n\nI'd like to keep those interviews. We haven't seen anyone use the card at the till yet.\n\nFor the board on the 3rd, Marcus can give you three slides: the customer journey, two early sketches and the timeline. Would that do?\n\nThanks,\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example",
+    "cc": [
+     "marcus-adeyemi",
+     "freya-lindgren",
+     "sam-whitfield",
+     "dev-malhotra"
+    ]
+   },
+   {
+    "from": "steve-barlow",
+    "to": [
+     "me"
+    ],
+    "date": "2026-06-18T07:46:00+01:00",
+    "read": true,
+    "text": "Morning,\n\nFine. Slides by 1 JULY then, not the 2nd.\n\nSteve\nSteve Barlow | Head of E-commerce | Pennywort Grocers\nPennywort House, Kirkstall Road, Leeds LS4\nM: 07700 900 662",
+    "cc": [
+     "marcus-adeyemi",
+     "freya-lindgren",
+     "sam-whitfield",
+     "dev-malhotra"
+    ]
+   },
+   {
+    "from": "marcus-adeyemi",
+    "to": [
+     "me"
+    ],
+    "date": "2026-06-18T09:24:00+01:00",
+    "read": true,
+    "text": "Hey Luis,\n\nThe rougher the sketches the better, I think. If we show them finished-looking screens, we'll be asked why they keep changing. I'll leave them in pencil and get the slides to you on the 30th, before they go to Steve.\n\nMarcus\nMarcus Adeyemi\nSenior Product Designer, Acme Studio\nacme.example"
+   },
+   {
+    "from": "freya-lindgren",
+    "to": [
+     "me",
+     "steve-barlow"
+    ],
+    "date": "2026-06-19T15:10:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nDates confirmed with the shop managers:\n1. Harrogate, Station Parade: Tuesday 7 July, three sessions from 10:00\n2. Durham, Claypath: Thursday 9 July, three sessions from 10:00\n\nFreya\nFreya Lindgren\nSenior UX Researcher, Acme Studio\nacme.example",
+    "cc": [
+     "marcus-adeyemi",
+     "sam-whitfield",
+     "dev-malhotra"
+    ]
+   },
+   {
+    "from": "dev-malhotra",
+    "to": [
+     "me"
+    ],
+    "date": "2026-06-22T11:40:00+01:00",
+    "read": true,
+    "text": "Hi Luis\n\nCould I come to Durham? I'd like to see the till in real life before I touch anything near it.\n\nThanks, Dev"
+   }
+  ],
+  "truth": {
+   "summary": "Steve asked Acme to skip the in-store interviews to get screens to Pennywort's board; Luis politely declined and offered three slides from Marcus instead, due 1 July, and Freya confirmed the interview dates in Harrogate and Durham.",
+   "ownerOwes": [
+    "Answer Dev's question about joining the Durham interviews."
+   ],
+   "othersOwe": [
+    "Marcus: three board slides to Luis on 30 June, to Steve by 1 July"
+   ],
+   "promisesByOwner": [],
+   "promisesToOwner": [
+    {
+     "who": "marcus-adeyemi",
+     "text": "Send Luis the rough board slides on 30 June",
+     "due": "2026-06-30",
+     "kept": false
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2026-07-01",
+     "what": "Board slides due to Steve"
+    },
+    {
+     "date": "2026-07-03",
+     "what": "Pennywort board meets"
+    },
+    {
+     "date": "2026-07-07",
+     "what": "Interviews in Harrogate, Station Parade, from 10:00"
+    },
+    {
+     "date": "2026-07-09",
+     "what": "Interviews in Durham, Claypath, from 10:00"
+    },
+    {
+     "date": "2026-07-20",
+     "what": "Concept screens"
+    },
+    {
+     "date": "2026-08-03",
+     "what": "Designs for sign-off"
+    }
+   ],
+   "facts": [
+    "Luis declined Steve's request to skip the interviews.",
+    "The slides: customer journey, two early sketches and the timeline.",
+    "Six interviews: three in Harrogate and three in Durham."
+   ]
+  }
+ },
+ {
+  "id": "s0370",
+  "account": "acme",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Portfolio advice from a final-year student (if you have time)",
+  "state": {
+   "inbox": false
+  },
+  "people": [
+   {
+    "id": "ruby-adair-student",
+    "name": "Ruby Adair",
+    "email": "ruby.adair.design@gmail.com",
+    "lang": "en",
+    "timezone": "Europe/London",
+    "accounts": [
+     "acme"
+    ],
+    "relationship": "graphic design student, a stranger asking for advice",
+    "style": {
+     "register": "earnest, a bit nervous",
+     "length": "long",
+     "greeting": "Dear Luis,",
+     "signoff": "Thank you so much,",
+     "signature": null,
+     "quoting": "bottom",
+     "quirks": [
+      "apologises for the length"
+     ]
+    },
+    "facts": [
+     "about to start the final year of a graphic communication degree at Kenmore School of Art in Leeds"
+    ]
+   }
+  ],
+  "messages": [
+   {
+    "from": "ruby-adair-student",
+    "to": [
+     "me"
+    ],
+    "date": "2026-07-04T14:22:00+01:00",
+    "read": true,
+    "text": "Dear Luis,\n\nSorry for writing out of the blue. My tutor, Moira Duff, showed us Acme's work in a lecture on design for museums, and your name was on the Holloway project page, so I thought I'd try.\n\nI'm going into the final year of a graphic communication degree at Kenmore School of Art in Leeds. Most of my work so far is print: posters, a book, a type specimen for a project with a local letterpress studio. Over the last year I've got much more interested in product and interface design, and I'd like to apply for junior product design roles next summer. My problem is that my portfolio doesn't look like a product designer's at all.\n\nWould you put the print work in if it was the best thing you'd made? I've only got one app project I'm proud of. There's another one I did over a weekend that I could use to pad it out, but I don't really want to have to talk about it in an interview. Would two case studies be enough? I keep seeing people say eight, which seems like a lot.\n\nAlso, when you're looking through juniors' work, what actually makes you stop and read a case study? I spent Sunday changing all the type on the site again, which feels like an excellent way of avoiding the portfolio itself.\n\nIt's at rubyadair.example if you do fancy a look. Even a line back would help.\n\nSorry this is so long.\n\nThank you so much,\nRuby Adair"
+   }
+  ],
+  "truth": {
+   "summary": "Ruby Adair, a graphic communication student at Kenmore School of Art in Leeds, asked Luis three questions about a junior product design portfolio; he hasn't replied.",
+   "ownerOwes": [
+    "Reply to Ruby Adair's portfolio questions (how many case studies, whether to keep print work, what makes him stop and read)."
+   ],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [],
+   "facts": [
+    "Ruby is going into her final year at Kenmore School of Art in Leeds; her tutor is Moira Duff.",
+    "She found Luis's name on Acme's Holloway project page.",
+    "Her portfolio is at rubyadair.example; she wants junior product design roles next summer."
+   ]
+  }
+ },
+ {
+  "id": "s0371",
+  "account": "acme",
+  "storyline": "pennywort-loyalty-app",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Pennywort interviews: Harrogate notes",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "freya-lindgren",
+    "to": [
+     "me"
+    ],
+    "date": "2026-07-08T18:42:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nHarrogate done yesterday, Durham tomorrow. Early notes attached. The short version:\n1. Two of the three went straight for the card when we showed them the app. Both keep the paper one in their purse.\n2. Nobody understood \"points\". They think in money off\n\nFreya\nFreya Lindgren\nSenior UX Researcher, Acme Studio\nacme.example",
+    "cc": [
+     "sam-whitfield"
+    ],
+    "attachments": [
+     {
+      "filename": "Pennywort-Harrogate-notes-7Jul.pdf",
+      "mime": "application/pdf",
+      "size": 412610
+     }
+    ]
+   },
+   {
+    "from": "sam-whitfield",
+    "to": [
+     "me",
+     "freya-lindgren"
+    ],
+    "date": "2026-07-09T09:02:00+01:00",
+    "read": true,
+    "text": "Hi all,\n\nIncentives: three £80 vouchers per shop, so £480 for both, which isn't in the budget we agreed with Pennywort. Philippa needs a cost code by 17 July. Luis, ours or theirs?\n\nSam"
+   },
+   {
+    "from": "me",
+    "to": [
+     "sam-whitfield",
+     "freya-lindgren"
+    ],
+    "date": "2026-07-09T12:15:00+01:00",
+    "read": true,
+    "text": "Ours for now, PW-003. I'll ask Steve if Pennywort can cover it.\n\nThanks,\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "freya-lindgren",
+    "to": [
+     "me"
+    ],
+    "date": "2026-07-13T10:05:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nDurham notes attached as well. It matches Harrogate, with one new thing:\n1. At Claypath the signal drops inside the shop, so the card has to show without a connection\n\nFreya\nFreya Lindgren\nSenior UX Researcher, Acme Studio\nacme.example",
+    "cc": [
+     "sam-whitfield"
+    ],
+    "attachments": [
+     {
+      "filename": "Pennywort-Durham-notes-9Jul.pdf",
+      "mime": "application/pdf",
+      "size": 398744
+     }
+    ]
+   }
+  ],
+  "truth": {
+   "summary": "Freya sent her notes from the Pennywort interviews in Harrogate and Durham; Luis put the £480 of vouchers on Acme's code PW-003 and said he would ask Steve about reimbursement, with no follow-up in the thread.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [
+    {
+     "text": "Ask Steve whether Pennywort will cover the interview vouchers",
+     "kept": false
+    }
+   ],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-07-07",
+     "what": "Harrogate interviews"
+    },
+    {
+     "date": "2026-07-09",
+     "what": "Durham interviews"
+    },
+    {
+     "date": "2026-07-17",
+     "what": "Philippa's deadline for a cost code"
+    }
+   ],
+   "facts": [
+    "Two of the three Harrogate shoppers went straight for the card in the app. Both keep the paper card in their purse.",
+    "Shoppers think in money off, not points.",
+    "At the Claypath shop in Durham the signal drops, so the card must show offline.",
+    "Vouchers: three £80 vouchers per shop, £480 in all, on Acme's cost code PW-003."
+   ]
+  }
+ },
+ {
+  "id": "s0372",
+  "account": "personal",
+  "storyline": "marshgate-half-2026",
+  "lang": "en",
+  "tags": [
+   "personal"
+  ],
+  "subject": "Medal: a few decisions for Brockley",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "gareth-pugh",
+    "to": [
+     "me"
+    ],
+    "date": "2026-07-21T10:05:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nThank you again for agreeing to design this year's medal. I've now heard back from Brockley Medals and they need a few things settled before they'll hold a production slot:\n\n- size: 60mm or 70mm\n- shape: round, or cut to a custom outline (adds 40p a medal)\n- finish: antique bronze or gold\n- up to three enamel colours\n\nWe're ordering 1,400. Their artwork deadline is Friday 23 October. Would you like to choose, or shall I take it to the committee?\n\nThanks, Gareth\nGareth Pugh\nClub Secretary, Marshgate Runners\nmarshgaterunners.example | Tuesdays & Thursdays 6.45pm, Marshgate Lane gates"
+   },
+   {
+    "from": "me",
+    "to": [
+     "gareth-pugh"
+    ],
+    "date": "2026-07-21T20:34:00+01:00",
+    "read": true,
+    "text": "Happy to choose: 70 mm, round, antique bronze, two colours. Slot at the top for the ribbon. Round saves £560 and whatever we draw will sit better in a circle anyway.\n\nFirst sketches after my holiday, I'm away 3 to 14 August.\n\nLuis"
+   },
+   {
+    "from": "gareth-pugh",
+    "to": [
+     "me"
+    ],
+    "date": "2026-07-22T09:16:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nI've just confirmed that with Brockley. Enjoy the Highlands.\n\nThanks, Gareth\nGareth Pugh\nClub Secretary, Marshgate Runners\nmarshgaterunners.example | Tuesdays & Thursdays 6.45pm, Marshgate Lane gates"
+   }
+  ],
+  "truth": {
+   "summary": "Luis decided the Marshgate Half medal's spec for Brockley Medals: 70 mm, round, antique bronze, two enamel colours and a ribbon slot at the top; 1,400 medals, artwork due 23 October, first sketches after his holiday.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [
+    {
+     "text": "First medal sketches after his holiday (back 14 August)",
+     "kept": true
+    }
+   ],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-08-03",
+     "what": "Luis away until 14 August"
+    },
+    {
+     "date": "2026-10-23",
+     "what": "Brockley's artwork deadline"
+    }
+   ],
+   "facts": [
+    "Gareth confirmed the spec with Brockley Medals on 22 July.",
+    "1,400 medals: 70 mm, round, antique bronze, two enamel colours, with a ribbon slot at the top. Luis made the choice.",
+    "A custom outline would have added 40p a medal (£560)."
+   ]
+  }
+ },
+ {
+  "id": "s0373",
+  "account": "acme",
+  "storyline": "pennywort-loyalty-app",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Pennywort checkout is Dev's from Monday",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "me",
+    "to": [
+     "dev-malhotra",
+     "freya-lindgren"
+    ],
+    "date": "2026-08-06T19:22:00+01:00",
+    "read": true,
+    "text": "Hey both,\n\nI'm on holiday till the 14th, but one thing before Monday: Steve signed off Marcus's designs on Tuesday, so Dev, checkout is yours from the 10th. Freya, could you take Dev through what you saw at the tills in Durham?\n\nThanks,\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "dev-malhotra",
+    "to": [
+     "me",
+     "freya-lindgren"
+    ],
+    "date": "2026-08-07T10:05:00+01:00",
+    "read": true,
+    "text": "Hi Luis\n\nSorry, I'm confused. I thought checkout meant payment screens, but there's no basket anywhere in Marcus's file. Is Pennywort taking payments in the app now?\n\nThanks, Dev"
+   },
+   {
+    "from": "freya-lindgren",
+    "to": [
+     "me",
+     "dev-malhotra"
+    ],
+    "date": "2026-08-07T11:31:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nI think that's my word, sorry. In the interviews \"checkout\" meant the till, the moment the card gets scanned. So for Dev it's:\n1. the card screen at the till, including when there's no signal in the shop\n2. the money off showing up on the receipt\n\nNo payments. Dev, I'll take you through the Durham notes on Monday at 10.\n\nFreya\nFreya Lindgren\nSenior UX Researcher, Acme Studio\nacme.example"
+   },
+   {
+    "from": "dev-malhotra",
+    "to": [
+     "freya-lindgren",
+     "me"
+    ],
+    "date": "2026-08-10T10:41:00+01:00",
+    "read": true,
+    "text": "Thanks for the walkthrough, Freya. I'll start with getting the card to show when the phone's offline.\n\nThanks, Dev"
+   }
+  ],
+  "truth": {
+   "summary": "Luis handed Pennywort's checkout to Dev from 10 August; Dev thought that meant in-app payments, and Freya cleared it up: checkout is the till moment (the card screen and the money off on the receipt), with no payments.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-08-04",
+     "what": "Steve signed off Marcus's designs"
+    },
+    {
+     "date": "2026-08-10T10:00:00+01:00",
+     "what": "Dev takes over checkout; Freya walks him through the Durham notes"
+    }
+   ],
+   "facts": [
+    "At Pennywort, checkout means the till: the card screen (including with no signal) and the money off on the receipt.",
+    "The Pennywort app takes no payments.",
+    "Luis wrote from holiday; he was away until 14 August."
+   ]
+  }
+ },
+ {
+  "id": "s0374",
+  "account": "personal",
+  "storyline": "marshgate-half-2026",
+  "lang": "en",
+  "tags": [
+   "personal"
+  ],
+  "subject": "Committee, Thursday 13 August",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "gareth-pugh",
+    "to": [
+     "me",
+     "bea-collins"
+    ],
+    "date": "2026-08-04T09:31:00+01:00",
+    "read": true,
+    "text": "Hi all,\n\nThe committee next meets on Thursday 13 August, 8pm, upstairs at the Lea Tavern.\n\nLuis, I'd hoped you could bring the first medal sketches. I think you said you'd be back by then?\n\nBea, could you say a few words on pacing: the groups from 1:30 to 2:15, and how many pacers we're still short.\n\nThanks, Gareth\nGareth Pugh\nClub Secretary, Marshgate Runners\nmarshgaterunners.example | Tuesdays & Thursdays 6.45pm, Marshgate Lane gates"
+   },
+   {
+    "from": "me",
+    "to": [
+     "gareth-pugh",
+     "bea-collins"
+    ],
+    "date": "2026-08-05T21:12:00+01:00",
+    "read": true,
+    "text": "back on the 14th sadly, so I'll miss the 13th. could the sketches wait till the week after? sorry, terrible signal here\n\nL"
+   },
+   {
+    "from": "bea-collins",
+    "to": [
+     "gareth-pugh",
+     "me"
+    ],
+    "date": "2026-08-06T07:41:00+01:00",
+    "read": true,
+    "text": "13.4 this morning / could do medals after club run on the 27th? / still two short for 2:00\n\nbea"
+   },
+   {
+    "from": "gareth-pugh",
+    "to": [
+     "me",
+     "bea-collins"
+    ],
+    "date": "2026-08-06T10:22:00+01:00",
+    "read": true,
+    "text": "Hi all,\n\nGood idea, Bea. The medal item moves to Thursday 27 August, after the club run, in the clubhouse at about 8.15. The committee on the 13th goes ahead for everything else.\n\nI'll put out a call for two 2:00 pacers in Friday's notice.\n\nThanks, Gareth\nGareth Pugh\nClub Secretary, Marshgate Runners\nmarshgaterunners.example | Tuesdays & Thursdays 6.45pm, Marshgate Lane gates"
+   },
+   {
+    "from": "me",
+    "to": [
+     "gareth-pugh",
+     "bea-collins"
+    ],
+    "date": "2026-08-10T18:47:00+01:00",
+    "read": true,
+    "text": "27th works. I'll bring four or five sketches.\n\nL"
+   }
+  ],
+  "truth": {
+   "summary": "The medal sketches review, planned for the committee on 13 August while Luis was in the Highlands, was moved to Thursday 27 August after the club run, at Bea's suggestion; the committee on the 13th was kept on the calendar for everything else.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [
+    {
+     "text": "Bring four or five medal sketches on 27 August",
+     "due": "2026-08-27",
+     "kept": true
+    }
+   ],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-08-07",
+     "what": "Gareth plans to ask for two 2:00 pacers in Friday's notice"
+    },
+    {
+     "date": "2026-08-13T20:00:00+01:00",
+     "what": "Committee meeting upstairs at the Lea Tavern (without the medal)"
+    },
+    {
+     "date": "2026-08-27T20:15:00+01:00",
+     "what": "Medal sketches, in the clubhouse after the club run"
+    }
+   ],
+   "facts": [
+    "Luis was away until 14 August.",
+    "The pace groups run from 1:30 to 2:15; the club still needed two pacers for 2:00.",
+    "Moving the medal item to the 27th was Bea's idea; Gareth decided it."
+   ]
+  }
+ },
+ {
+  "id": "s0375",
+  "account": "personal",
+  "storyline": "marshgate-half-2026",
+  "lang": "en",
+  "tags": [
+   "personal"
+  ],
+  "subject": "medal sketches before Thursday",
+  "state": {
+   "inbox": true
+  },
+  "messages": [
+   {
+    "from": "me",
+    "to": [
+     "bea-collins"
+    ],
+    "date": "2026-08-24T20:16:00+01:00",
+    "read": true,
+    "text": "bea, five medal sketches attached before Gareth sees them on Thursday: heron over the marshes, the Lea bridge, the Marshgate Lane gates, a running hare, the old pumping station chimney.\n\nwhich one would you actually want round your neck at mile 13? i'll bring all five but only want to put three on the table\n\nL",
+    "attachments": [
+     {
+      "filename": "marshgate-medal-sketches-v1.pdf",
+      "mime": "application/pdf",
+      "size": 2516582
+     }
+    ]
+   },
+   {
+    "from": "bea-collins",
+    "to": [
+     "me"
+    ],
+    "date": "2026-08-25T06:52:00+01:00",
+    "read": true,
+    "text": "heron first, then gates. the hare looks like a dog sorry\n\nbea"
+   },
+   {
+    "from": "me",
+    "to": [
+     "bea-collins"
+    ],
+    "date": "2026-08-25T12:40:00+01:00",
+    "read": true,
+    "text": "ha. fair. heron, gates and the chimney go to Thursday, i'll leave the other two in the folder\n\nL"
+   }
+  ],
+  "truth": {
+   "summary": "Luis sent Bea five medal sketches; on her advice he's taking three (heron, gates, chimney) to the committee on Thursday 27 August, with the hare and bridge staying in the folder.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-08-27",
+     "what": "Sketches shown to the committee after the club run"
+    }
+   ],
+   "facts": [
+    "The five sketches: heron over the marshes, the Lea bridge, the Marshgate Lane gates, a running hare, the old pumping station chimney.",
+    "Bea's pick: the heron, then the gates; she said the hare looks like a dog.",
+    "Luis decided to take the heron, the gates and the chimney."
+   ]
+  }
+ },
+ {
+  "id": "s0376",
+  "account": "acme",
+  "storyline": "pennywort-loyalty-app",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Fwd: App buttons and Pennywort Leaf",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "sam-whitfield",
+    "to": [
+     "me"
+    ],
+    "date": "2026-09-01T10:21:00+01:00",
+    "read": true,
+    "text": "Hi Luis, can you take this one? I don't know the answer.\n\nSam",
+    "forward": {
+     "from": "Lorna Sykes <lorna.sykes@pennywort.example>",
+     "date": "2026-08-28T16:02:00+01:00",
+     "subject": "App buttons and Pennywort Leaf",
+     "to": "Sam Whitfield <sam@acme.example>",
+     "text": "Hi Sam,\n\nOur brand team have noticed that the buttons in the latest app designs aren't Pennywort Leaf (#6DBE45). Could they be changed to match the shop signage before the beta?\n\nThanks,\nLorna\n\nLorna Sykes\nBrand & Marketing Manager, Pennywort Grocers"
+    }
+   },
+   {
+    "from": "me",
+    "to": [
+     "sam-whitfield"
+    ],
+    "date": "2026-09-02T09:12:00+01:00",
+    "read": true,
+    "text": "Sam,\n\nI'd keep the buttons as they are. For Lorna, the issue is white text on #6DBE45: about 2.3:1 and we need 4.5:1 at that size. Marcus used Leaf Deep (#2F6E3B), which is in Pennywort's own guidelines on page 14. Leaf stays for the card itself and the illustrations.\n\nThanks,\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "sam-whitfield",
+    "to": [
+     "me"
+    ],
+    "date": "2026-09-03T15:34:00+01:00",
+    "read": true,
+    "text": "Sent that on. Lorna's fine with it, she hadn't realised Leaf Deep was one of theirs.\n\nSam"
+   }
+  ],
+  "truth": {
+   "summary": "Pennywort's brand manager Lorna Sykes asked for the app buttons in Pennywort Leaf; Luis explained the contrast problem and that the designs use Leaf Deep from Pennywort's own guidelines, and Lorna accepted it.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [],
+   "facts": [
+    "Pennywort Leaf is #6DBE45; white text on it is about 2.3:1.",
+    "The buttons use Leaf Deep, #2F6E3B, from page 14 of Pennywort's guidelines.",
+    "Leaf stays for the card and the illustrations.",
+    "Lorna Sykes is Brand & Marketing Manager at Pennywort Grocers."
+   ]
+  }
+ },
+ {
+  "id": "s0377",
+  "account": "personal",
+  "storyline": "marshgate-half-2026",
+  "lang": "en",
+  "tags": [
+   "personal"
+  ],
+  "subject": "back of the medal?",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "bea-collins",
+    "to": [
+     "me"
+    ],
+    "date": "2026-09-13T11:24:00+01:00",
+    "read": true,
+    "text": "16k at 5:05 this morning, bridge clear again. committee had a very long argument on tuesday about the back of the medal. date and 13.1? names?\n\nbea"
+   },
+   {
+    "from": "me",
+    "to": [
+     "bea-collins"
+    ],
+    "date": "2026-09-13T19:03:00+01:00",
+    "read": true,
+    "text": "the back: MARSHGATE HALF, 15.11.2026, 13.1 MILES round the edge. no names, Brockley charge per medal for engraving and nobody wants to pay that on 1,400.\n\nthe heron's on version two, Gareth has it\n\nL"
+   },
+   {
+    "from": "bea-collins",
+    "to": [
+     "me"
+    ],
+    "date": "2026-09-14T07:10:00+01:00",
+    "read": true,
+    "text": "sent to the committee\n\nbea"
+   }
+  ],
+  "truth": {
+   "summary": "Bea asked what goes on the back of the Marshgate Half medal; Luis answered MARSHGATE HALF, 15.11.2026, 13.1 MILES round the edge, with no names, and Bea passed it on to the committee.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [],
+   "facts": [
+    "The back of the medal reads MARSHGATE HALF, 15.11.2026, 13.1 MILES, round the edge.",
+    "No names, because Brockley charge per medal for engraving.",
+    "The heron design was on version two by 13 September and Gareth had it."
+   ]
+  }
+ },
+ {
+  "id": "s0378",
+  "account": "acme",
+  "storyline": "pennywort-loyalty-app",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Beta survey + scan and go",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "freya-lindgren",
+    "to": [
+     "me"
+    ],
+    "date": "2026-09-18T15:22:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nThe draft survey for the 1 December beta group is in the research folder. Two questions for you:\n1. Do we ask about the paper card at all, or treat it as gone?\n2. Twelve questions is my limit. Steve wants twenty.\n\nFreya\nFreya Lindgren\nSenior UX Researcher, Acme Studio\nacme.example"
+   },
+   {
+    "from": "me",
+    "to": [
+     "freya-lindgren"
+    ],
+    "date": "2026-09-21T09:46:00+01:00",
+    "read": true,
+    "text": "Ask about the paper card, once. And twelve, I'll tell Steve.\n\nThanks,\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "freya-lindgren",
+    "to": [
+     "me"
+    ],
+    "date": "2026-09-22T16:11:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nSam told me about Steve's scan and go request. Before the change request is decided, I could run a quick concept test: two shops, a paper prototype, eight people, two days in the week of 5 October. It would tell us whether customers want it at all, which might help Steve decide.\n\n1. Roughly £900 in travel and vouchers\n2. I'd need Gabriel for a day to make the prototype\n\nFreya\nFreya Lindgren\nSenior UX Researcher, Acme Studio\nacme.example"
+   },
+   {
+    "from": "me",
+    "to": [
+     "freya-lindgren"
+    ],
+    "date": "2026-09-24T18:07:00+01:00",
+    "read": true,
+    "text": "Hi Freya,\n\nI'd rather not, and it isn't the idea. Until Steve signs the change request we'd be spending our own money on work Pennywort hasn't asked us to price, and you've got the Tandem study 13-16 October with the readout on the 28th.\n\nIf the change request is signed, the concept test goes first. I'll make sure Sam has it in the plan.\n\nThanks,\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "freya-lindgren",
+    "to": [
+     "me"
+    ],
+    "date": "2026-09-28T09:15:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nFair enough. I've written the test up so it's ready to go if it's signed.\n\nFreya\nFreya Lindgren\nSenior UX Researcher, Acme Studio\nacme.example"
+   }
+  ],
+  "truth": {
+   "summary": "Freya's beta survey stays at twelve questions with one about the paper card; Luis politely declined her offer of a scan and go concept test before Steve signs the change request, and promised the test would go first if it's signed.",
+   "ownerOwes": [
+    "Tell Steve the beta survey stays at twelve questions."
+   ],
+   "othersOwe": [],
+   "promisesByOwner": [
+    {
+     "text": "Tell Steve the survey is twelve questions",
+     "kept": false
+    },
+    {
+     "text": "Make sure Sam has the concept test in the plan if the change request is signed",
+     "kept": false
+    }
+   ],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-10-13",
+     "what": "Freya's Tandem study, 13-16 October"
+    },
+    {
+     "date": "2026-10-28",
+     "what": "Tandem readout"
+    },
+    {
+     "date": "2026-12-01",
+     "what": "Pennywort beta"
+    }
+   ],
+   "facts": [
+    "The beta survey: twelve questions, one about the paper card.",
+    "Freya's proposed scan and go concept test: two shops, a paper prototype, eight people, two days in the week of 5 October, about £900, Gabriel for a day.",
+    "Luis declined because the change request is unsigned."
+   ]
+  }
+ },
+ {
+  "id": "s0379",
+  "account": "personal",
+  "lang": "en",
+  "tags": [
+   "personal"
+  ],
+  "subject": "rucksack?",
+  "state": {
+   "inbox": true
+  },
+  "messages": [
+   {
+    "from": "mateo-cordero",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-02T08:14:00+01:00",
+    "read": true,
+    "text": "hey Luis\n\nstill on the 18.42 tonight. could I borrow your big grey rucksack for the Cairngorms on the 17th?\n\nthe strap on mine went on the last trip. I'll bring it back with the duvet, promise"
+   },
+   {
+    "from": "me",
+    "to": [
+     "mateo-cordero"
+    ],
+    "date": "2026-10-02T12:31:00+01:00",
+    "read": true,
+    "text": "yes, it's on top of the wardrobe in the spare room, help yourself. Niamh's home from 6 if you get in before me. and yes, the duvet\n\nL"
+   },
+   {
+    "from": "mateo-cordero",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-02T13:06:00+01:00",
+    "read": true,
+    "text": "amazing, thank you\n\nalso, could I borrow the camera with the 35mm on Monday for a site visit in Deptford?\n\nI'd have it back by 18.00"
+   }
+  ],
+  "truth": {
+   "summary": "Mateo, coming to London on the 18.42 on 2 October 2026, can borrow Luis's big grey rucksack for the Cairngorms on the 17th, and is waiting to hear whether he can borrow the camera with the 35mm lens for a site visit in Deptford on Monday.",
+   "ownerOwes": [
+    "Tell Mateo whether he can borrow the camera with the 35mm lens on Monday 5 October."
+   ],
+   "othersOwe": [
+    "Mateo: bring back the rucksack and the spare duvet"
+   ],
+   "promisesByOwner": [],
+   "promisesToOwner": [
+    {
+     "who": "mateo-cordero",
+     "text": "Bring the rucksack back with the duvet",
+     "kept": false
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2026-10-02",
+     "what": "Mateo arrives on the 18.42"
+    },
+    {
+     "date": "2026-10-05",
+     "what": "Mateo's site visit in Deptford; camera back by 18.00"
+    },
+    {
+     "date": "2026-10-17",
+     "what": "Mateo's Cairngorms trip"
+    }
+   ],
+   "facts": [
+    "The big grey rucksack is on top of the wardrobe in the spare room.",
+    "Niamh is home from 6pm on 2 October.",
+    "Mateo still has Luis's spare duvet."
+   ]
+  }
+ },
+ {
+  "id": "s0380",
+  "account": "personal",
+  "storyline": "marshgate-half-2026",
+  "lang": "en",
+  "tags": [
+   "personal"
+  ],
+  "subject": "the heron",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "me",
+    "to": [
+     "bea-collins"
+    ],
+    "date": "2026-09-29T21:06:00+01:00",
+    "read": true,
+    "text": "Gareth signed off the heron yesterday, version three. good thing we put it on top of the stack at the clubhouse. all five went round in the end. now I just have to draw it properly by 23 October.\n\ndo you still have that photo of the heron at the filter beds? I want the real wing shape, not my guess\n\nL"
+   },
+   {
+    "from": "bea-collins",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-01T07:32:00+01:00",
+    "read": true,
+    "text": "on my phone somewhere. will dig it out at the weekend\n\nbea"
+   }
+  ],
+  "truth": {
+   "summary": "Gareth approved version three of the heron medal design on 28 September; Luis asked Bea for her photo of the heron at the filter beds to get the wing shape right, and she said she'd send it at the weekend.",
+   "ownerOwes": [
+    "Draw the final heron artwork by 23 October."
+   ],
+   "othersOwe": [
+    "Bea: send her photo of the heron at the filter beds"
+   ],
+   "promisesByOwner": [],
+   "promisesToOwner": [
+    {
+     "who": "bea-collins",
+     "text": "Send the heron photo at the weekend",
+     "due": "2026-10-04",
+     "kept": false
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2026-09-28",
+     "what": "Gareth approves version three of the heron"
+    },
+    {
+     "date": "2026-10-23",
+     "what": "Final artwork due"
+    }
+   ],
+   "facts": [
+    "The approved design is the heron, version three.",
+    "Bea photographed a heron at the filter beds.",
+    "All five sketches went round at the clubhouse in August, with the heron on top."
+   ]
+  }
+ },
+ {
+  "id": "s0381",
+  "account": "acme",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Staging down Thursday 7-9am",
+  "listId": "everyone.acme.example",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "rhys-morgan",
+    "to": [
+     "list"
+    ],
+    "date": "2026-10-06T16:21:00+01:00",
+    "read": true,
+    "text": "Staging is down Thursday 8 October, 7:00-9:00, for the database upgrade. Plan attached. Don't demo anything off staging that morning.\n\nR",
+    "attachments": [
+     {
+      "filename": "staging-db-upgrade-8-Oct.pdf",
+      "mime": "application/pdf",
+      "size": 96512
+     }
+    ]
+   },
+   {
+    "from": "kate-sutherland",
+    "to": [
+     "list"
+    ],
+    "date": "2026-10-06T16:44:00+01:00",
+    "read": true,
+    "text": "Hi\n\nDoes the staging API go down with the database? The Holloway preview runs off the staging API and there's a client review at 8:30 on Thursday. I can test the preview at 6:55 if that helps.\n\nKate"
+   },
+   {
+    "from": "rhys-morgan",
+    "to": [
+     "list"
+    ],
+    "date": "2026-10-06T16:52:00+01:00",
+    "read": true,
+    "text": "Preview's had its own box since August. Not affected. Diagram attached.\n\nR",
+    "attachments": [
+     {
+      "filename": "infra-2026-08.png",
+      "mime": "image/png",
+      "size": 214876
+     }
+    ]
+   },
+   {
+    "from": "kate-sutherland",
+    "to": [
+     "list"
+    ],
+    "date": "2026-10-06T17:03:00+01:00",
+    "read": true,
+    "text": "Ah, I was looking at the old diagram. Ignore me, everyone.\n\nKate"
+   },
+   {
+    "from": "me",
+    "to": [
+     "list"
+    ],
+    "date": "2026-10-06T17:15:00+01:00",
+    "read": true,
+    "text": "Cheers. I'll use the preview for the 8:30 with Holloway.\n\nThanks,\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   }
+  ],
+  "truth": {
+   "summary": "Rhys announced staging downtime on Thursday 8 October 2026, 7:00-9:00; Kate thought the Holloway preview would go down with it, and Rhys cleared it up: the preview has had its own server since August.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-10-08T07:00:00+01:00",
+     "what": "Staging down 7:00-9:00 for the database upgrade"
+    }
+   ],
+   "facts": [
+    "Staging downtime was scheduled for 7:00-9:00 on 8 October 2026 for a database upgrade.",
+    "The Holloway preview has run on its own box since August 2026 and wasn't affected.",
+    "Kate had been looking at an old infrastructure diagram."
+   ]
+  }
+ },
+ {
+  "id": "s0382",
+  "account": "acme",
+  "storyline": "marcus-leaving",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "pennywort?",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "hollie-tran",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-14T11:06:00+01:00",
+    "read": true,
+    "text": "heard about marcus at standup, gutted. can I pick up pennywort? I'd like a client again after holloway, and I did the Kestrel referral screens so loyalty-ish stuff isn't new to me\n\nh"
+   },
+   {
+    "from": "me",
+    "to": [
+     "hollie-tran"
+    ],
+    "date": "2026-10-14T17:31:00+01:00",
+    "read": true,
+    "text": "Hey Hollie, not this time, sorry. Priya and I have already asked Dev to step up: he's had checkout since August and Steve's team know him. And I need you on Holloway right through the launch on 12 November.\n\nLet's talk about what you'd like next in our 1:1 on Friday.\n\nThanks,\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "hollie-tran",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-15T09:12:00+01:00",
+    "read": true,
+    "text": "fair. friday then. also I'm doing the collection for his leaving present, so don't go buying him anything yourself\n\nh"
+   }
+  ],
+  "truth": {
+   "summary": "Hollie asked to take over Pennywort after Marcus's news; Luis politely said no, because Dev is stepping up and he needs her on Holloway until the 12 November launch, and offered to talk about what's next at Friday's 1:1. Hollie is collecting for Marcus's leaving present.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [
+    {
+     "text": "Talk about Hollie's next project in their Friday 1:1",
+     "due": "2026-10-16",
+     "kept": false
+    }
+   ],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-10-16",
+     "what": "Luis and Hollie's 1:1"
+    },
+    {
+     "date": "2026-11-12",
+     "what": "Holloway launch"
+    }
+   ],
+   "facts": [
+    "Dev is stepping up on Pennywort, agreed by Priya and Luis.",
+    "Hollie stays on Holloway through the launch.",
+    "Hollie is collecting for Marcus's leaving present and asked Luis not to buy one himself."
+   ]
+  }
+ },
+ {
+  "id": "s0383",
+  "account": "acme",
+  "storyline": "pennywort-loyalty-app",
+  "lang": "en",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "subject": "Beta on 1 December: what we need from you",
+  "state": {
+   "inbox": true
+  },
+  "messages": [
+   {
+    "from": "me",
+    "to": [
+     "steve-barlow"
+    ],
+    "date": "2026-10-15T10:12:00+01:00",
+    "read": true,
+    "text": "Hi Steve,\n\nTwo things we need from Pennywort for the 1 December beta:\n- the list of 2,000 customers by Friday 6 November, so invites can go out on the 23rd\n- a decision on the scan and go change request (£14,500). We'd need it signed by 30 October to consider it for the beta\n\nThanks,\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example",
+    "cc": [
+     "marcus-adeyemi",
+     "freya-lindgren"
+    ]
+   },
+   {
+    "from": "steve-barlow",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-16T08:05:00+01:00",
+    "read": true,
+    "text": "Morning,\n\n1 December still holds? Marcus told me yesterday. I'll come back on that separately.\n\nList: marketing are pulling it. I'll take the CR to our FD.\n\nSteve\nSteve Barlow | Head of E-commerce | Pennywort Grocers\nPennywort House, Kirkstall Road, Leeds LS4\nM: 07700 900 662",
+    "cc": [
+     "marcus-adeyemi",
+     "freya-lindgren"
+    ]
+   },
+   {
+    "from": "me",
+    "to": [
+     "steve-barlow"
+    ],
+    "date": "2026-10-16T09:28:00+01:00",
+    "read": true,
+    "text": "1 December holds.\n\nThanks,\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example",
+    "cc": [
+     "marcus-adeyemi",
+     "freya-lindgren"
+    ]
+   },
+   {
+    "from": "freya-lindgren",
+    "to": [
+     "steve-barlow"
+    ],
+    "date": "2026-10-19T11:22:00+01:00",
+    "read": true,
+    "text": "Hi Steve,\n\nFor the beta invite we'd like one line of consent, so we can invite up to 12 beta customers to a short diary study:\n\n\"Pennywort may invite you to share feedback with our design partner, Acme Studio. You can say no at any time.\"\n\nCould your legal team check that wording? We can pick it up with the list on 6 November.\n\nFreya\nFreya Lindgren\nSenior UX Researcher, Acme Studio\nacme.example",
+    "cc": [
+     "me",
+     "marcus-adeyemi"
+    ]
+   },
+   {
+    "from": "marcus-adeyemi",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-21T22:48:00+01:00",
+    "read": false,
+    "text": "Hey Luis,\n\nLate one, sorry. I've put the beta build checklist in the Pennywort folder, with the items Dev will own marked in yellow. He's shadowing my review with Steve's team on 3 November.\n\nI'd leave scan and go off the checklist for now. Even with a signature this month, we'd still need time to test it at a till. Dev knows where the build notes are. Ask Freya about the panel and the invite copy.\n\nMarcus\nMarcus Adeyemi\nSenior Product Designer, Acme Studio\nacme.example"
+   },
+   {
+    "from": "steve-barlow",
+    "to": [
+     "me",
+     "freya-lindgren"
+    ],
+    "date": "2026-10-22T07:14:00+01:00",
+    "read": false,
+    "text": "Morning,\n\nCR goes to our FD on MONDAY 26th, not this week. List and Freya's wording back to you by 6 November.\n\nSteve\nSteve Barlow | Head of E-commerce | Pennywort Grocers\nPennywort House, Kirkstall Road, Leeds LS4\nM: 07700 900 662",
+    "cc": [
+     "marcus-adeyemi"
+    ]
+   }
+  ],
+  "truth": {
+   "summary": "Luis asked Pennywort for the 2,000-customer list by 6 November and a decision on the £14,500 scan and go change request by 30 October; Steve says the change request goes to his finance director on Monday 26 October and the list and Freya's consent wording will come by 6 November.",
+   "ownerOwes": [],
+   "othersOwe": [
+    "Steve Barlow: the signed (or declined) scan and go change request after his FD sees it on 26 October",
+    "Steve Barlow: the list of 2,000 beta customers and legal's answer on the consent wording by 6 November"
+   ],
+   "promisesByOwner": [],
+   "promisesToOwner": [
+    {
+     "who": "steve-barlow",
+     "text": "Send the customer list and the checked consent wording",
+     "due": "2026-11-06",
+     "kept": false
+    },
+    {
+     "who": "steve-barlow",
+     "text": "Take the change request to Pennywort's FD",
+     "due": "2026-10-26",
+     "kept": false
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2026-10-26",
+     "what": "Change request goes to Pennywort's finance director"
+    },
+    {
+     "date": "2026-10-30",
+     "what": "Last day to sign the change request for scan and go to be considered for the beta"
+    },
+    {
+     "date": "2026-11-03",
+     "what": "Marcus's review with Steve's team; Dev shadows"
+    },
+    {
+     "date": "2026-11-06",
+     "what": "Customer list and consent wording due"
+    },
+    {
+     "date": "2026-11-23",
+     "what": "Beta invites go out"
+    },
+    {
+     "date": "2026-12-01",
+     "what": "Beta to 2,000 customers"
+    }
+   ],
+   "facts": [
+    "The scan and go change request is £14,500; a signature by 30 October is needed for it to be considered for the beta.",
+    "The beta date of 1 December holds.",
+    "Freya's consent line: \"Pennywort may invite you to share feedback with our design partner, Acme Studio. You can say no at any time.\"",
+    "Up to 12 beta customers may be invited to a diary study.",
+    "Marcus's beta build checklist is in the Pennywort folder, with Dev's items marked in yellow."
+   ]
+  }
+ },
+ {
+  "id": "s0384",
+  "account": "personal",
+  "storyline": "marshgate-half-2026",
+  "lang": "en",
+  "tags": [
+   "personal"
+  ],
+  "subject": "Marshals' course walk, Sunday 18 October",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "gareth-pugh",
+    "to": [
+     "me",
+     "bea-collins"
+    ],
+    "date": "2026-10-12T10:02:00+01:00",
+    "read": true,
+    "text": "Hi all,\n\nMARSHALS\nThe course walk for marshals is on Sunday 18 October, 10am from the Marshgate Lane gates. We'll walk each marshal point and hand out bibs and whistles. Allow two and a half hours.\n\nMEDAL\nLuis, a gentle reminder that Brockley need the final artwork by Friday 23 October.\n\nThanks, Gareth\nGareth Pugh\nClub Secretary, Marshgate Runners\nmarshgaterunners.example | Tuesdays & Thursdays 6.45pm, Marshgate Lane gates"
+   },
+   {
+    "from": "bea-collins",
+    "to": [
+     "gareth-pugh",
+     "me"
+    ],
+    "date": "2026-10-14T19:41:00+01:00",
+    "read": true,
+    "text": "8x800 tonight / signs at the lock say miles 8 to 10 shut till the end of the month, bank works / we can't walk through\n\nbea"
+   },
+   {
+    "from": "gareth-pugh",
+    "to": [
+     "me",
+     "bea-collins"
+    ],
+    "date": "2026-10-15T09:03:00+01:00",
+    "read": true,
+    "text": "Hi all,\n\nROUTE\nThanks to Bea: the towpath between miles 8 and 10 is closed until 31 October. The council have confirmed it reopens before race day, so the course itself doesn't change.\n\nMARSHALS\nAs that's the stretch half the marshals are on, I'm cancelling Sunday's course walk. I'll send every marshal a marked map with a photo of their point instead, and you can pick up bibs at the start on Sunday 15 November.\n\nThanks, Gareth\nGareth Pugh\nClub Secretary, Marshgate Runners\nmarshgaterunners.example | Tuesdays & Thursdays 6.45pm, Marshgate Lane gates"
+   },
+   {
+    "from": "me",
+    "to": [
+     "gareth-pugh",
+     "bea-collins"
+    ],
+    "date": "2026-10-15T20:33:00+01:00",
+    "read": true,
+    "text": "fine by me, mile 9 is on that stretch anyway.\n\nGareth, I'll send the final vector file to Brockley by Friday 23 October and copy you. I'm doing the outlines this weekend.\n\nLuis"
+   },
+   {
+    "from": "gareth-pugh",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-16T08:47:00+01:00",
+    "read": true,
+    "text": "Thank you, Luis. Brockley have reminded me twice already.\n\nThanks, Gareth\nGareth Pugh\nClub Secretary, Marshgate Runners\nmarshgaterunners.example | Tuesdays & Thursdays 6.45pm, Marshgate Lane gates"
+   }
+  ],
+  "truth": {
+   "summary": "Gareth cancelled the marshals' course walk on Sunday 18 October because the towpath between miles 8 and 10 is closed until 31 October; marshals will get a marked map instead. Luis still owes Brockley's final medal vector file, due Friday 23 October.",
+   "ownerOwes": [
+    "Send Brockley Medals the final vector file by Friday 23 October and copy Gareth."
+   ],
+   "othersOwe": [
+    "Gareth: send each marshal a marked map with a photo of their point"
+   ],
+   "promisesByOwner": [
+    {
+     "text": "Send the final vector file to Brockley Medals and copy Gareth",
+     "due": "2026-10-23",
+     "kept": false
+    }
+   ],
+   "promisesToOwner": [
+    {
+     "who": "gareth-pugh",
+     "text": "Send every marshal a marked map and a photo of their point",
+     "kept": false
+    }
+   ],
+   "keyDates": [
+    {
+     "date": "2026-10-18",
+     "what": "Marshals' course walk (cancelled)"
+    },
+    {
+     "date": "2026-10-23",
+     "what": "Final medal artwork due to Brockley Medals"
+    },
+    {
+     "date": "2026-10-31",
+     "what": "Towpath between miles 8 and 10 closed until this date"
+    },
+    {
+     "date": "2026-11-15",
+     "what": "Race day; bibs handed out at the start"
+    }
+   ],
+   "facts": [
+    "The towpath between miles 8 and 10 is closed for bank works until 31 October; the council says it reopens before race day and the course doesn't change.",
+    "Bea spotted the closure; Gareth cancelled the walk.",
+    "Luis's marshal point, mile 9, is on the closed stretch."
+   ]
+  }
+ },
+ {
+  "id": "s0385",
+  "account": "acme",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Holloway object page transitions",
+  "state": {
+   "inbox": true
+  },
+  "messages": [
+   {
+    "from": "gabriel-santos",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-19T16:42:00+01:00",
+    "read": true,
+    "text": "Hey Luis!\n\nThe object page transitions for Holloway are up: https://proto.acme.example/holloway/object-expand-v3\n\nThree versions of the image expanding to full screen (160, 200 and 280ms). The 200ms one is my favourite. Could you have a look before I hand them to Anil? He wants them by the end of next week so they're in before we go live on 12 November 🙂\n\nGabi"
+   },
+   {
+    "from": "me",
+    "to": [
+     "gabriel-santos"
+    ],
+    "date": "2026-10-20T08:52:00+01:00",
+    "read": true,
+    "text": "Hey Gabi, I've only clicked through on my phone so far. I'll go through all three properly and send you notes by Wednesday 28 October, which still leaves Anil a couple of days.\n\nFirst impression: the 200ms one, yes.\n\nThanks,\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   }
+  ],
+  "truth": {
+   "summary": "Gabriel shared three image-expand transitions for the Holloway object page; Luis leans to the 200ms one and promised proper notes by Wednesday 28 October, before Gabriel hands them to Anil.",
+   "ownerOwes": [
+    "Send Gabriel notes on the three Holloway object page transitions by Wednesday 28 October."
+   ],
+   "othersOwe": [],
+   "promisesByOwner": [
+    {
+     "text": "Send Gabriel notes on all three transitions",
+     "due": "2026-10-28",
+     "kept": false
+    }
+   ],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-10-28",
+     "what": "Luis's notes due to Gabriel"
+    },
+    {
+     "date": "2026-10-30",
+     "what": "Anil wants the transitions by the end of the week"
+    },
+    {
+     "date": "2026-11-12",
+     "what": "Holloway launch"
+    }
+   ],
+   "facts": [
+    "The prototype is at https://proto.acme.example/holloway/object-expand-v3.",
+    "Three expand durations: 160, 200 and 280ms; Gabriel and Luis both prefer 200ms."
+   ]
+  }
+ },
+ {
+  "id": "s0386",
+  "account": "acme",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Recruiting for the Pennywort till test (FYI)",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "dev-malhotra",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-22T11:26:00+01:00",
+    "read": true,
+    "text": "Hi Luis\n\nFYI, I'm recruiting for the Pennywort till test: six remote sessions on Wednesday 4 November, people from Pennywort's customer panel. Screener and consent form attached, Freya's checked both. Nothing needed from you.\n\nI might shorten question 5 before the calls. The bit about the till takes up half the screen on my phone.\n\nThanks, Dev",
+    "attachments": [
+     {
+      "filename": "Pennywort-till-test-screener.pdf",
+      "mime": "application/pdf",
+      "size": 148220
+     },
+     {
+      "filename": "Pennywort-till-test-consent.pdf",
+      "mime": "application/pdf",
+      "size": 87310
+     }
+    ]
+   }
+  ],
+  "truth": {
+   "summary": "Dev is recruiting six people from Pennywort's customer panel for remote till-test sessions on Wednesday 4 November; Freya checked the screener and consent form, and nothing is needed from Luis.",
+   "ownerOwes": [],
+   "othersOwe": [],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-11-04",
+     "what": "Six remote Pennywort till-test sessions"
+    }
+   ],
+   "facts": [
+    "Six remote sessions with people from Pennywort's customer panel on 4 November 2026.",
+    "Freya checked the screener and the consent form.",
+    "Dev isn't sure question 5, about the till, reads right on a phone."
+   ]
+  }
+ },
+ {
+  "id": "s0387",
+  "account": "acme",
+  "storyline": "marcus-leaving",
+  "lang": "en",
+  "tags": [
+   "work"
+  ],
+  "subject": "Marcus: leaver checklist",
+  "state": {
+   "inbox": false
+  },
+  "messages": [
+   {
+    "from": "shona-mcleod",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-13T10:06:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nMarcus has sent in his resignation and I've had a note from Priya. His last day will be Friday 18 December.\n\nI'd like 45 minutes with you to go through the leaver checklist, the announcement to the studio and what happens with his clients. Could you do Thursday 22 October at 4.30, in the Snug?\n\nPlease let me know if that works and I'll send an invite.\n\nBest, Shona\nShona McLeod\nPeople Partner, Acme Studio\nPronouns: she/her"
+   },
+   {
+    "from": "me",
+    "to": [
+     "shona-mcleod"
+    ],
+    "date": "2026-10-13T11:21:00+01:00",
+    "read": true,
+    "text": "Hi Shona, the 22nd at 4.30 works.\n\nThanks,\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "shona-mcleod",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-19T14:32:00+01:00",
+    "read": true,
+    "text": "Hi Luis,\n\nA quick update: Marcus's exit interview is booked for Thursday 10 December at 11. You don't need to be there.\n\nOur meeting on Thursday is still on.\n\nBest, Shona\nShona McLeod\nPeople Partner, Acme Studio\nPronouns: she/her"
+   },
+   {
+    "from": "me",
+    "to": [
+     "shona-mcleod"
+    ],
+    "date": "2026-10-20T09:07:00+01:00",
+    "read": true,
+    "text": "Marcus has told Steve. He's asked for a call and sounds pretty unhappy. Should I take it or does Priya want to?\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+   },
+   {
+    "from": "shona-mcleod",
+    "to": [
+     "me"
+    ],
+    "date": "2026-10-22T15:41:00+01:00",
+    "read": false,
+    "text": "Hi Luis,\n\nI'm sorry for the late notice, but I'm cancelling our 4.30 today. Priya and I went through the announcement and the checklist this morning, before her leave, and she'd like to go through the client side with you herself, Pennywort included, when she's back on Monday 2 November. The call with Steve is on her list.\n\nI'll cancel the invite.\n\nBest, Shona\nShona McLeod\nPeople Partner, Acme Studio\nPronouns: she/her"
+   }
+  ],
+  "truth": {
+   "summary": "Shona's leaver meeting with Luis about Marcus (Thursday 22 October, 4.30) was cancelled at short notice; Priya will cover the client side, Pennywort included, with Luis when she's back on 2 November. Marcus's exit interview is on 10 December.",
+   "ownerOwes": [],
+   "othersOwe": [
+    "Priya: go through Marcus's clients and discuss Steve's request for a call with Luis after her leave"
+   ],
+   "promisesByOwner": [],
+   "promisesToOwner": [],
+   "keyDates": [
+    {
+     "date": "2026-10-22T16:30:00+01:00",
+     "what": "Leaver meeting in the Snug (cancelled)"
+    },
+    {
+     "date": "2026-11-02",
+     "what": "Priya back; she'll go through the client side with Luis"
+    },
+    {
+     "date": "2026-12-10T11:00:00+00:00",
+     "what": "Marcus's exit interview"
+    },
+    {
+     "date": "2026-12-18",
+     "what": "Marcus's last day"
+    }
+   ],
+   "facts": [
+    "Marcus's last day is Friday 18 December 2026.",
+    "His exit interview is Thursday 10 December at 11; Luis doesn't need to attend.",
+    "Priya and Shona covered the announcement and the leaver checklist on the morning of 22 October.",
+    "Marcus told Steve, who asked for a call; deciding who takes it is on Priya's list."
+   ]
+  }
+ }
+]

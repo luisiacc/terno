@@ -1,0 +1,134 @@
+[
+  {
+    "brand": "forkful",
+    "currency": "£",
+    "account": "personal",
+    "schedule": {
+      "every": "random",
+      "zone": "Europe/London",
+      "perWeek": [
+        1,
+        1.45
+      ],
+      "from": "2024-11-01"
+    },
+    "templates": [
+      {
+        "weight": 32,
+        "subject": "Your order SC-{ref} is confirmed",
+        "text": "The kitchen has your order\n\nThe restaurant has accepted your order. The app will update when the courier picks it up.\n\nOrder: SC-{ref}\nItems: {meal}\nPlaced: {date}, {time}\nEstimated delivery: In {minutes} minutes\nTotal charged: {total}\n\nAdd any delivery instructions in the app while the order is being prepared.\n\nTrack your order: https://sidecarsuppers.example/orders/SC-{ref}\n\nThis service email was sent because an order was placed with your Sidecar Suppers account.\n\nSidecar Suppers Ltd, 11 Bell Yard Mews, London SE1 3TN. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#a13b39;color:#fff;font-size:19px;font-weight:bold\">Sidecar Suppers</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">The kitchen has your order</h1><p style=\"margin:0 0 16px\">The restaurant has accepted your order. The app will update when the courier picks it up.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Order</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">SC-{ref}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Items</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{meal}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Placed</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{date}, {time}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Estimated delivery</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">In {minutes} minutes</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Total charged</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{total}</td></tr></table><p style=\"margin:0 0 16px\">Add any delivery instructions in the app while the order is being prepared.</p><p style=\"margin:0\"><a style=\"color:#a13b39;text-decoration:underline\" href=\"https://sidecarsuppers.example/orders/SC-{ref}\">Track your order</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">This service email was sent because an order was placed with your Sidecar Suppers account.<br>Sidecar Suppers Ltd, 11 Bell Yard Mews, London SE1 3TN. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "ref": {
+            "int": [
+              10000000,
+              99999999
+            ]
+          },
+          "meal": [
+            "Cumin Kitchen · Lamb and cumin noodles, smashed cucumber",
+            "Tamarind Tin · Chana masala, garlic naan and lime pickle",
+            "Alder Wok · Black bean aubergine, egg fried rice",
+            "Parakeet Table · Chicken katsu curry, miso slaw",
+            "Pine & Pita · Halloumi pita, lemon potatoes",
+            "Borough Roti · Jerk chicken, rice and peas",
+            "Peach Stone Pizza · Fennel sausage pizza, garlic dip",
+            "Tern Thai · Pad see ew, spring rolls",
+            "Still Pot · Beef bibimbap, kimchi",
+            "Mallow Bao · Char siu bao, sesame greens",
+            "Cumin Kitchen · Hand-pulled noodles with tomato and egg",
+            "Tamarind Tin · Paneer makhani, pilau rice",
+            "Pine & Pita · Lamb kofta wrap, hummus",
+            "Tern Thai · Massaman curry, jasmine rice",
+            "Alder Wok · Salt and pepper tofu, Singapore noodles",
+            "Peach Stone Pizza · Mushroom and taleggio pizza, rocket salad",
+            "Parchment Grill · Chicken shawarma plate, pickles",
+            "Parakeet Table · Salmon teriyaki bento, edamame",
+            "Borough Roti · Curry goat, fried plantain",
+            "Mallow Bao · Mushroom bao, pork dumplings",
+            "Papaya Bowl · Green papaya salad, sticky rice and grilled chicken",
+            "Still Pot · Kimchi fried rice, seaweed salad",
+            "Ember Tiffin · Chicken biryani, mint raita",
+            "Papaya Bowl · Crispy chilli tofu, coconut rice",
+            "Parchment Grill · Falafel wrap, fattoush",
+            "Ember Tiffin · Masala dosa, sambar and coconut chutney"
+          ],
+          "total": {
+            "money": [
+              17.5,
+              39
+            ]
+          },
+          "minutes": {
+            "int": [
+              25,
+              56
+            ]
+          }
+        }
+      },
+      {
+        "weight": 65,
+        "subject": "Sidecar Suppers receipt for order SC-{ref}",
+        "text": "Your order receipt\n\nPayment for your delivered order is complete.\n\nOrder: SC-{ref}\nItems: {meal}\nDate: {date}\nTotal paid, including fees: {total}\nPaid with: Card ending 0938\n\nOpen the order for the item prices, delivery fee and service charge.\n\nView your receipt: https://sidecarsuppers.example/orders/SC-{ref}/receipt\n\nThis service email was sent because an order was placed with your Sidecar Suppers account.\n\nSidecar Suppers Ltd, 11 Bell Yard Mews, London SE1 3TN. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#a13b39;color:#fff;font-size:19px;font-weight:bold\">Sidecar Suppers</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Your order receipt</h1><p style=\"margin:0 0 16px\">Payment for your delivered order is complete.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Order</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">SC-{ref}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Items</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{meal}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Date</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{date}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Total paid, including fees</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{total}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Paid with</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">Card ending 0938</td></tr></table><p style=\"margin:0 0 16px\">Open the order for the item prices, delivery fee and service charge.</p><p style=\"margin:0\"><a style=\"color:#a13b39;text-decoration:underline\" href=\"https://sidecarsuppers.example/orders/SC-{ref}/receipt\">View your receipt</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">This service email was sent because an order was placed with your Sidecar Suppers account.<br>Sidecar Suppers Ltd, 11 Bell Yard Mews, London SE1 3TN. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "ref": {
+            "int": [
+              10000000,
+              99999999
+            ]
+          },
+          "meal": [
+            "Cumin Kitchen · Lamb and cumin noodles, smashed cucumber",
+            "Tamarind Tin · Chana masala, garlic naan and lime pickle",
+            "Alder Wok · Black bean aubergine, egg fried rice",
+            "Parakeet Table · Chicken katsu curry, miso slaw",
+            "Pine & Pita · Halloumi pita, lemon potatoes",
+            "Borough Roti · Jerk chicken, rice and peas",
+            "Peach Stone Pizza · Fennel sausage pizza, garlic dip",
+            "Tern Thai · Pad see ew, spring rolls",
+            "Still Pot · Beef bibimbap, kimchi",
+            "Mallow Bao · Char siu bao, sesame greens",
+            "Cumin Kitchen · Hand-pulled noodles with tomato and egg",
+            "Tamarind Tin · Paneer makhani, pilau rice",
+            "Pine & Pita · Lamb kofta wrap, hummus",
+            "Tern Thai · Massaman curry, jasmine rice",
+            "Alder Wok · Salt and pepper tofu, Singapore noodles",
+            "Peach Stone Pizza · Mushroom and taleggio pizza, rocket salad",
+            "Parchment Grill · Chicken shawarma plate, pickles",
+            "Parakeet Table · Salmon teriyaki bento, edamame",
+            "Borough Roti · Curry goat, fried plantain",
+            "Mallow Bao · Mushroom bao, pork dumplings",
+            "Papaya Bowl · Green papaya salad, sticky rice and grilled chicken",
+            "Still Pot · Kimchi fried rice, seaweed salad",
+            "Ember Tiffin · Chicken biryani, mint raita",
+            "Papaya Bowl · Crispy chilli tofu, coconut rice",
+            "Parchment Grill · Falafel wrap, fattoush",
+            "Ember Tiffin · Masala dosa, sambar and coconut chutney"
+          ],
+          "total": {
+            "money": [
+              17.5,
+              39
+            ]
+          }
+        }
+      },
+      {
+        "weight": 3,
+        "subject": "A voucher for your next Sidecar order",
+        "text": "£5 off your next delivery\n\nIt's been a while since your last order. Enter TABLE{code} at checkout for £5 off an order of £20 or more from a participating restaurant.\n\nValid for seven days from {date}. Delivery and service fees don’t count towards the minimum spend.\n\nFind participating kitchens: https://sidecarsuppers.example/vouchers/TABLE{code}\n\nYou're receiving this offer because you opted in to Sidecar Suppers emails.\n\nUnsubscribe: https://sidecarsuppers.example/unsubscribe\n\nSidecar Suppers Ltd, 11 Bell Yard Mews, London SE1 3TN. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#a13b39;color:#fff;font-size:19px;font-weight:bold\">Sidecar Suppers</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">£5 off your next delivery</h1><p style=\"margin:0 0 16px\">It's been a while since your last order. Enter TABLE{code} at checkout for £5 off an order of £20 or more from a participating restaurant.</p><p style=\"margin:0 0 16px\">Valid for seven days from {date}. Delivery and service fees don’t count towards the minimum spend.</p><p style=\"margin:0\"><a style=\"color:#a13b39;text-decoration:underline\" href=\"https://sidecarsuppers.example/vouchers/TABLE{code}\">Find participating kitchens</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">You're receiving this offer because you opted in to Sidecar Suppers emails.<br><a style=\"color:#a13b39;text-decoration:underline\" href=\"https://sidecarsuppers.example/unsubscribe\">Unsubscribe</a><br>Sidecar Suppers Ltd, 11 Bell Yard Mews, London SE1 3TN. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "code": {
+            "int": [
+              100000,
+              999999
+            ]
+          }
+        }
+      }
+    ]
+  }
+]

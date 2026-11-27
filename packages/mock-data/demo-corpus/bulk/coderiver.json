@@ -1,0 +1,774 @@
+[
+  {
+    "brand": "coderiver",
+    "account": "acme",
+    "schedule": {
+      "every": "random",
+      "zone": "Europe/London",
+      "perWeek": [
+        4,
+        8
+      ],
+      "workdays": true
+    },
+    "templates": [
+      {
+        "weight": 3,
+        "subject": "[acme-studio/holloway-web] {title} (PR #{pr})",
+        "text": "{who} requested your review on this pull request.\n\nPull request: {title} #{pr}\nRepository: acme-studio/holloway-web\nCommits: {commits} into main\nChanges: {files} files, +{adds} -{dels}\n\n{note}\n\nReview changes: https://branchferries.example/acme-studio/holloway-web/pull/{pr}/files\n\nPreview: https://preview.branchferries.example/acme-studio/holloway-web/pr-{pr}\n\n--\nReply to this email directly or view it on Branch Ferries:\nhttps://branchferries.example/acme-studio/holloway-web/pull/{pr}\nYou are receiving this because your review was requested.\nManage notifications: https://branchferries.example/settings/notifications\nBranch Ferries Ltd, 4 Pier Head, Wapping, London E1W 2NN",
+        "html": "<!doctype html><html><body style=\"margin:0;padding:0;background:#f4f4f4;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f4f4;\"><tr><td align=\"center\" style=\"padding:24px 12px;\"><table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;\"><tr><td style=\"padding:18px 28px;background:#0f5c63;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#ffffff;\"><a href=\"https://branchferries.example/\" style=\"color:#ffffff;text-decoration:none;\">Branch Ferries</a></td></tr><tr><td style=\"padding:28px 28px 12px;\"><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">{who} requested your review on this pull request.</p><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 16px;border-top:1px solid #e5e5e5;\"><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Pull request</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{title} #{pr}</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Repository</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">acme-studio/holloway-web</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Commits</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{commits} into main</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Changes</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{files} files, +{adds} -{dels}</td></tr></table><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">{note}</p><p style=\"margin:0 0 20px;\"><a href=\"https://branchferries.example/acme-studio/holloway-web/pull/{pr}/files\" style=\"display:inline-block;padding:10px 18px;background:#0f5c63;color:#ffffff;text-decoration:none;border-radius:4px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;\">Review changes</a></p><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:13px;line-height:19px;color:#666;white-space:pre-line;\">Preview: <a href=\"https://preview.branchferries.example/acme-studio/holloway-web/pr-{pr}\" style=\"color:#0f5c63;\">https://preview.branchferries.example/acme-studio/holloway-web/pr-{pr}</a></p></td></tr><tr><td style=\"padding:16px 28px 24px;border-top:1px solid #eeeeee;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#666;\">--<br>Reply to this email directly or view it on Branch Ferries:<br><a href=\"https://branchferries.example/acme-studio/holloway-web/pull/{pr}\" style=\"color:#666;\">https://branchferries.example/acme-studio/holloway-web/pull/{pr}</a><br>You are receiving this because your review was requested.<br>Manage notifications: <a href=\"https://branchferries.example/settings/notifications\" style=\"color:#666;\">https://branchferries.example/settings/notifications</a><br>Branch Ferries Ltd, 4 Pier Head, Wapping, London E1W 2NN</td></tr></table></td></tr></table></body></html>",
+        "slots": {
+          "who": [
+            "Zainab Bello",
+            "Dev Malhotra",
+            "Gabriel Santos",
+            "Kasia Zielinska",
+            "Hollie Tran",
+            "Freya Lindgren",
+            "Jae Cho",
+            "Marcus Adeyemi",
+            "Rhys Morgan",
+            "Anil Joshi"
+          ],
+          "title": [
+            "Object page: zoomable images with keyboard controls",
+            "Collection search: filters for material and decade",
+            "Header: move visit info into the menu on mobile",
+            "What's on: event cards use the Fieldkit date component",
+            "Footer: accessibility statement and charity number",
+            "Object page: related objects row",
+            "Image loader: serve AVIF with a JPEG fallback",
+            "Homepage hero: respect reduced motion",
+            "Collection grid: keep image ratios while loading",
+            "Visit page: opening hours from the CMS",
+            "Search: highlight matched terms in results",
+            "Object captions: credit line and accession number",
+            "Fix focus order in the object image viewer",
+            "Newsletter sign-up: inline errors",
+            "Redirects for the old /collection/item URLs",
+            "Learning page: schools booking form",
+            "Replace the map embed with a static map and directions link",
+            "Cookie banner: essential cookies only by default",
+            "Object page: print stylesheet",
+            "Collection import: skip objects without a public image",
+            "Bump Fieldkit to the latest minor",
+            "Donate page: Gift Aid checkbox copy"
+          ],
+          "pr": {
+            "int": [
+              180,
+              720
+            ]
+          },
+          "commits": {
+            "int": [
+              1,
+              9
+            ]
+          },
+          "files": {
+            "int": [
+              1,
+              24
+            ]
+          },
+          "adds": {
+            "int": [
+              6,
+              640
+            ]
+          },
+          "dels": {
+            "int": [
+              0,
+              210
+            ]
+          },
+          "note": [
+            "Visual changes only. Before and after screenshots are in the description.",
+            "Two open questions in the description, both for design.",
+            "Followed the spacing tokens rather than the mock where they disagreed. Can you confirm that's fine?",
+            "Small one, should take five minutes.",
+            "Matches the latest frames in Ternfold. Shout if the hover state looks off.",
+            "Needs a design check before Friday's call with the museum.",
+            "Copy came from the Holloway team on Monday.",
+            "Mobile first; the desktop layout is unchanged.",
+            "Accessibility score on the object page goes from 91 to 100 with this.",
+            "Behind a flag until launch, so safe to merge once approved."
+          ]
+        }
+      },
+      {
+        "weight": 2.5,
+        "subject": "[acme-studio/fieldkit] {title} (PR #{pr})",
+        "text": "{who} requested your review on this pull request.\n\nPull request: {title} #{pr}\nRepository: acme-studio/fieldkit\nCommits: {commits} into main\nChanges: {files} files, +{adds} -{dels}\n\n{note}\n\nReview changes: https://branchferries.example/acme-studio/fieldkit/pull/{pr}/files\n\nPreview: https://preview.branchferries.example/acme-studio/fieldkit/pr-{pr}\n\n--\nReply to this email directly or view it on Branch Ferries:\nhttps://branchferries.example/acme-studio/fieldkit/pull/{pr}\nYou are receiving this because your review was requested.\nManage notifications: https://branchferries.example/settings/notifications\nBranch Ferries Ltd, 4 Pier Head, Wapping, London E1W 2NN",
+        "html": "<!doctype html><html><body style=\"margin:0;padding:0;background:#f4f4f4;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f4f4;\"><tr><td align=\"center\" style=\"padding:24px 12px;\"><table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;\"><tr><td style=\"padding:18px 28px;background:#0f5c63;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#ffffff;\"><a href=\"https://branchferries.example/\" style=\"color:#ffffff;text-decoration:none;\">Branch Ferries</a></td></tr><tr><td style=\"padding:28px 28px 12px;\"><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">{who} requested your review on this pull request.</p><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 16px;border-top:1px solid #e5e5e5;\"><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Pull request</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{title} #{pr}</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Repository</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">acme-studio/fieldkit</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Commits</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{commits} into main</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Changes</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{files} files, +{adds} -{dels}</td></tr></table><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">{note}</p><p style=\"margin:0 0 20px;\"><a href=\"https://branchferries.example/acme-studio/fieldkit/pull/{pr}/files\" style=\"display:inline-block;padding:10px 18px;background:#0f5c63;color:#ffffff;text-decoration:none;border-radius:4px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;\">Review changes</a></p><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:13px;line-height:19px;color:#666;white-space:pre-line;\">Preview: <a href=\"https://preview.branchferries.example/acme-studio/fieldkit/pr-{pr}\" style=\"color:#0f5c63;\">https://preview.branchferries.example/acme-studio/fieldkit/pr-{pr}</a></p></td></tr><tr><td style=\"padding:16px 28px 24px;border-top:1px solid #eeeeee;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#666;\">--<br>Reply to this email directly or view it on Branch Ferries:<br><a href=\"https://branchferries.example/acme-studio/fieldkit/pull/{pr}\" style=\"color:#666;\">https://branchferries.example/acme-studio/fieldkit/pull/{pr}</a><br>You are receiving this because your review was requested.<br>Manage notifications: <a href=\"https://branchferries.example/settings/notifications\" style=\"color:#666;\">https://branchferries.example/settings/notifications</a><br>Branch Ferries Ltd, 4 Pier Head, Wapping, London E1W 2NN</td></tr></table></td></tr></table></body></html>",
+        "slots": {
+          "who": [
+            "Zainab Bello",
+            "Dev Malhotra",
+            "Gabriel Santos",
+            "Kasia Zielinska",
+            "Hollie Tran",
+            "Freya Lindgren",
+            "Jae Cho",
+            "Marcus Adeyemi",
+            "Rhys Morgan",
+            "Anil Joshi"
+          ],
+          "title": [
+            "Button: loading state and spinner sizing",
+            "Tokens: add space-7 and space-8",
+            "Select: keyboard typeahead",
+            "Colour tokens: dark theme contrast fixes",
+            "Date picker: weeks start on Monday by default",
+            "Tooltip: open delay and reduced motion",
+            "Toast: stack limit of three",
+            "Checkbox: indeterminate state",
+            "Docs: usage guidance for Banner",
+            "Icons: 24 line icons from the Holloway set",
+            "Typography: replace display-xl with display-2xl",
+            "Tabs: overflow menu on narrow widths",
+            "Card: drop the default shadow, use the border token",
+            "Inputs: one focus ring token across all fields",
+            "Modal: trap focus and restore it on close",
+            "Radius scale: rename sm, md and lg to radius-1 to radius-4",
+            "Table: sticky header and optional zebra rows",
+            "Pagination: compact variant for mobile",
+            "Release 4.x: changelog and migration notes"
+          ],
+          "pr": {
+            "int": [
+              410,
+              980
+            ]
+          },
+          "commits": {
+            "int": [
+              1,
+              9
+            ]
+          },
+          "files": {
+            "int": [
+              1,
+              24
+            ]
+          },
+          "adds": {
+            "int": [
+              6,
+              640
+            ]
+          },
+          "dels": {
+            "int": [
+              0,
+              210
+            ]
+          },
+          "note": [
+            "Visual changes only. Before and after screenshots are in the description.",
+            "Two open questions in the description, both for design.",
+            "Followed the spacing tokens rather than the mock where they disagreed. Can you confirm that's fine?",
+            "Small one, should take five minutes.",
+            "Matches the latest frames in Ternfold. Shout if the hover state looks off.",
+            "Visual snapshots: 12 changed, none new. Approve them on the build page if they look right.",
+            "This is a breaking change for the Tandem theme, see the migration note.",
+            "Docs page updated in the same PR.",
+            "Pairs with the token changes in the Ternfold library, published this morning."
+          ]
+        }
+      },
+      {
+        "weight": 1.1,
+        "subject": "[acme-studio/tandem-rider-app] {title} (PR #{pr})",
+        "text": "{who} requested your review on this pull request.\n\nPull request: {title} #{pr}\nRepository: acme-studio/tandem-rider-app\nCommits: {commits} into main\nChanges: {files} files, +{adds} -{dels}\n\n{note}\n\nReview changes: https://branchferries.example/acme-studio/tandem-rider-app/pull/{pr}/files\n\nPreview: https://preview.branchferries.example/acme-studio/tandem-rider-app/pr-{pr}\n\n--\nReply to this email directly or view it on Branch Ferries:\nhttps://branchferries.example/acme-studio/tandem-rider-app/pull/{pr}\nYou are receiving this because your review was requested.\nManage notifications: https://branchferries.example/settings/notifications\nBranch Ferries Ltd, 4 Pier Head, Wapping, London E1W 2NN",
+        "html": "<!doctype html><html><body style=\"margin:0;padding:0;background:#f4f4f4;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f4f4;\"><tr><td align=\"center\" style=\"padding:24px 12px;\"><table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;\"><tr><td style=\"padding:18px 28px;background:#0f5c63;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#ffffff;\"><a href=\"https://branchferries.example/\" style=\"color:#ffffff;text-decoration:none;\">Branch Ferries</a></td></tr><tr><td style=\"padding:28px 28px 12px;\"><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">{who} requested your review on this pull request.</p><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 16px;border-top:1px solid #e5e5e5;\"><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Pull request</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{title} #{pr}</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Repository</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">acme-studio/tandem-rider-app</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Commits</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{commits} into main</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Changes</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{files} files, +{adds} -{dels}</td></tr></table><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">{note}</p><p style=\"margin:0 0 20px;\"><a href=\"https://branchferries.example/acme-studio/tandem-rider-app/pull/{pr}/files\" style=\"display:inline-block;padding:10px 18px;background:#0f5c63;color:#ffffff;text-decoration:none;border-radius:4px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;\">Review changes</a></p><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:13px;line-height:19px;color:#666;white-space:pre-line;\">Preview: <a href=\"https://preview.branchferries.example/acme-studio/tandem-rider-app/pr-{pr}\" style=\"color:#0f5c63;\">https://preview.branchferries.example/acme-studio/tandem-rider-app/pr-{pr}</a></p></td></tr><tr><td style=\"padding:16px 28px 24px;border-top:1px solid #eeeeee;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#666;\">--<br>Reply to this email directly or view it on Branch Ferries:<br><a href=\"https://branchferries.example/acme-studio/tandem-rider-app/pull/{pr}\" style=\"color:#666;\">https://branchferries.example/acme-studio/tandem-rider-app/pull/{pr}</a><br>You are receiving this because your review was requested.<br>Manage notifications: <a href=\"https://branchferries.example/settings/notifications\" style=\"color:#666;\">https://branchferries.example/settings/notifications</a><br>Branch Ferries Ltd, 4 Pier Head, Wapping, London E1W 2NN</td></tr></table></td></tr></table></body></html>",
+        "slots": {
+          "who": [
+            "Zainab Bello",
+            "Dev Malhotra",
+            "Gabriel Santos",
+            "Kasia Zielinska",
+            "Hollie Tran",
+            "Freya Lindgren",
+            "Jae Cho",
+            "Marcus Adeyemi",
+            "Rhys Morgan",
+            "Anil Joshi"
+          ],
+          "title": [
+            "Ride summary: map card and CO2 saved",
+            "Dock picker: show e-bike battery levels",
+            "Onboarding: skip button on step 2",
+            "Unlock screen: haptics on success",
+            "Payment sheet: wallet payment first",
+            "Dark mode: new map style",
+            "Pass screen: renewal date and price",
+            "Report a problem: photo upload",
+            "Tab bar: rename Rides to Trips",
+            "Dock list: walking time instead of distance",
+            "End ride: confirm when the dock does not respond",
+            "Account: delete account flow"
+          ],
+          "pr": {
+            "int": [
+              120,
+              690
+            ]
+          },
+          "commits": {
+            "int": [
+              1,
+              9
+            ]
+          },
+          "files": {
+            "int": [
+              1,
+              24
+            ]
+          },
+          "adds": {
+            "int": [
+              6,
+              640
+            ]
+          },
+          "dels": {
+            "int": [
+              0,
+              210
+            ]
+          },
+          "note": [
+            "Visual changes only. Before and after screenshots are in the description.",
+            "Two open questions in the description, both for design.",
+            "Followed the spacing tokens rather than the mock where they disagreed. Can you confirm that's fine?",
+            "Small one, should take five minutes.",
+            "Matches the latest frames in Ternfold. Shout if the hover state looks off.",
+            "TestFlight build 214 has this if you'd rather try it on a phone.",
+            "Chiara asked for this on Tuesday's call.",
+            "Android screenshots to follow, the emulator is being slow."
+          ]
+        }
+      },
+      {
+        "weight": 0.7,
+        "subject": "[acme-studio/pennywort-loyalty] {title} (PR #{pr})",
+        "text": "{who} requested your review on this pull request.\n\nPull request: {title} #{pr}\nRepository: acme-studio/pennywort-loyalty\nCommits: {commits} into main\nChanges: {files} files, +{adds} -{dels}\n\n{note}\n\nReview changes: https://branchferries.example/acme-studio/pennywort-loyalty/pull/{pr}/files\n\nPreview: https://preview.branchferries.example/acme-studio/pennywort-loyalty/pr-{pr}\n\n--\nReply to this email directly or view it on Branch Ferries:\nhttps://branchferries.example/acme-studio/pennywort-loyalty/pull/{pr}\nYou are receiving this because your review was requested.\nManage notifications: https://branchferries.example/settings/notifications\nBranch Ferries Ltd, 4 Pier Head, Wapping, London E1W 2NN",
+        "html": "<!doctype html><html><body style=\"margin:0;padding:0;background:#f4f4f4;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f4f4;\"><tr><td align=\"center\" style=\"padding:24px 12px;\"><table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;\"><tr><td style=\"padding:18px 28px;background:#0f5c63;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#ffffff;\"><a href=\"https://branchferries.example/\" style=\"color:#ffffff;text-decoration:none;\">Branch Ferries</a></td></tr><tr><td style=\"padding:28px 28px 12px;\"><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">{who} requested your review on this pull request.</p><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 16px;border-top:1px solid #e5e5e5;\"><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Pull request</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{title} #{pr}</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Repository</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">acme-studio/pennywort-loyalty</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Commits</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{commits} into main</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Changes</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{files} files, +{adds} -{dels}</td></tr></table><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">{note}</p><p style=\"margin:0 0 20px;\"><a href=\"https://branchferries.example/acme-studio/pennywort-loyalty/pull/{pr}/files\" style=\"display:inline-block;padding:10px 18px;background:#0f5c63;color:#ffffff;text-decoration:none;border-radius:4px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;\">Review changes</a></p><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:13px;line-height:19px;color:#666;white-space:pre-line;\">Preview: <a href=\"https://preview.branchferries.example/acme-studio/pennywort-loyalty/pr-{pr}\" style=\"color:#0f5c63;\">https://preview.branchferries.example/acme-studio/pennywort-loyalty/pr-{pr}</a></p></td></tr><tr><td style=\"padding:16px 28px 24px;border-top:1px solid #eeeeee;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#666;\">--<br>Reply to this email directly or view it on Branch Ferries:<br><a href=\"https://branchferries.example/acme-studio/pennywort-loyalty/pull/{pr}\" style=\"color:#666;\">https://branchferries.example/acme-studio/pennywort-loyalty/pull/{pr}</a><br>You are receiving this because your review was requested.<br>Manage notifications: <a href=\"https://branchferries.example/settings/notifications\" style=\"color:#666;\">https://branchferries.example/settings/notifications</a><br>Branch Ferries Ltd, 4 Pier Head, Wapping, London E1W 2NN</td></tr></table></td></tr></table></body></html>",
+        "slots": {
+          "who": [
+            "Zainab Bello",
+            "Dev Malhotra",
+            "Gabriel Santos",
+            "Kasia Zielinska",
+            "Hollie Tran",
+            "Freya Lindgren",
+            "Jae Cho",
+            "Marcus Adeyemi",
+            "Rhys Morgan",
+            "Anil Joshi"
+          ],
+          "title": [
+            "Card screen: raise brightness for the barcode",
+            "Offers: clip and unclip states",
+            "Store finder: today's opening hours",
+            "Points history: group by month",
+            "Sign-up: postcode lookup",
+            "Receipts: empty state",
+            "Home: points balance card",
+            "Offers: expiry label under three days"
+          ],
+          "pr": {
+            "int": [
+              12,
+              240
+            ]
+          },
+          "commits": {
+            "int": [
+              1,
+              9
+            ]
+          },
+          "files": {
+            "int": [
+              1,
+              24
+            ]
+          },
+          "adds": {
+            "int": [
+              6,
+              640
+            ]
+          },
+          "dels": {
+            "int": [
+              0,
+              210
+            ]
+          },
+          "note": [
+            "Visual changes only. Before and after screenshots are in the description.",
+            "Two open questions in the description, both for design.",
+            "Followed the spacing tokens rather than the mock where they disagreed. Can you confirm that's fine?",
+            "Small one, should take five minutes.",
+            "Matches the latest frames in Ternfold. Shout if the hover state looks off.",
+            "Steve wants this in the beta build, so it would be good to merge this week.",
+            "Tested on the small Android phone from the device drawer."
+          ]
+        }
+      },
+      {
+        "weight": 2,
+        "subject": "Re: [acme-studio/fieldkit] {title} (PR #{pr})",
+        "text": "{who} {verdict}\n\nView pull request: https://branchferries.example/acme-studio/fieldkit/pull/{pr}\n\n--\nReply to this email directly or view it on Branch Ferries:\nhttps://branchferries.example/acme-studio/fieldkit/pull/{pr}\nYou are receiving this because you authored the thread.\nManage notifications: https://branchferries.example/settings/notifications\nBranch Ferries Ltd, 4 Pier Head, Wapping, London E1W 2NN",
+        "html": "<!doctype html><html><body style=\"margin:0;padding:0;background:#f4f4f4;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f4f4;\"><tr><td align=\"center\" style=\"padding:24px 12px;\"><table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;\"><tr><td style=\"padding:18px 28px;background:#0f5c63;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#ffffff;\"><a href=\"https://branchferries.example/\" style=\"color:#ffffff;text-decoration:none;\">Branch Ferries</a></td></tr><tr><td style=\"padding:28px 28px 12px;\"><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">{who} {verdict}</p><p style=\"margin:0 0 20px;\"><a href=\"https://branchferries.example/acme-studio/fieldkit/pull/{pr}\" style=\"display:inline-block;padding:10px 18px;background:#0f5c63;color:#ffffff;text-decoration:none;border-radius:4px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;\">View pull request</a></p></td></tr><tr><td style=\"padding:16px 28px 24px;border-top:1px solid #eeeeee;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#666;\">--<br>Reply to this email directly or view it on Branch Ferries:<br><a href=\"https://branchferries.example/acme-studio/fieldkit/pull/{pr}\" style=\"color:#666;\">https://branchferries.example/acme-studio/fieldkit/pull/{pr}</a><br>You are receiving this because you authored the thread.<br>Manage notifications: <a href=\"https://branchferries.example/settings/notifications\" style=\"color:#666;\">https://branchferries.example/settings/notifications</a><br>Branch Ferries Ltd, 4 Pier Head, Wapping, London E1W 2NN</td></tr></table></td></tr></table></body></html>",
+        "slots": {
+          "who": [
+            "Zainab Bello",
+            "Dev Malhotra",
+            "Gabriel Santos",
+            "Kasia Zielinska",
+            "Hollie Tran",
+            "Freya Lindgren",
+            "Jae Cho",
+            "Marcus Adeyemi",
+            "Rhys Morgan",
+            "Anil Joshi"
+          ],
+          "title": [
+            "Docs: when to use Banner and when to use Toast",
+            "Tokens: warm neutral ramp for the Holloway theme",
+            "Docs: spacing guidance for dense tables",
+            "Colour tokens: rename brand-* to accent-*",
+            "Typography: tighter line height for display sizes",
+            "Docs: content guidelines for error messages",
+            "Icon sizes: 16, 20 and 24 only",
+            "Holloway theme: first token set",
+            "Motion tokens: duration-fast and duration-base",
+            "Focus ring: 2px offset in high contrast mode",
+            "Docs: empty state patterns with examples",
+            "Tokens: Tandem theme colours from the brand refresh"
+          ],
+          "pr": {
+            "int": [
+              410,
+              980
+            ]
+          },
+          "verdict": [
+            "approved these changes.\n\nLooks good. Merge once the snapshots pass.",
+            "approved these changes.\n\nNice, much clearer than before.",
+            "approved these changes.",
+            "requested changes on this pull request.\n\nThe new names break the Tandem theme, which still imports the old ones. Can we keep aliases for one release?",
+            "requested changes on this pull request.\n\nTwo of the examples use hard-coded hex values. They should reference the tokens.",
+            "left review comments.\n\nA couple of wording nits inline, nothing blocking.",
+            "left review comments.\n\nCan we check this in dark mode before merging? The neutral ramp looks very flat there.",
+            "commented on this pull request.\n\nI'll test it against the Holloway build tomorrow morning and approve then.",
+            "left review comments.\n\nShould this be a minor release rather than a patch? It changes defaults.",
+            "approved these changes.\n\nOne small thing in the docs example, fine to fix in a follow-up."
+          ]
+        }
+      },
+      {
+        "weight": 2,
+        "subject": "Re: [acme-studio/holloway-web] {issue} (Issue #{num})",
+        "text": "{who} mentioned you in this issue.\n\n{comment}\n\nView issue: https://branchferries.example/acme-studio/holloway-web/issues/{num}#comment-{cid}\n\n--\nReply to this email directly or view it on Branch Ferries:\nhttps://branchferries.example/acme-studio/holloway-web/issues/{num}#comment-{cid}\nYou are receiving this because you were mentioned.\nManage notifications: https://branchferries.example/settings/notifications\nBranch Ferries Ltd, 4 Pier Head, Wapping, London E1W 2NN",
+        "html": "<!doctype html><html><body style=\"margin:0;padding:0;background:#f4f4f4;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f4f4;\"><tr><td align=\"center\" style=\"padding:24px 12px;\"><table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;\"><tr><td style=\"padding:18px 28px;background:#0f5c63;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#ffffff;\"><a href=\"https://branchferries.example/\" style=\"color:#ffffff;text-decoration:none;\">Branch Ferries</a></td></tr><tr><td style=\"padding:28px 28px 12px;\"><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">{who} mentioned you in this issue.</p><div style=\"margin:0 0 16px;padding:10px 12px;background:#f6f8fa;border-left:3px solid #d0d7de;font-family:Menlo,Consolas,monospace;font-size:13px;line-height:19px;color:#24292f;white-space:pre-wrap;\">{comment}</div><p style=\"margin:0 0 20px;\"><a href=\"https://branchferries.example/acme-studio/holloway-web/issues/{num}#comment-{cid}\" style=\"display:inline-block;padding:10px 18px;background:#0f5c63;color:#ffffff;text-decoration:none;border-radius:4px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;\">View issue</a></p></td></tr><tr><td style=\"padding:16px 28px 24px;border-top:1px solid #eeeeee;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#666;\">--<br>Reply to this email directly or view it on Branch Ferries:<br><a href=\"https://branchferries.example/acme-studio/holloway-web/issues/{num}#comment-{cid}\" style=\"color:#666;\">https://branchferries.example/acme-studio/holloway-web/issues/{num}#comment-{cid}</a><br>You are receiving this because you were mentioned.<br>Manage notifications: <a href=\"https://branchferries.example/settings/notifications\" style=\"color:#666;\">https://branchferries.example/settings/notifications</a><br>Branch Ferries Ltd, 4 Pier Head, Wapping, London E1W 2NN</td></tr></table></td></tr></table></body></html>",
+        "slots": {
+          "who": [
+            "Zainab Bello",
+            "Dev Malhotra",
+            "Gabriel Santos",
+            "Kasia Zielinska",
+            "Hollie Tran",
+            "Freya Lindgren",
+            "Jae Cho",
+            "Marcus Adeyemi",
+            "Rhys Morgan",
+            "Anil Joshi"
+          ],
+          "issue": [
+            "Object page images jump when the caption loads",
+            "Search returns nothing for 'loom'",
+            "Mobile menu covers the cookie banner",
+            "Event dates show in US format on Safari",
+            "Decide behaviour for objects with no image",
+            "Visit page: what to show on bank holidays",
+            "Collection filters reset when you press back",
+            "Alt text missing on 60 imported objects",
+            "Contrast fails on the gold link colour",
+            "Empty state for search with filters",
+            "Homepage carousel autoplays on mobile",
+            "Object page share button: keep or drop?",
+            "Launch checklist: redirects, analytics, 404 page",
+            "Footer links wrap badly at 360px"
+          ],
+          "num": {
+            "int": [
+              60,
+              700
+            ]
+          },
+          "cid": {
+            "int": [
+              1200000,
+              1899999
+            ]
+          },
+          "comment": [
+            "@lcordero is this still blocked on design?",
+            "@lcordero can you confirm which of the two options in the description we're going with? I'd like to pick it up tomorrow.",
+            "Tagging @lcordero for a design decision. Both options are in the screenshots above.",
+            "@lcordero is the mobile layout in Ternfold final? I don't want to build the wrong one.",
+            "This came up on the Holloway call again. @lcordero can we agree the behaviour this week?",
+            "Reproduced on an iPhone 13. @lcordero what should the empty state say?",
+            "@lcordero Margaret asked about this in her last email. Do you want to reply or shall I?",
+            "Fixed on the branch. @lcordero can you have a look on the preview link before I close this?",
+            "@lcordero adding you since it touches the type scale.",
+            "Moving this to the launch milestone. @lcordero shout if you disagree."
+          ]
+        }
+      },
+      {
+        "weight": 0.8,
+        "subject": "[acme-studio/holloway-web] {issue} (Issue #{num})",
+        "text": "{who} assigned you to this issue.\n\nIssue: {issue} #{num}\nMilestone: {milestone}\nLabels: {labels}\n\nView issue: https://branchferries.example/acme-studio/holloway-web/issues/{num}\n\n--\nReply to this email directly or view it on Branch Ferries:\nhttps://branchferries.example/acme-studio/holloway-web/issues/{num}\nYou are receiving this because you were assigned.\nManage notifications: https://branchferries.example/settings/notifications\nBranch Ferries Ltd, 4 Pier Head, Wapping, London E1W 2NN",
+        "html": "<!doctype html><html><body style=\"margin:0;padding:0;background:#f4f4f4;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f4f4;\"><tr><td align=\"center\" style=\"padding:24px 12px;\"><table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;\"><tr><td style=\"padding:18px 28px;background:#0f5c63;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#ffffff;\"><a href=\"https://branchferries.example/\" style=\"color:#ffffff;text-decoration:none;\">Branch Ferries</a></td></tr><tr><td style=\"padding:28px 28px 12px;\"><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">{who} assigned you to this issue.</p><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 16px;border-top:1px solid #e5e5e5;\"><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Issue</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{issue} #{num}</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Milestone</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{milestone}</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Labels</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{labels}</td></tr></table><p style=\"margin:0 0 20px;\"><a href=\"https://branchferries.example/acme-studio/holloway-web/issues/{num}\" style=\"display:inline-block;padding:10px 18px;background:#0f5c63;color:#ffffff;text-decoration:none;border-radius:4px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;\">View issue</a></p></td></tr><tr><td style=\"padding:16px 28px 24px;border-top:1px solid #eeeeee;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#666;\">--<br>Reply to this email directly or view it on Branch Ferries:<br><a href=\"https://branchferries.example/acme-studio/holloway-web/issues/{num}\" style=\"color:#666;\">https://branchferries.example/acme-studio/holloway-web/issues/{num}</a><br>You are receiving this because you were assigned.<br>Manage notifications: <a href=\"https://branchferries.example/settings/notifications\" style=\"color:#666;\">https://branchferries.example/settings/notifications</a><br>Branch Ferries Ltd, 4 Pier Head, Wapping, London E1W 2NN</td></tr></table></td></tr></table></body></html>",
+        "slots": {
+          "who": [
+            "Zainab Bello",
+            "Dev Malhotra",
+            "Gabriel Santos",
+            "Kasia Zielinska",
+            "Hollie Tran",
+            "Freya Lindgren",
+            "Jae Cho",
+            "Marcus Adeyemi",
+            "Rhys Morgan",
+            "Anil Joshi"
+          ],
+          "issue": [
+            "Object page images jump when the caption loads",
+            "Search returns nothing for 'loom'",
+            "Mobile menu covers the cookie banner",
+            "Event dates show in US format on Safari",
+            "Decide behaviour for objects with no image",
+            "Visit page: what to show on bank holidays",
+            "Collection filters reset when you press back",
+            "Alt text missing on 60 imported objects",
+            "Contrast fails on the gold link colour",
+            "Empty state for search with filters",
+            "Homepage carousel autoplays on mobile",
+            "Object page share button: keep or drop?",
+            "Launch checklist: redirects, analytics, 404 page",
+            "Footer links wrap badly at 360px"
+          ],
+          "num": {
+            "int": [
+              60,
+              700
+            ]
+          },
+          "milestone": [
+            "Beta",
+            "Content freeze",
+            "Launch",
+            "Post-launch",
+            "Accessibility audit"
+          ],
+          "labels": [
+            "design",
+            "design, bug",
+            "design, needs decision",
+            "accessibility",
+            "content",
+            "design, mobile"
+          ]
+        }
+      },
+      {
+        "weight": 1.4,
+        "subject": "Re: [acme-studio/fieldkit] {issue} (Issue #{num})",
+        "text": "{who} commented on this issue.\n\n{comment}\n\nView issue: https://branchferries.example/acme-studio/fieldkit/issues/{num}#comment-{cid}\n\n--\nReply to this email directly or view it on Branch Ferries:\nhttps://branchferries.example/acme-studio/fieldkit/issues/{num}#comment-{cid}\nYou are receiving this because you are subscribed to this thread.\nManage notifications: https://branchferries.example/settings/notifications\nBranch Ferries Ltd, 4 Pier Head, Wapping, London E1W 2NN",
+        "html": "<!doctype html><html><body style=\"margin:0;padding:0;background:#f4f4f4;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f4f4;\"><tr><td align=\"center\" style=\"padding:24px 12px;\"><table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;\"><tr><td style=\"padding:18px 28px;background:#0f5c63;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#ffffff;\"><a href=\"https://branchferries.example/\" style=\"color:#ffffff;text-decoration:none;\">Branch Ferries</a></td></tr><tr><td style=\"padding:28px 28px 12px;\"><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">{who} commented on this issue.</p><div style=\"margin:0 0 16px;padding:10px 12px;background:#f6f8fa;border-left:3px solid #d0d7de;font-family:Menlo,Consolas,monospace;font-size:13px;line-height:19px;color:#24292f;white-space:pre-wrap;\">{comment}</div><p style=\"margin:0 0 20px;\"><a href=\"https://branchferries.example/acme-studio/fieldkit/issues/{num}#comment-{cid}\" style=\"display:inline-block;padding:10px 18px;background:#0f5c63;color:#ffffff;text-decoration:none;border-radius:4px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;\">View issue</a></p></td></tr><tr><td style=\"padding:16px 28px 24px;border-top:1px solid #eeeeee;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#666;\">--<br>Reply to this email directly or view it on Branch Ferries:<br><a href=\"https://branchferries.example/acme-studio/fieldkit/issues/{num}#comment-{cid}\" style=\"color:#666;\">https://branchferries.example/acme-studio/fieldkit/issues/{num}#comment-{cid}</a><br>You are receiving this because you are subscribed to this thread.<br>Manage notifications: <a href=\"https://branchferries.example/settings/notifications\" style=\"color:#666;\">https://branchferries.example/settings/notifications</a><br>Branch Ferries Ltd, 4 Pier Head, Wapping, London E1W 2NN</td></tr></table></td></tr></table></body></html>",
+        "slots": {
+          "who": [
+            "Zainab Bello",
+            "Dev Malhotra",
+            "Gabriel Santos",
+            "Kasia Zielinska",
+            "Hollie Tran",
+            "Freya Lindgren",
+            "Jae Cho",
+            "Marcus Adeyemi",
+            "Rhys Morgan",
+            "Anil Joshi"
+          ],
+          "issue": [
+            "Date picker is not usable with a keyboard",
+            "Select dropdown clipped inside Modal",
+            "Token names for elevation are confusing",
+            "Docs site search misses component props",
+            "Button text wraps in German translations",
+            "Icon set: need a 'download' variant with a line",
+            "Toast announces twice in VoiceOver",
+            "Dark theme: disabled text fails contrast",
+            "Do we still need the Chip component?",
+            "Spacing tokens out of sync between Ternfold and code"
+          ],
+          "num": {
+            "int": [
+              300,
+              960
+            ]
+          },
+          "cid": {
+            "int": [
+              1200000,
+              1899999
+            ]
+          },
+          "comment": [
+            "Same thing on the Tandem app. Screenshot added above.",
+            "I can take this next sprint if nobody else has.",
+            "Should be fixed in the latest release. Can someone confirm on their project?",
+            "Closing as a duplicate of an older issue, details there.",
+            "We worked around it on Holloway with a wrapper. Not pretty, but it unblocks things.",
+            "Added to the agenda for Thursday's design system sync.",
+            "I think this needs a design decision before anyone builds it.",
+            "Pushed a fix to a branch, PR coming once the snapshots pass.",
+            "Labelled as a good first issue for Ellie when she starts.",
+            "Still happening on 4.2. Steps in the original post still reproduce it."
+          ]
+        }
+      },
+      {
+        "weight": 1.3,
+        "subject": "[acme-studio/{repo}] Run failed: {branch} ({sha})",
+        "text": "Run failed for {branch} ({sha}).\n\n{failure}\n\nRepository: acme-studio/{repo}\nTriggered by: your push to {branch}\nDuration: {mins}m {secs}s\n\nView run: https://branchferries.example/acme-studio/{repo}/runs/{run}\n\n--\nYou are receiving this because you pushed to acme-studio/{repo}.\nManage run notifications: https://branchferries.example/settings/notifications#runs\nBranch Ferries Ltd, 4 Pier Head, Wapping, London E1W 2NN",
+        "html": "<!doctype html><html><body style=\"margin:0;padding:0;background:#f4f4f4;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f4f4;\"><tr><td align=\"center\" style=\"padding:24px 12px;\"><table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;\"><tr><td style=\"padding:18px 28px;background:#0f5c63;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#ffffff;\"><a href=\"https://branchferries.example/\" style=\"color:#ffffff;text-decoration:none;\">Branch Ferries</a></td></tr><tr><td style=\"padding:28px 28px 12px;\"><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">Run failed for {branch} ({sha}).</p><div style=\"margin:0 0 16px;padding:10px 12px;background:#f6f8fa;border-left:3px solid #d0d7de;font-family:Menlo,Consolas,monospace;font-size:13px;line-height:19px;color:#24292f;white-space:pre-wrap;\">{failure}</div><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 16px;border-top:1px solid #e5e5e5;\"><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Repository</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">acme-studio/{repo}</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Triggered by</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">your push to {branch}</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Duration</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{mins}m {secs}s</td></tr></table><p style=\"margin:0 0 20px;\"><a href=\"https://branchferries.example/acme-studio/{repo}/runs/{run}\" style=\"display:inline-block;padding:10px 18px;background:#0f5c63;color:#ffffff;text-decoration:none;border-radius:4px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;\">View run</a></p></td></tr><tr><td style=\"padding:16px 28px 24px;border-top:1px solid #eeeeee;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#666;\">--<br>You are receiving this because you pushed to acme-studio/{repo}.<br>Manage run notifications: <a href=\"https://branchferries.example/settings/notifications#runs\" style=\"color:#666;\">https://branchferries.example/settings/notifications#runs</a><br>Branch Ferries Ltd, 4 Pier Head, Wapping, London E1W 2NN</td></tr></table></td></tr></table></body></html>",
+        "slots": {
+          "repo": [
+            "fieldkit",
+            "fieldkit",
+            "holloway-web"
+          ],
+          "branch": [
+            "lc/holloway-tokens",
+            "lc/banner-docs",
+            "lc/motion-tokens",
+            "lc/type-scale",
+            "lc/focus-ring",
+            "lc/error-copy",
+            "lc/empty-states",
+            "lc/accent-rename",
+            "lc/tandem-theme"
+          ],
+          "sha": [
+            "3451bd1",
+            "b13c455",
+            "8a67a62",
+            "bc04290",
+            "5ecbf05",
+            "c03d24d",
+            "cfb2799",
+            "64970c2",
+            "0b694f2",
+            "20845b8",
+            "3839621",
+            "bf045c5",
+            "5f8bd0a",
+            "626e7f9",
+            "e3971a5",
+            "38a79ea",
+            "81cbb26",
+            "510019e",
+            "66e6ec6",
+            "2a75258",
+            "86a9477",
+            "aabcc41",
+            "b984b1d",
+            "2bfc1fd",
+            "364f282",
+            "ae91c00",
+            "f826028",
+            "23452aa",
+            "725bfb3",
+            "ad300a9",
+            "89cea6a",
+            "cb18f13",
+            "bed50af",
+            "ff6357a",
+            "677b949",
+            "a4f08d3",
+            "c1fbf04",
+            "7f46898",
+            "e17ff3e",
+            "9dc6c90",
+            "8dc74d1",
+            "ec6a0ef",
+            "e7bae59",
+            "2016ade",
+            "e654c43"
+          ],
+          "failure": [
+            "Visual snapshots\n  snapshots    failed    14 changed snapshots need approval",
+            "Visual snapshots\n  snapshots    failed    3 changed snapshots need approval",
+            "Lint and test\n  lint    failed    stylelint: 2 errors in tokens.css\n  test    skipped",
+            "Lint and test\n  lint    passed\n  test    failed    Process completed with exit code 1",
+            "Accessibility checks\n  axe    failed    color-contrast: 4 elements",
+            "Build docs site\n  build    failed    Cannot find module './banner-examples'",
+            "Build preview\n  build    failed    Image optimisation timed out after 600s"
+          ],
+          "mins": {
+            "int": [
+              1,
+              14
+            ]
+          },
+          "secs": {
+            "int": [
+              0,
+              59
+            ]
+          },
+          "run": {
+            "int": [
+              80000,
+              99999
+            ]
+          }
+        }
+      },
+      {
+        "weight": 1,
+        "subject": "Re: [acme-studio/holloway-web] {title} (PR #{pr})",
+        "text": "Merged #{pr} into main.\n\n{who} merged commit {sha} into main. The branch can be deleted.\n\nView pull request: https://branchferries.example/acme-studio/holloway-web/pull/{pr}\n\n--\nReply to this email directly or view it on Branch Ferries:\nhttps://branchferries.example/acme-studio/holloway-web/pull/{pr}\nYou are receiving this because you reviewed this pull request.\nManage notifications: https://branchferries.example/settings/notifications\nBranch Ferries Ltd, 4 Pier Head, Wapping, London E1W 2NN",
+        "html": "<!doctype html><html><body style=\"margin:0;padding:0;background:#f4f4f4;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f4f4;\"><tr><td align=\"center\" style=\"padding:24px 12px;\"><table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;\"><tr><td style=\"padding:18px 28px;background:#0f5c63;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#ffffff;\"><a href=\"https://branchferries.example/\" style=\"color:#ffffff;text-decoration:none;\">Branch Ferries</a></td></tr><tr><td style=\"padding:28px 28px 12px;\"><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">Merged #{pr} into main.</p><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">{who} merged commit {sha} into main. The branch can be deleted.</p><p style=\"margin:0 0 20px;\"><a href=\"https://branchferries.example/acme-studio/holloway-web/pull/{pr}\" style=\"display:inline-block;padding:10px 18px;background:#0f5c63;color:#ffffff;text-decoration:none;border-radius:4px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;\">View pull request</a></p></td></tr><tr><td style=\"padding:16px 28px 24px;border-top:1px solid #eeeeee;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#666;\">--<br>Reply to this email directly or view it on Branch Ferries:<br><a href=\"https://branchferries.example/acme-studio/holloway-web/pull/{pr}\" style=\"color:#666;\">https://branchferries.example/acme-studio/holloway-web/pull/{pr}</a><br>You are receiving this because you reviewed this pull request.<br>Manage notifications: <a href=\"https://branchferries.example/settings/notifications\" style=\"color:#666;\">https://branchferries.example/settings/notifications</a><br>Branch Ferries Ltd, 4 Pier Head, Wapping, London E1W 2NN</td></tr></table></td></tr></table></body></html>",
+        "slots": {
+          "who": [
+            "Zainab Bello",
+            "Dev Malhotra",
+            "Gabriel Santos",
+            "Kasia Zielinska",
+            "Hollie Tran",
+            "Freya Lindgren",
+            "Jae Cho",
+            "Marcus Adeyemi",
+            "Rhys Morgan",
+            "Anil Joshi"
+          ],
+          "title": [
+            "Object page: zoomable images with keyboard controls",
+            "Collection search: filters for material and decade",
+            "Header: move visit info into the menu on mobile",
+            "What's on: event cards use the Fieldkit date component",
+            "Footer: accessibility statement and charity number",
+            "Object page: related objects row",
+            "Image loader: serve AVIF with a JPEG fallback",
+            "Homepage hero: respect reduced motion",
+            "Collection grid: keep image ratios while loading",
+            "Visit page: opening hours from the CMS",
+            "Search: highlight matched terms in results",
+            "Object captions: credit line and accession number",
+            "Fix focus order in the object image viewer",
+            "Newsletter sign-up: inline errors",
+            "Redirects for the old /collection/item URLs",
+            "Learning page: schools booking form",
+            "Replace the map embed with a static map and directions link",
+            "Cookie banner: essential cookies only by default",
+            "Object page: print stylesheet",
+            "Collection import: skip objects without a public image",
+            "Bump Fieldkit to the latest minor",
+            "Donate page: Gift Aid checkbox copy"
+          ],
+          "pr": {
+            "int": [
+              180,
+              720
+            ]
+          },
+          "sha": [
+            "0356bbd",
+            "af243b1",
+            "0791f76",
+            "dac0be6",
+            "774484a",
+            "36b7ae4",
+            "1c3e8fe",
+            "b4ce09c",
+            "88f959b",
+            "49dc9cc",
+            "6029760",
+            "8d349ae",
+            "f56c5fd",
+            "e965f55",
+            "80250b0",
+            "53d26f6",
+            "26a8503",
+            "9681812",
+            "45009a7",
+            "9dc5f3f",
+            "b4ed43a",
+            "c8c6a2c",
+            "b7967b4",
+            "694f97e",
+            "c8faa00",
+            "7970653",
+            "58f1fff",
+            "18de713",
+            "9e9ae42",
+            "f1d7344",
+            "fd19a6e",
+            "ea6f08a",
+            "fa73bd3",
+            "7e51f11",
+            "f8cf9fc",
+            "c04d9e1",
+            "8749eff",
+            "e4858bd",
+            "3cd3e4f",
+            "8c4d763",
+            "67386c5",
+            "44ad3bb",
+            "2f2cac5",
+            "f47b38d",
+            "10ac0d7"
+          ]
+        }
+      },
+      {
+        "weight": 0.4,
+        "subject": "[acme-studio/{repo}] {n} vulnerable dependencies found",
+        "text": "We found {n} dependencies with known vulnerabilities in acme-studio/{repo} on the default branch.\n\n{advisory}\n\nUpdate the affected packages or dismiss the alerts if they don't apply to how you use them.\n\nReview alerts: https://branchferries.example/acme-studio/{repo}/security/alerts\n\n--\nYou are receiving this because you are a maintainer of acme-studio/{repo}.\nManage security alerts: https://branchferries.example/settings/notifications#security\nBranch Ferries Ltd, 4 Pier Head, Wapping, London E1W 2NN",
+        "html": "<!doctype html><html><body style=\"margin:0;padding:0;background:#f4f4f4;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f4f4;\"><tr><td align=\"center\" style=\"padding:24px 12px;\"><table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;\"><tr><td style=\"padding:18px 28px;background:#0f5c63;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#ffffff;\"><a href=\"https://branchferries.example/\" style=\"color:#ffffff;text-decoration:none;\">Branch Ferries</a></td></tr><tr><td style=\"padding:28px 28px 12px;\"><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">We found {n} dependencies with known vulnerabilities in acme-studio/{repo} on the default branch.</p><div style=\"margin:0 0 16px;padding:10px 12px;background:#f6f8fa;border-left:3px solid #d0d7de;font-family:Menlo,Consolas,monospace;font-size:13px;line-height:19px;color:#24292f;white-space:pre-wrap;\">{advisory}</div><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">Update the affected packages or dismiss the alerts if they don't apply to how you use them.</p><p style=\"margin:0 0 20px;\"><a href=\"https://branchferries.example/acme-studio/{repo}/security/alerts\" style=\"display:inline-block;padding:10px 18px;background:#0f5c63;color:#ffffff;text-decoration:none;border-radius:4px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;\">Review alerts</a></p></td></tr><tr><td style=\"padding:16px 28px 24px;border-top:1px solid #eeeeee;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#666;\">--<br>You are receiving this because you are a maintainer of acme-studio/{repo}.<br>Manage security alerts: <a href=\"https://branchferries.example/settings/notifications#security\" style=\"color:#666;\">https://branchferries.example/settings/notifications#security</a><br>Branch Ferries Ltd, 4 Pier Head, Wapping, London E1W 2NN</td></tr></table></td></tr></table></body></html>",
+        "slots": {
+          "repo": [
+            "holloway-web",
+            "fieldkit",
+            "tandem-rider-app"
+          ],
+          "n": {
+            "int": [
+              2,
+              6
+            ]
+          },
+          "advisory": [
+            "moderate   image-size-probe < 2.1.4   denial of service on crafted headers",
+            "high       yaml-loose < 3.0.2         prototype pollution in merge keys",
+            "moderate   markup-sanitise < 1.8.0    attributes not stripped in SVG",
+            "low        semver-range < 6.3.1       slow regex on long version strings",
+            "high       tar-walk < 4.4.19          path traversal when extracting archives"
+          ]
+        }
+      }
+    ]
+  }
+]

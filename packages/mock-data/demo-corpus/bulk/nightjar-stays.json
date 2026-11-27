@@ -1,0 +1,144 @@
+[
+  {
+    "brand": "nightjar-stays",
+    "currency": "£",
+    "account": "icloud",
+    "schedule": {
+      "every": "random",
+      "zone": "Europe/London",
+      "perWeek": [
+        0.28,
+        0.56
+      ]
+    },
+    "templates": [
+      {
+        "weight": 15,
+        "subject": "Booking confirmed at {property}",
+        "text": "Your stay is booked\n\nYour reservation is confirmed. Show this booking reference at reception if the property asks for it.\n\nReservation: NJ-{ref}\nProperty: {property}\nGuests: 2 adults\nRoom: Double room\nStay: {nights} nights\nBooking total: {total}\n\nYour arrival date, payment terms and free cancellation deadline are on the booking page.\n\nView reservation: https://nightjarstays.example/reservations/NJ-{ref}\n\nWe sent this service email to the contact address given for your Nightjar Stays reservation.\n\nNightjar Stays Ltd, 21 Fenwick Yard, Edinburgh EH2 2AD. Registered in Scotland.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#313e5b;color:#fff;text-align:center;font:700 22px Georgia,serif\">Nightjar Stays</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font:700 25px/1.2 Georgia,serif\">Your stay is booked</h1><p style=\"margin:0 0 16px\">Your reservation is confirmed. Show this booking reference at reception if the property asks for it.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Reservation</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">NJ-{ref}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Property</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{property}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Guests</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">2 adults</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Room</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">Double room</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Stay</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{nights} nights</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Booking total</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{total}</td></tr></table><p style=\"margin:0 0 16px\">Your arrival date, payment terms and free cancellation deadline are on the booking page.</p><p style=\"margin:0\"><a style=\"color:#313e5b;text-decoration:underline\" href=\"https://nightjarstays.example/reservations/NJ-{ref}\">View reservation</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">We sent this service email to the contact address given for your Nightjar Stays reservation.<br>Nightjar Stays Ltd, 21 Fenwick Yard, Edinburgh EH2 2AD. Registered in Scotland.</td></tr></table>",
+        "slots": {
+          "property": [
+            "The Flint House, Rye",
+            "Old Net Loft, Whitstable",
+            "Birch Court Rooms, Bath",
+            "Three Gables, Bristol",
+            "The Mooring Rooms, Deal",
+            "Cairn View Guest House, Fort William",
+            "Birch & Burn Lodge, Aviemore",
+            "Fallow House, York",
+            "The Driftwood Rooms, Oban",
+            "West Stair Guesthouse, Edinburgh",
+            "Weatherboard House, Folkestone"
+          ],
+          "nights": {
+            "int": [
+              2,
+              4
+            ]
+          },
+          "total": {
+            "money": [
+              145,
+              390
+            ]
+          },
+          "ref": {
+            "int": [
+              10000000,
+              99999999
+            ]
+          }
+        }
+      },
+      {
+        "weight": 16,
+        "subject": "Check-in information for {property}",
+        "text": "Before you arrive\n\nYour property has added arrival instructions to the reservation. Check them before you set out.\n\nReservation: NJ-{ref}\nProperty: {property}\nCheck-in: From 15:00 local time\nGuest: {first} Cordero\n\nUse the message button on your reservation if you expect to arrive after 20:00.\n\nRead arrival instructions: https://nightjarstays.example/reservations/NJ-{ref}/arrival\n\nWe sent this service email to the contact address given for your Nightjar Stays reservation.\n\nNightjar Stays Ltd, 21 Fenwick Yard, Edinburgh EH2 2AD. Registered in Scotland.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#313e5b;color:#fff;text-align:center;font:700 22px Georgia,serif\">Nightjar Stays</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font:700 25px/1.2 Georgia,serif\">Before you arrive</h1><p style=\"margin:0 0 16px\">Your property has added arrival instructions to the reservation. Check them before you set out.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Reservation</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">NJ-{ref}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Property</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{property}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Check-in</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">From 15:00 local time</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Guest</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{first} Cordero</td></tr></table><p style=\"margin:0 0 16px\">Use the message button on your reservation if you expect to arrive after 20:00.</p><p style=\"margin:0\"><a style=\"color:#313e5b;text-decoration:underline\" href=\"https://nightjarstays.example/reservations/NJ-{ref}/arrival\">Read arrival instructions</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">We sent this service email to the contact address given for your Nightjar Stays reservation.<br>Nightjar Stays Ltd, 21 Fenwick Yard, Edinburgh EH2 2AD. Registered in Scotland.</td></tr></table>",
+        "slots": {
+          "property": [
+            "The Flint House, Rye",
+            "Old Net Loft, Whitstable",
+            "Birch Court Rooms, Bath",
+            "Three Gables, Bristol",
+            "The Mooring Rooms, Deal",
+            "Cairn View Guest House, Fort William",
+            "Birch & Burn Lodge, Aviemore",
+            "Fallow House, York",
+            "The Driftwood Rooms, Oban",
+            "West Stair Guesthouse, Edinburgh",
+            "Weatherboard House, Folkestone"
+          ],
+          "ref": {
+            "int": [
+              10000000,
+              99999999
+            ]
+          }
+        }
+      },
+      {
+        "weight": 17,
+        "subject": "How was your stay at {property}?",
+        "text": "Leave a review of your stay\n\nYour reservation at {property} has ended. You can leave a rating and a short note about the room, check-in and location.\n\nWe publish reviews from confirmed guests. Please leave out names and contact details.\n\nWrite a review: https://nightjarstays.example/reservations/NJ-{ref}/review\n\nWe sent this service email to the contact address given for your Nightjar Stays reservation.\n\nNightjar Stays Ltd, 21 Fenwick Yard, Edinburgh EH2 2AD. Registered in Scotland.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#313e5b;color:#fff;text-align:center;font:700 22px Georgia,serif\">Nightjar Stays</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font:700 25px/1.2 Georgia,serif\">Leave a review of your stay</h1><p style=\"margin:0 0 16px\">Your reservation at {property} has ended. You can leave a rating and a short note about the room, check-in and location.</p><p style=\"margin:0 0 16px\">We publish reviews from confirmed guests. Please leave out names and contact details.</p><p style=\"margin:0\"><a style=\"color:#313e5b;text-decoration:underline\" href=\"https://nightjarstays.example/reservations/NJ-{ref}/review\">Write a review</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">We sent this service email to the contact address given for your Nightjar Stays reservation.<br>Nightjar Stays Ltd, 21 Fenwick Yard, Edinburgh EH2 2AD. Registered in Scotland.</td></tr></table>",
+        "slots": {
+          "property": [
+            "The Flint House, Rye",
+            "Old Net Loft, Whitstable",
+            "Birch Court Rooms, Bath",
+            "Three Gables, Bristol",
+            "The Mooring Rooms, Deal",
+            "Cairn View Guest House, Fort William",
+            "Birch & Burn Lodge, Aviemore",
+            "Fallow House, York",
+            "The Driftwood Rooms, Oban",
+            "West Stair Guesthouse, Edinburgh",
+            "Weatherboard House, Folkestone"
+          ],
+          "ref": {
+            "int": [
+              10000000,
+              99999999
+            ]
+          }
+        }
+      },
+      {
+        "weight": 52,
+        "subject": "Nightjar rates for a short break in {region}",
+        "text": "Selected stays in {region}\n\nWe’ve put together small hotels and guesthouses with rooms available over the next six weeks.\n\nAvailable on selected dates: {featured}\nRates: From {rate} per room per night\n\nRates are based on two adults sharing. Availability, breakfast and cancellation terms vary by property and date.\n\nSee available stays: https://nightjarstays.example/offers\n\nYou received this because you subscribed to Nightjar Stays offers.\n\nUnsubscribe: https://nightjarstays.example/unsubscribe\n\nNightjar Stays Ltd, 21 Fenwick Yard, Edinburgh EH2 2AD. Registered in Scotland.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#313e5b;color:#fff;text-align:center;font:700 22px Georgia,serif\">Nightjar Stays</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font:700 25px/1.2 Georgia,serif\">Selected stays in {region}</h1><p style=\"margin:0 0 16px\">We’ve put together small hotels and guesthouses with rooms available over the next six weeks.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Available on selected dates</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{featured}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Rates</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">From {rate} per room per night</td></tr></table><p style=\"margin:0 0 16px\">Rates are based on two adults sharing. Availability, breakfast and cancellation terms vary by property and date.</p><p style=\"margin:0\"><a style=\"color:#313e5b;text-decoration:underline\" href=\"https://nightjarstays.example/offers\">See available stays</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">You received this because you subscribed to Nightjar Stays offers.<br><a style=\"color:#313e5b;text-decoration:underline\" href=\"https://nightjarstays.example/unsubscribe\">Unsubscribe</a><br>Nightjar Stays Ltd, 21 Fenwick Yard, Edinburgh EH2 2AD. Registered in Scotland.</td></tr></table>",
+        "slots": {
+          "region": [
+            "Kent",
+            "the Cotswolds",
+            "West Yorkshire",
+            "the Scottish Borders",
+            "East Sussex",
+            "the Peak District",
+            "Norfolk",
+            "Somerset"
+          ],
+          "featured": [
+            "Small hotels near the station",
+            "Guesthouses with breakfast included",
+            "Independent inns with Sunday availability",
+            "Two-night rates for midweek stays",
+            "Late check-out on selected dates"
+          ],
+          "rate": [
+            "£68",
+            "£74",
+            "£82",
+            "£89",
+            "£95",
+            "£102",
+            "£110"
+          ]
+        }
+      }
+    ]
+  }
+]

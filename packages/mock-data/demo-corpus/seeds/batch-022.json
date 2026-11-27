@@ -1,0 +1,846 @@
+[
+ {
+  "id": "s0621",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: a postcard he never got",
+  "people": [
+   "andrei-popescu",
+   "clara-moreau",
+   "felix-brandt",
+   "rita-valente"
+  ],
+  "shape": "group",
+  "outcome": "waiting on them",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2024-11-02",
+   "2024-11-09"
+  ],
+  "length": "long",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0622",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "a discussion on Comunidad de diseño independiente (una lista de diseñadores independientes en México: tarifas, clientes que no pagan, herramientas, chambas)",
+  "people": [
+   "emilio-cardenas"
+  ],
+  "shape": "list",
+  "outcome": "ongoing",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2024-11-28",
+   "2024-12-03"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list comunidad@disenoindependiente.example (listId comunidad.disenoindependiente.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "disenio"
+ },
+ {
+  "id": "s0623",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: a shared album",
+  "people": [
+   "graham-petts"
+  ],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-01-30",
+   "2025-01-30"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0624",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a discussion on Marshgate Runners members (the running club's members list: race entries, kit, lost property, socials)",
+  "people": [
+   "harriet-lowe",
+   "ifeoma-nwosu",
+   "hamish-fairweather"
+  ],
+  "shape": "list",
+  "outcome": "rescheduled",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2025-06-23",
+   "2025-06-28"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list members@marshgaterunners.example (listId members.marshgaterunners.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "harriers"
+ },
+ {
+  "id": "s0625",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a broken washing machine",
+  "people": [
+   "hamish-fairweather",
+   "mei-lin-chou"
+  ],
+  "shape": "luis-starts",
+  "outcome": "cancelled",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-07-22",
+   "2025-07-24"
+  ],
+  "length": "medium",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0626",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "free: una recomendación de un cliente",
+  "people": [
+   "mariana-gomez"
+  ],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-11-23",
+   "2025-11-23"
+  ],
+  "length": "medium",
+  "attachments": "some",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0627",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: moving a dentist appointment",
+  "people": [
+   "hamish-fairweather"
+  ],
+  "shape": "ask-answer",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-02-16",
+   "2026-02-18"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0628",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a favour for a friend's CV",
+  "people": [
+   "hamish-fairweather"
+  ],
+  "shape": "ask-answer",
+  "outcome": "rescheduled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-03-03",
+   "2026-03-04"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0629",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a seller on a marketplace",
+  "people": [],
+  "shape": "ask-answer",
+  "outcome": "decided",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-03-22",
+   "2026-03-22"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0630",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: splitting a bill",
+  "people": [
+   "hamish-fairweather",
+   "ben-hartley"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "decided",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-03-22",
+   "2026-03-28"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0631",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a client's feedback round",
+  "people": [
+   "jae-cho",
+   "rhys-morgan"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "cancelled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-04-09",
+   "2026-04-11"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0632",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a broken build",
+  "people": [
+   "margaret-okafor"
+  ],
+  "shape": "ask-answer",
+  "outcome": "cancelled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-04-30",
+   "2026-05-03"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0633",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a design system component",
+  "people": [
+   "jae-cho",
+   "shona-mcleod",
+   "freya-lindgren",
+   "gabriel-santos",
+   "marcus-adeyemi",
+   "terry-nolan"
+  ],
+  "shape": "group",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-08-20",
+   "2026-08-22"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0634",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a favour for a friend's CV",
+  "people": [
+   "ifeoma-nwosu",
+   "harriet-lowe",
+   "rita-valente",
+   "daniela-cordero",
+   "olivia-marsh",
+   "oliver-grant"
+  ],
+  "shape": "group",
+  "outcome": "waiting on them",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-08-28",
+   "2026-09-03"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0635",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Damp in the Mallory Road bathroom",
+  "people": [
+   "imogen-barnes",
+   "desmond-clarke",
+   "niamh-gallagher"
+  ],
+  "shape": "group",
+  "outcome": "waiting on them",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-09-07",
+   "2026-09-14"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 4 of the storyline \"Damp in the Mallory Road bathroom\": write what happens in this stretch (2026-09-07 to 2026-09-14), consistent with its summary."
+  ],
+  "storyline": "mallory-road-damp"
+ },
+ {
+  "id": "s0636",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a client's legal review",
+  "people": [
+   "arjun-sethi"
+  ],
+  "shape": "ask-answer",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-09-18",
+   "2026-09-18"
+  ],
+  "length": "short",
+  "attachments": "forgotten",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0637",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a client's legal review",
+  "people": [
+   "ian-ferris",
+   "yasmin-farouk"
+  ],
+  "shape": "luis-starts",
+  "outcome": "ongoing",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-09-19",
+   "2026-09-23"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0638",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a sponsorship for a charity run",
+  "people": [
+   "hamish-fairweather"
+  ],
+  "shape": "luis-starts",
+  "outcome": "decided",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-09-22",
+   "2026-09-26"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0639",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Damp in the Mallory Road bathroom",
+  "people": [
+   "desmond-clarke",
+   "niamh-gallagher",
+   "imogen-barnes"
+  ],
+  "shape": "group",
+  "outcome": "cancelled",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-09-20",
+   "2026-09-27"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "Part 2 of 4 of the storyline \"Damp in the Mallory Road bathroom\": write what happens in this stretch (2026-09-20 to 2026-09-27), consistent with its summary."
+  ],
+  "storyline": "mallory-road-damp"
+ },
+ {
+  "id": "s0640",
+  "account": "acme",
+  "lang": "en",
+  "kind": "a recruiter's cold message",
+  "people": [],
+  "shape": "ask-answer",
+  "outcome": "rescheduled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-02",
+   "2026-10-02"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0641",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "un estudiante que pide consejo",
+  "people": [],
+  "shape": "ask-answer",
+  "outcome": "rescheduled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-09-29",
+   "2026-10-02"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0642",
+  "account": "acme",
+  "lang": "en",
+  "kind": "someone asking for a reference for an ex-colleague",
+  "people": [],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-10-03",
+   "2026-10-03"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0643",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a bug on staging",
+  "people": [
+   "steve-barlow",
+   "jade-morris"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-04",
+   "2026-10-05"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0644",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a spare concert ticket",
+  "people": [
+   "kerry-simmonds",
+   "harriet-lowe"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-03",
+   "2026-10-06"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0645",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a job referral",
+  "people": [
+   "tom-ashworth"
+  ],
+  "shape": "ask-answer",
+  "outcome": "declined politely",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-06",
+   "2026-10-08"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0646",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Damp in the Mallory Road bathroom",
+  "people": [
+   "niamh-gallagher",
+   "desmond-clarke",
+   "imogen-barnes"
+  ],
+  "shape": "group",
+  "outcome": "ongoing",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-10-02",
+   "2026-10-09"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "Part 3 of 4 of the storyline \"Damp in the Mallory Road bathroom\": write what happens in this stretch (2026-10-02 to 2026-10-09), consistent with its summary."
+  ],
+  "storyline": "mallory-road-damp"
+ },
+ {
+  "id": "s0647",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a user research readout",
+  "people": [
+   "jake-pemberton"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-10-13",
+   "2026-10-13"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0648",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "free: una factura pendiente",
+  "people": [
+   "mariana-gomez",
+   "samuel-ortega"
+  ],
+  "shape": "luis-starts",
+  "outcome": "ongoing",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-10-18",
+   "2026-10-19"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": true,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0649",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "planted: promise-to-owner",
+  "people": [
+   "lorraine-whitby"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "they owe what they promised",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-21"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "in the 14 days before the anchor someone promised Luis something with a time (I'll send the deck Monday); about half are already due and nothing came."
+  ],
+  "unreadFrom": "2026-10-19T15:30:00Z",
+  "plant": "promise-to-owner",
+  "lastFrom": "them"
+ },
+ {
+  "id": "s0650",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Damp in the Mallory Road bathroom",
+  "people": [
+   "niamh-gallagher"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "rescheduled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-12",
+   "2026-10-22"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "Part 4 of 4 of the storyline \"Damp in the Mallory Road bathroom\": write what happens in this stretch (2026-10-12 to 2026-10-22), consistent with its summary."
+  ],
+  "unreadFrom": "2026-10-22T02:30:00Z",
+  "storyline": "mallory-road-damp"
+ }
+]

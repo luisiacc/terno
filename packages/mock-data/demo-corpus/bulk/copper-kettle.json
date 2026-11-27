@@ -1,0 +1,106 @@
+[
+  {
+    "brand": "copper-kettle",
+    "account": "icloud",
+    "schedule": {
+      "every": "weekly",
+      "day": 1,
+      "at": "07:30",
+      "zone": "Europe/London"
+    },
+    "templates": [
+      {
+        "weight": 5,
+        "subject": "This week at Copper Kettle: {offer}",
+        "text": "Your offer for this week:\n\n{offer}\n\nIt's already on your card. Just scan in the app when you pay.\n\nYour beans: {beans}\nNext free drink at: 150 beans\n\nOpen the app: https://copperkettle.example/app\n\nYou're a Copper Kettle Rewards member, so we send you offers each Monday. Unsubscribe: https://copperkettle.example/rewards/unsubscribe\nCopper Kettle Coffee Ltd, 60 Old Street, London EC1V 9HW",
+        "html": "<!doctype html><html><body style=\"margin:0;padding:0;background:#f4f4f4;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f4f4;\"><tr><td align=\"center\" style=\"padding:24px 12px;\"><table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;\"><tr><td style=\"padding:18px 28px;background:#9c4a1a;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#ffffff;\"><a href=\"https://copperkettle.example/\" style=\"color:#ffffff;text-decoration:none;\">Copper Kettle</a></td></tr><tr><td style=\"padding:28px 28px 12px;\"><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">Your offer for this week:</p><div style=\"margin:0 0 16px;padding:10px 12px;background:#f6f8fa;border-left:3px solid #d0d7de;font-family:Menlo,Consolas,monospace;font-size:13px;line-height:19px;color:#24292f;white-space:pre-wrap;\">{offer}</div><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">It's already on your card. Just scan in the app when you pay.</p><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 16px;border-top:1px solid #e5e5e5;\"><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Your beans</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{beans}</td></tr><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Next free drink at</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">150 beans</td></tr></table><p style=\"margin:0 0 20px;\"><a href=\"https://copperkettle.example/app\" style=\"display:inline-block;padding:10px 18px;background:#9c4a1a;color:#ffffff;text-decoration:none;border-radius:4px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;\">Open the app</a></p></td></tr><tr><td style=\"padding:16px 28px 24px;border-top:1px solid #eeeeee;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#666;\">You're a Copper Kettle Rewards member, so we send you offers each Monday. Unsubscribe: <a href=\"https://copperkettle.example/rewards/unsubscribe\" style=\"color:#666;\">https://copperkettle.example/rewards/unsubscribe</a><br>Copper Kettle Coffee Ltd, 60 Old Street, London EC1V 9HW</td></tr></table></td></tr></table></body></html>",
+        "slots": {
+          "offer": [
+            "£1 off any maple oat latte",
+            "£1 off any gingerbread flat white",
+            "£1 off any iced brown sugar shaken espresso",
+            "£1 off any spiced chai",
+            "£1 off any hazelnut mocha",
+            "£1 off any cold brew tonic",
+            "£1 off any honey lavender latte",
+            "£1 off any pumpkin cinnamon cappuccino",
+            "A free cardamom bun with any large drink",
+            "A free almond croissant with any large drink",
+            "A free banana bread with any large drink",
+            "A free cheese and chive scone with any large drink",
+            "A free pain au chocolat with any large drink",
+            "A free cinnamon knot with any large drink",
+            "Half price cardamom bun with any coffee",
+            "Half price almond croissant with any coffee",
+            "Half price banana bread with any coffee",
+            "Half price cheese and chive scone with any coffee",
+            "Half price pain au chocolat with any coffee",
+            "Half price cinnamon knot with any coffee",
+            "Double beans before 10am",
+            "Any medium drink for £2.50 after 3pm"
+          ],
+          "beans": {
+            "int": [
+              10,
+              145
+            ]
+          }
+        }
+      },
+      {
+        "weight": 2,
+        "subject": "Double beans all week",
+        "text": "From today until Sunday, every drink earns double beans. No code needed, just scan your card.\n\nYour beans: {beans}\n\nFind a shop: https://copperkettle.example/shops\n\nYou're a Copper Kettle Rewards member, so we send you offers each Monday. Unsubscribe: https://copperkettle.example/rewards/unsubscribe\nCopper Kettle Coffee Ltd, 60 Old Street, London EC1V 9HW",
+        "html": "<!doctype html><html><body style=\"margin:0;padding:0;background:#f4f4f4;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f4f4;\"><tr><td align=\"center\" style=\"padding:24px 12px;\"><table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;\"><tr><td style=\"padding:18px 28px;background:#9c4a1a;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#ffffff;\"><a href=\"https://copperkettle.example/\" style=\"color:#ffffff;text-decoration:none;\">Copper Kettle</a></td></tr><tr><td style=\"padding:28px 28px 12px;\"><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">From today until Sunday, every drink earns double beans. No code needed, just scan your card.</p><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 16px;border-top:1px solid #e5e5e5;\"><tr><td style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#666;\">Your beans</td><td align=\"right\" style=\"padding:8px 0;border-bottom:1px solid #e5e5e5;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;color:#111;\">{beans}</td></tr></table><p style=\"margin:0 0 20px;\"><a href=\"https://copperkettle.example/shops\" style=\"display:inline-block;padding:10px 18px;background:#9c4a1a;color:#ffffff;text-decoration:none;border-radius:4px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;\">Find a shop</a></p></td></tr><tr><td style=\"padding:16px 28px 24px;border-top:1px solid #eeeeee;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#666;\">You're a Copper Kettle Rewards member, so we send you offers each Monday. Unsubscribe: <a href=\"https://copperkettle.example/rewards/unsubscribe\" style=\"color:#666;\">https://copperkettle.example/rewards/unsubscribe</a><br>Copper Kettle Coffee Ltd, 60 Old Street, London EC1V 9HW</td></tr></table></td></tr></table></body></html>",
+        "slots": {
+          "beans": {
+            "int": [
+              10,
+              145
+            ]
+          }
+        }
+      },
+      {
+        "weight": 2,
+        "subject": "New: the {drink}",
+        "text": "New on the menu from today: the {drink}. Pair it with a {bake} for £5.20.\n\nAvailable in all London shops while the season lasts.\n\nSee the menu: https://copperkettle.example/menu\n\nYou're a Copper Kettle Rewards member, so we send you offers each Monday. Unsubscribe: https://copperkettle.example/rewards/unsubscribe\nCopper Kettle Coffee Ltd, 60 Old Street, London EC1V 9HW",
+        "html": "<!doctype html><html><body style=\"margin:0;padding:0;background:#f4f4f4;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f4f4;\"><tr><td align=\"center\" style=\"padding:24px 12px;\"><table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;\"><tr><td style=\"padding:18px 28px;background:#9c4a1a;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#ffffff;\"><a href=\"https://copperkettle.example/\" style=\"color:#ffffff;text-decoration:none;\">Copper Kettle</a></td></tr><tr><td style=\"padding:28px 28px 12px;\"><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">New on the menu from today: the {drink}. Pair it with a {bake} for £5.20.</p><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">Available in all London shops while the season lasts.</p><p style=\"margin:0 0 20px;\"><a href=\"https://copperkettle.example/menu\" style=\"display:inline-block;padding:10px 18px;background:#9c4a1a;color:#ffffff;text-decoration:none;border-radius:4px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;\">See the menu</a></p></td></tr><tr><td style=\"padding:16px 28px 24px;border-top:1px solid #eeeeee;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#666;\">You're a Copper Kettle Rewards member, so we send you offers each Monday. Unsubscribe: <a href=\"https://copperkettle.example/rewards/unsubscribe\" style=\"color:#666;\">https://copperkettle.example/rewards/unsubscribe</a><br>Copper Kettle Coffee Ltd, 60 Old Street, London EC1V 9HW</td></tr></table></td></tr></table></body></html>",
+        "slots": {
+          "drink": [
+            "maple oat latte",
+            "gingerbread flat white",
+            "iced brown sugar shaken espresso",
+            "spiced chai",
+            "hazelnut mocha",
+            "cold brew tonic",
+            "honey lavender latte",
+            "pumpkin cinnamon cappuccino"
+          ],
+          "bake": [
+            "cardamom bun",
+            "almond croissant",
+            "banana bread",
+            "cheese and chive scone",
+            "pain au chocolat",
+            "cinnamon knot"
+          ]
+        }
+      },
+      {
+        "weight": 0.8,
+        "subject": "Your beans expire soon",
+        "text": "You have {beans} beans that expire at the end of {month}. Use them on any drink or bake before then.\n\nCheck your balance: https://copperkettle.example/rewards\n\nYou're a Copper Kettle Rewards member, so we send you offers each Monday. Unsubscribe: https://copperkettle.example/rewards/unsubscribe\nCopper Kettle Coffee Ltd, 60 Old Street, London EC1V 9HW",
+        "html": "<!doctype html><html><body style=\"margin:0;padding:0;background:#f4f4f4;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f4f4f4;\"><tr><td align=\"center\" style=\"padding:24px 12px;\"><table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;width:100%;background:#ffffff;\"><tr><td style=\"padding:18px 28px;background:#9c4a1a;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#ffffff;\"><a href=\"https://copperkettle.example/\" style=\"color:#ffffff;text-decoration:none;\">Copper Kettle</a></td></tr><tr><td style=\"padding:28px 28px 12px;\"><p style=\"margin:0 0 16px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#222;white-space:pre-line;\">You have {beans} beans that expire at the end of {month}. Use them on any drink or bake before then.</p><p style=\"margin:0 0 20px;\"><a href=\"https://copperkettle.example/rewards\" style=\"display:inline-block;padding:10px 18px;background:#9c4a1a;color:#ffffff;text-decoration:none;border-radius:4px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;\">Check your balance</a></p></td></tr><tr><td style=\"padding:16px 28px 24px;border-top:1px solid #eeeeee;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:12px;line-height:18px;color:#666;\">You're a Copper Kettle Rewards member, so we send you offers each Monday. Unsubscribe: <a href=\"https://copperkettle.example/rewards/unsubscribe\" style=\"color:#666;\">https://copperkettle.example/rewards/unsubscribe</a><br>Copper Kettle Coffee Ltd, 60 Old Street, London EC1V 9HW</td></tr></table></td></tr></table></body></html>",
+        "slots": {
+          "beans": {
+            "int": [
+              20,
+              140
+            ]
+          }
+        }
+      }
+    ]
+  }
+]

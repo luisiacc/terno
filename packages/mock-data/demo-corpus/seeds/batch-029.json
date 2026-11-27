@@ -1,0 +1,838 @@
+[
+ {
+  "id": "s0831",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: council tax",
+  "people": [
+   "martin-hale",
+   "mei-lin-chou"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2024-12-11",
+   "2024-12-17"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0832",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a wedding speech draft",
+  "people": [
+   "hamish-fairweather"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-04-17",
+   "2025-04-20"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0833",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a house-warming",
+  "people": [
+   "mei-lin-chou"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on Luis",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-06-08",
+   "2025-06-09"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0834",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: an RSVP and dietary needs",
+  "people": [
+   "hamish-fairweather",
+   "darren-kirby",
+   "harriet-lowe",
+   "kerry-simmonds"
+  ],
+  "shape": "group",
+  "outcome": "waiting on them",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2025-07-06",
+   "2025-07-08"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0835",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: quarterly planning",
+  "people": [
+   "marcus-adeyemi"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-12-29",
+   "2025-12-29"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0836",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Niamh changes job",
+  "people": [
+   "chloe-bennett",
+   "niamh-gallagher"
+  ],
+  "shape": "group",
+  "outcome": "ongoing",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-01-27",
+   "2026-02-03"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 3 of the storyline \"Niamh changes job\": write what happens in this stretch (2026-01-27 to 2026-02-03), consistent with its summary."
+  ],
+  "storyline": "niamh-new-job"
+ },
+ {
+  "id": "s0837",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Niamh changes job",
+  "people": [
+   "chloe-bennett"
+  ],
+  "shape": "ask-answer",
+  "outcome": "declined politely",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-02-16",
+   "2026-02-19"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 3 of the storyline \"Niamh changes job\": write what happens in this stretch (2026-02-16 to 2026-02-19), consistent with its summary."
+  ],
+  "storyline": "niamh-new-job"
+ },
+ {
+  "id": "s0838",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Niamh changes job",
+  "people": [
+   "niamh-gallagher"
+  ],
+  "shape": "ask-answer",
+  "outcome": "declined politely",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-03-03",
+   "2026-03-06"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 3 of the storyline \"Niamh changes job\": write what happens in this stretch (2026-03-03 to 2026-03-06), consistent with its summary."
+  ],
+  "storyline": "niamh-new-job"
+ },
+ {
+  "id": "s0839",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: A cracked molar",
+  "people": [
+   "kerry-simmonds"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "rescheduled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-02-25",
+   "2026-03-07"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 3 of the storyline \"A cracked molar\": write what happens in this stretch (2026-02-25 to 2026-03-07), consistent with its summary."
+  ],
+  "storyline": "dentist-crown"
+ },
+ {
+  "id": "s0840",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: A cracked molar",
+  "people": [
+   "kerry-simmonds"
+  ],
+  "shape": "ask-answer",
+  "outcome": "cancelled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-03-16",
+   "2026-03-19"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 3 of the storyline \"A cracked molar\": write what happens in this stretch (2026-03-16 to 2026-03-19), consistent with its summary."
+  ],
+  "storyline": "dentist-crown"
+ },
+ {
+  "id": "s0841",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: A cracked molar",
+  "people": [
+   "kerry-simmonds"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "decided",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-03-20",
+   "2026-03-30"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 3 of the storyline \"A cracked molar\": write what happens in this stretch (2026-03-20 to 2026-03-30), consistent with its summary."
+  ],
+  "storyline": "dentist-crown"
+ },
+ {
+  "id": "s0842",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Annual review 2026",
+  "people": [
+   "shona-mcleod"
+  ],
+  "shape": "luis-starts",
+  "outcome": "cancelled",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-04-08",
+   "2026-04-13"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 1 of 3 of the storyline \"Annual review 2026\": write what happens in this stretch (2026-04-08 to 2026-04-13), consistent with its summary."
+  ],
+  "storyline": "annual-review-2026"
+ },
+ {
+  "id": "s0843",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Annual review 2026",
+  "people": [
+   "shona-mcleod"
+  ],
+  "shape": "ask-answer",
+  "outcome": "rescheduled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-04-23",
+   "2026-04-26"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 3 of the storyline \"Annual review 2026\": write what happens in this stretch (2026-04-23 to 2026-04-26), consistent with its summary."
+  ],
+  "storyline": "annual-review-2026"
+ },
+ {
+  "id": "s0844",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Annual review 2026",
+  "people": [
+   "priya-raman",
+   "shona-mcleod"
+  ],
+  "shape": "group",
+  "outcome": "waiting on them",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-05-01",
+   "2026-05-08"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "must": [
+   "Part 3 of 3 of the storyline \"Annual review 2026\": write what happens in this stretch (2026-05-01 to 2026-05-08), consistent with its summary."
+  ],
+  "storyline": "annual-review-2026"
+ },
+ {
+  "id": "s0845",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: an old flatmate getting in touch",
+  "people": [
+   "clara-moreau"
+  ],
+  "shape": "ask-answer",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-08-17",
+   "2026-08-19"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0846",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: timesheets",
+  "people": [
+   "marcus-adeyemi",
+   "jake-pemberton"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-08-24",
+   "2026-08-30"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0847",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a design system component",
+  "people": [
+   "dev-malhotra"
+  ],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-09-02",
+   "2026-09-02"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0848",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a film night",
+  "people": [
+   "harriet-lowe",
+   "mei-lin-chou"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-09-16",
+   "2026-09-19"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0849",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: timesheets",
+  "people": [
+   "gabriel-santos"
+  ],
+  "shape": "forward",
+  "outcome": "ongoing",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2026-09-20",
+   "2026-09-22"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0850",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a lost key",
+  "people": [
+   "ifeoma-nwosu",
+   "hamish-fairweather"
+  ],
+  "shape": "luis-starts",
+  "outcome": "waiting on them",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-09-24",
+   "2026-09-25"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0851",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a press request",
+  "people": [
+   "margaret-okafor"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "rescheduled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-09-20",
+   "2026-09-29"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0852",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: an alumni event",
+  "people": [
+   "clara-moreau"
+  ],
+  "shape": "luis-starts",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-09-26",
+   "2026-09-30"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0853",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a team lunch",
+  "people": [
+   "helen-ashby",
+   "gabriel-santos"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-01",
+   "2026-10-04"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0854",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a wedding speech draft",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "declined politely",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-09-26",
+   "2026-10-04"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0855",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a sick pet",
+  "people": [
+   "gareth-pugh",
+   "bernadette-gallagher"
+  ],
+  "shape": "forward",
+  "outcome": "waiting on Luis",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2026-10-04",
+   "2026-10-05"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0856",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "a discussion on Comunidad de diseño independiente (una lista de diseñadores independientes en México: tarifas, clientes que no pagan, herramientas, chambas)",
+  "people": [
+   "mariana-gomez"
+  ],
+  "shape": "list",
+  "outcome": "ongoing",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-10-07",
+   "2026-10-08"
+  ],
+  "length": "medium",
+  "attachments": "some",
+  "tags": [
+   "client"
+  ],
+  "inbox": true,
+  "must": [
+   "On the list comunidad@disenoindependiente.example (listId comunidad.disenoindependiente.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "disenio"
+ },
+ {
+  "id": "s0857",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "free: la constancia de situación fiscal",
+  "people": [
+   "mariana-gomez"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-10-13",
+   "2026-10-13"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0858",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a font licence",
+  "people": [
+   "rhys-morgan",
+   "dev-malhotra"
+  ],
+  "shape": "luis-starts",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-10-15",
+   "2026-10-18"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0859",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a neighbour he hasn't met",
+  "people": [],
+  "shape": "ask-answer",
+  "outcome": "waiting on them",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-19",
+   "2026-10-20"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0860",
+  "account": "personal",
+  "lang": "en",
+  "kind": "planted: deadline",
+  "people": [
+   "hamish-fairweather"
+  ],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis, before the date",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-22"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "lastFrom": "them",
+  "must": [
+   "in the 14 days before the anchor someone asked Luis to do something by a stated date within the 10 days after the anchor; he hasn't done it.",
+   "The date he must act by falls between 2026-10-23 and 2026-11-01."
+  ],
+  "plant": "deadline"
+ }
+]

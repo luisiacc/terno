@@ -1,0 +1,2462 @@
+[
+  {
+    "id": "s0238",
+    "account": "freelance",
+    "storyline": "ocotillo-sitio",
+    "lang": "es",
+    "tags": [
+      "client"
+    ],
+    "subject": "Datos de las habitaciones para el sitio",
+    "state": {
+      "inbox": false,
+      "trash": true
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "jorge-perez"
+        ],
+        "date": "2025-03-19T17:20:00+00:00",
+        "read": true,
+        "text": "Hola, Jorge:\n\nLa Sra. Mendoza me dijo que usted tiene los datos de las habitaciones. Para armar la sección de reservaciones necesito, por cada tipo de habitación:\n\n- el nombre que usan en recepción\n- cuántas hay de ese tipo\n- capacidad (adultos y niños)\n- tarifa normal y de temporada alta\n\nAparte, la hora de entrada y de salida y la política de cancelación que manejan hoy. Con eso dejo listas las pantallas para la revisión del 2 de abril.\n\nSaludos,\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+      },
+      {
+        "from": "jorge-perez",
+        "to": [
+          "me"
+        ],
+        "date": "2025-03-20T13:05:00-06:00",
+        "read": true,
+        "text": "Luis buenas tardes\n\nson 14 habitaciones. 8 dobles estandar, 4 superior con balcon y 2 suites (la del patio y la de la azotea). dobles y superior son para 2 adultos, las suites para 2 adultos y 2 niños o 3 adultos\nentrada 3 pm salida 12 del día\ncancelacion sin cargo hasta 72 horas antes, despues se cobra la primer noche\n\nlas tarifas se las paso mañana que las tengo en la otra compu\n\nJorge"
+      },
+      {
+        "from": "me",
+        "to": [
+          "jorge-perez"
+        ],
+        "date": "2025-03-24T10:15:00+00:00",
+        "read": true,
+        "text": "Gracias, Jorge. Con esto ya acomodé los tipos de habitación. Quedo pendiente de las tarifas.\n\nUna duda: ¿la suite del patio y la de la azotea cuestan lo mismo?\n\nSaludos,\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+      },
+      {
+        "from": "jorge-perez",
+        "to": [
+          "me"
+        ],
+        "date": "2025-03-26T18:40:00-06:00",
+        "read": true,
+        "text": "Luis buenas tardes disculpe la tardansa, semana pesada\n\nen pesos por noche:\ndoble estandar $1,950\nsuperior $2,300\nsuite patio $2,900, suite azotea $3,300 por la vista\nen temporada alta (semana santa, guelaguetza, dia de muertos y diciembre) sube mas o menos 30% pero eso lo cambio yo cada temporada, mejor que yo lo pueda editar sin andarle pidiendo a nadie\n\nJorge"
+      },
+      {
+        "from": "me",
+        "to": [
+          "jorge-perez"
+        ],
+        "date": "2025-03-28T09:30:00+00:00",
+        "read": true,
+        "text": "Perfecto. Entonces las tarifas van en un panel donde usted las cambia por temporada, sin pasar por mí ni por el programador. En la revisión del 2 de abril se lo enseño a usted y a la Sra. Mendoza.\n\nSaludos,\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [
+        {
+          "text": "Enseñar el panel de tarifas a Jorge y a la Sra. Mendoza en la revisión del 2 de abril de 2025",
+          "due": "2025-04-02",
+          "kept": true
+        }
+      ],
+      "promisesToOwner": [
+        {
+          "who": "jorge-perez",
+          "text": "Pasar las tarifas al día siguiente",
+          "due": "2025-03-21",
+          "kept": false
+        }
+      ],
+      "ownerOwes": [],
+      "othersOwe": [],
+      "keyDates": [
+        {
+          "date": "2025-04-02",
+          "what": "Revisión de las pantallas del sitio con Casa Ocotillo"
+        }
+      ],
+      "facts": [
+        "Casa Ocotillo tiene 14 habitaciones: 8 dobles estándar, 4 superior con balcón y 2 suites (patio y azotea).",
+        "Dobles y superior son para 2 adultos; las suites para 2 adultos y 2 niños o 3 adultos.",
+        "Entrada a las 3 pm, salida a mediodía.",
+        "Cancelación sin cargo hasta 72 horas antes; después se cobra la primera noche.",
+        "Tarifas por noche en 2025: doble estándar $1,950, superior $2,300, suite patio $2,900, suite azotea $3,300 MXN.",
+        "En temporada alta (Semana Santa, Guelaguetza, Día de Muertos y diciembre) las tarifas suben alrededor de 30%.",
+        "Jorge mandó las tarifas el 26 de marzo, no al día siguiente como dijo."
+      ],
+      "summary": "Luis le pidió a Jorge los datos de las habitaciones de Casa Ocotillo para la sección de reservaciones; Jorge mandó tipos, capacidades, horarios, cancelación y tarifas, y Luis decidió que Jorge podrá editar las tarifas por temporada en un panel."
+    }
+  },
+  {
+    "id": "s0239",
+    "account": "freelance",
+    "storyline": "ocotillo-sitio",
+    "lang": "es",
+    "tags": [
+      "client"
+    ],
+    "subject": "Casa Ocotillo: lo que sigue después del diseño",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "sofia-mendoza",
+        "to": [
+          "me",
+          "rodrigo-elizondo",
+          "ximena-lara"
+        ],
+        "cc": [
+          "jorge-perez"
+        ],
+        "date": "2025-05-08T11:20:00-06:00",
+        "read": true,
+        "text": "Estimado Luis:\n\nYa aprobamos el diseño y le presento a quienes van a tomar la estafeta: Rodrigo Elizondo va a programar el sitio y conectar las reservaciones, y Ximena Lara va a tomar las fotos. Copio a Jorge. El panel de tarifas que nos enseñó Luis el 2 de abril lo va a manejar Jorge desde recepción. Para las fotos, Jorge también es quien tiene las llaves.\n\nXimena, le comento que julio es nuestro mes más lleno por la Guelaguetza, así que si la sesión puede ser en los primeros días del mes, mucho mejor. Jorge le puede apartar las habitaciones que estén libres.\n\nY Luis, después de tantas llamadas y de tantas versiones del logotipo en la portada, creo que ya va siendo hora de que nos hablemos de tú, si te parece.\n\nUn saludo afectuoso, Sofía Mendoza\n\nSofía Mendoza Alcalá\nDirectora | Hotel Casa Ocotillo\nCalle de García Vigil 512, Centro, Oaxaca"
+      },
+      {
+        "from": "rodrigo-elizondo",
+        "to": [
+          "sofia-mendoza",
+          "me",
+          "ximena-lara"
+        ],
+        "cc": [
+          "jorge-perez"
+        ],
+        "date": "2025-05-08T13:02:00-06:00",
+        "read": true,
+        "text": "Mucho gusto a todos.\n\nYo arranco en cuanto Luis me pase los archivos finales. El motor de reservas lo puedo conectar hasta septiembre, que es cuando tengo hueco; antes de eso dejo el sitio armado con un formulario de contacto. Sofía, ¿ya tienen contratado un motor o lo elegimos?\n\nR"
+      },
+      {
+        "from": "ximena-lara",
+        "to": [
+          "sofia-mendoza",
+          "me",
+          "rodrigo-elizondo"
+        ],
+        "cc": [
+          "jorge-perez"
+        ],
+        "date": "2025-05-08T19:40:00-06:00",
+        "read": true,
+        "text": "Hola Luisito (y hola a todos)\n\nSí puedo la primera semana de julio. Luis, ¿me armas la lista de tomas por habitación? Cuántas fotos de cada una, si van de día o con luz de noche, y los detalles que quieras (textiles, el barro negro, la regadera de talavera que me enseñaste). Sobre todo dime si quieres ese baño de día: si le pega sol directo se pierde el dibujo del azulejo.\n\nX"
+      },
+      {
+        "from": "me",
+        "to": [
+          "sofia-mendoza",
+          "rodrigo-elizondo",
+          "ximena-lara"
+        ],
+        "cc": [
+          "jorge-perez"
+        ],
+        "date": "2025-05-09T08:45:00+01:00",
+        "read": true,
+        "text": "Hola a todos:\n\nSofía, encantado, de tú entonces.\n\nRodrigo, los archivos finales te los paso el lunes 12 en una carpeta compartida, escritorio y móvil.\n\nXimena, te armo la lista en cuanto Jorge me confirme qué cuartos podemos usar.\n\nUn abrazo,\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+      },
+      {
+        "from": "jorge-perez",
+        "to": [
+          "me",
+          "ximena-lara"
+        ],
+        "date": "2025-05-12T12:10:00-06:00",
+        "read": true,
+        "text": "Luis buenas tardes\n\npara julio puedo dejar libres la 3, la 7 y la 11 (doble, superior y suite patio) del 8 al 10. la de la azotea nomas el 10 en la mañana, en la tarde ya entra huesped\n\nJorge"
+      },
+      {
+        "from": "sofia-mendoza",
+        "to": [
+          "rodrigo-elizondo"
+        ],
+        "cc": [
+          "me",
+          "ximena-lara",
+          "jorge-perez"
+        ],
+        "date": "2025-05-13T10:30:00-06:00",
+        "read": true,
+        "text": "Estimado Rodrigo:\n\nRespondo tu pregunta con un poco de retraso. Llevamos las reservaciones con Hospedia desde que abrimos en 2023 y tenemos el contrato pagado hasta marzo del año que viene. Preferiría quedarme con ellos: Jorge ya conoce el sistema y no quisiera cambiarle la manera de trabajar a recepción en plena temporada.\n\nUn saludo afectuoso, Sofía Mendoza\n\nSofía Mendoza Alcalá\nDirectora | Hotel Casa Ocotillo\nCalle de García Vigil 512, Centro, Oaxaca"
+      },
+      {
+        "from": "rodrigo-elizondo",
+        "to": [
+          "me"
+        ],
+        "date": "2025-05-13T16:48:00-06:00",
+        "read": true,
+        "text": "Ya abrí la carpeta que me mandaste ayer. Y sí, Hospedia tiene API.\nR"
+      },
+      {
+        "from": "ximena-lara",
+        "to": [
+          "me"
+        ],
+        "cc": [
+          "sofia-mendoza"
+        ],
+        "date": "2025-05-15T17:05:00-06:00",
+        "read": true,
+        "text": "Luisito, ¿cómo vas con la lista de tomas? Ya tengo las habitaciones que dijo Jorge, pero necesito saber cuántas tomas son para pasarle la cotización a Sofía y comprar el vuelo a Oaxaca antes de que suba.\n\nX"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [
+        {
+          "text": "Pasar a Rodrigo los archivos finales el lunes 12 de mayo",
+          "due": "2025-05-12",
+          "kept": true
+        },
+        {
+          "text": "Mandar a Ximena la lista de tomas cuando Jorge confirme los cuartos disponibles",
+          "kept": true
+        }
+      ],
+      "promisesToOwner": [],
+      "ownerOwes": [],
+      "othersOwe": [],
+      "keyDates": [
+        {
+          "date": "2025-05-12",
+          "what": "Luis entrega los archivos finales a Rodrigo"
+        },
+        {
+          "date": "2025-07-08",
+          "what": "Inicio de los días en que Jorge puede dejar libres las habitaciones 3, 7 y 11 (hasta el 10 de julio)"
+        }
+      ],
+      "facts": [
+        "Desde este hilo Sofía y Luis se hablan de tú.",
+        "Rodrigo programa el sitio; el motor de reservas lo conecta hasta septiembre.",
+        "Casa Ocotillo usa Hospedia desde 2023, con contrato pagado hasta marzo de 2026, y Sofía quiere quedarse con ellos.",
+        "Jorge puede dejar libres la 3, la 7 y la 11 (doble, superior y suite patio) del 8 al 10 de julio, y la suite de la azotea solo la mañana del 10.",
+        "Julio es el mes más lleno del hotel por la Guelaguetza."
+      ],
+      "summary": "Sofía presentó al equipo que va a producir el sitio de Casa Ocotillo y le propuso a Luis hablarse de tú; Luis pasó los archivos a Rodrigo y el último correo es de Ximena preguntando cuándo tendrá la lista de tomas."
+    }
+  },
+  {
+    "id": "s0240",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Logo lockup on client decks",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "priya-raman",
+        "to": [
+          "me"
+        ],
+        "date": "2025-05-22T16:12:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nA first one for you with the lead hat on. Fiona's team keeps putting the old stacked Acme logo on pitch decks, and the guidelines (attached) only allow the horizontal lockup, 24 px minimum height on screen. Before I send a note round, I'd like your view on two things:\n\n- stacked version on title slides only, or gone entirely?\n- client co-branding: left or right of ours? The guidelines don't say, and the Brightwell wrap-up deck does it both ways on consecutive slides\n\nEnd of next week is fine.\n\nP\n\nPriya Raman\nDesign Director, Acme Studio\nacme.example"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "ownerOwes": [],
+      "othersOwe": [],
+      "keyDates": [
+        {
+          "date": "2025-05-30",
+          "what": "End of the following week, when Priya wanted Luis's view"
+        }
+      ],
+      "facts": [
+        "Acme's guidelines allow only the horizontal logo lockup, at least 24 px high on screen.",
+        "Fiona's team uses the old stacked logo on pitch decks.",
+        "The Brightwell wrap-up deck places client co-branding on both sides.",
+        "The guidelines Priya mentioned were not attached."
+      ],
+      "summary": "Priya asked Luis whether the old stacked Acme logo can stay on title slides and which side client co-branding goes on; she said the guidelines were attached but attached nothing, and Luis never answered."
+    }
+  },
+  {
+    "id": "s0241",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Nell Askew: timesheet w/c 2 and 9 June",
+    "state": {
+      "inbox": false,
+      "trash": true
+    },
+    "messages": [
+      {
+        "from": "callie-fraser",
+        "to": [
+          "me",
+          "freya-lindgren"
+        ],
+        "cc": [
+          "rhys-morgan"
+        ],
+        "date": "2025-06-16T09:10:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nNell can keep going on a rolling basis through July, so this one is just admin. Her timesheet for w/c 2 and 9 June shows 9 days against a PO for 8, and our payroll won't release her pay until someone at Acme approves the extra day. Could we do ten minutes on the phone? I can do today at 14:30 or tomorrow at 10:00.\n\nSpeak soon, Callie\n\nCallie Fraser\nSenior Consultant, Northlight Talent\n+44 7700 900 231"
+      },
+      {
+        "from": "freya-lindgren",
+        "to": [
+          "callie-fraser",
+          "me"
+        ],
+        "cc": [
+          "rhys-morgan"
+        ],
+        "date": "2025-06-16T09:52:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nThe ninth day is real. Nell ran the extra guerrilla sessions with me on 11 June. I agreed it with her on the day and forgot to raise the PO, so that one is mine.\n\nFreya\n\nFreya Lindgren\nSenior UX Researcher, Acme Studio\nacme.example"
+      },
+      {
+        "from": "rhys-morgan",
+        "to": [
+          "callie-fraser",
+          "me",
+          "freya-lindgren"
+        ],
+        "date": "2025-06-16T10:05:00+01:00",
+        "read": true,
+        "text": "Not my PO. Taking myself off this.\nR"
+      },
+      {
+        "from": "me",
+        "to": [
+          "callie-fraser",
+          "freya-lindgren"
+        ],
+        "cc": [
+          "jae-cho",
+          "hollie-tran"
+        ],
+        "date": "2025-06-16T10:21:00+01:00",
+        "read": true,
+        "text": "Callie, tomorrow at 10:00 works.\n\nJae, Hollie: Nell's sheet has 6 June down as \"internal: crit\". Was she at Friday crit all day or just the afternoon?\n\nThanks, Luis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "hollie-tran",
+        "to": [
+          "me",
+          "callie-fraser",
+          "freya-lindgren",
+          "jae-cho"
+        ],
+        "date": "2025-06-16T10:40:00+01:00",
+        "read": true,
+        "text": "afternoon only. she showed her recruiting notes at crit, 2 till 5ish. morning she was with jae\nh"
+      },
+      {
+        "from": "jae-cho",
+        "to": [
+          "me"
+        ],
+        "date": "2025-06-16T11:02:00+01:00",
+        "read": true,
+        "text": "I'd approve all nine. She was recruiting for my test on the Friday morning.\nCan we put the 11th on the pitch code? If it goes down as internal, Philippa will bounce it.\nJae"
+      },
+      {
+        "from": "callie-fraser",
+        "to": [
+          "me"
+        ],
+        "date": "2025-06-17T08:15:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nSo sorry, I've been pulled into a client meeting at 10. Could we move to Wednesday at 11:00 or 15:30 instead?\n\nSpeak soon, Callie\n\nCallie Fraser\nSenior Consultant, Northlight Talent\n+44 7700 900 231"
+      },
+      {
+        "from": "me",
+        "to": [
+          "callie-fraser"
+        ],
+        "date": "2025-06-17T08:40:00+01:00",
+        "read": true,
+        "text": "Wednesday at 11:00 is fine.\n\nThanks, Luis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "ownerOwes": [],
+      "othersOwe": [],
+      "keyDates": [
+        {
+          "date": "2025-06-17",
+          "what": "First agreed call with Callie at 10:00, cancelled by her"
+        },
+        {
+          "date": "2025-06-18",
+          "what": "New time agreed for the call with Callie, 11:00"
+        },
+        {
+          "date": "2025-06-11",
+          "what": "Nell's extra day of guerrilla sessions with Freya"
+        }
+      ],
+      "facts": [
+        "Nell Askew is a contractor placed by Northlight Talent; her timesheet for w/c 2 and 9 June showed 9 days against a PO for 8.",
+        "Freya agreed the extra day (11 June) with Nell and forgot to raise the PO.",
+        "On 6 June Nell recruited for Jae's test in the morning and showed her recruiting notes at Friday crit in the afternoon.",
+        "Jae suggested charging the 11th to the pitch code, not internal.",
+        "Rhys took himself off the thread: not his PO."
+      ],
+      "summary": "Callie needed Acme to approve a ninth day on the contractor Nell Askew's timesheet; Freya confirmed the extra day, Jae recommended approving all nine, and the call with Callie moved from Tuesday 17 June at 10:00 to Wednesday 18 June at 11:00."
+    }
+  },
+  {
+    "id": "s0242",
+    "account": "freelance",
+    "storyline": "ocotillo-sitio",
+    "lang": "es",
+    "tags": [
+      "client"
+    ],
+    "subject": "Sesión en Casa Ocotillo: ya quedó",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "ximena-lara",
+        "to": [
+          "me"
+        ],
+        "date": "2025-07-01T10:20:00-06:00",
+        "read": true,
+        "text": "Hola Luisito\n\nMe voy a Oaxaca el martes 8 en la noche. Jorge me deja la 3, la 7 y la 11 para el 9 y el 10, y el jueves tengo de 7 a 10 en la azotea, justo cuando le da la luz bonita. Ya imprimí tus 46 tomas. Le sumé cuatro del patio porque Sofía quiere que salga la bugambilia.\n\nEl lunes 14 te mando la hoja de contactos. Tú y Sofía mándenme los numeritos de las que quieran, porfa. Con «la de la cama» no nos vamos a entender. Retoco ésas y les paso JPG a 2400 px y TIFF para el día que se les ocurra imprimir algo.\n\nX"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [
+        {
+          "who": "ximena-lara",
+          "text": "Mandar la hoja de contactos numerada el lunes 14 de julio",
+          "due": "2025-07-14",
+          "kept": true
+        }
+      ],
+      "ownerOwes": [],
+      "othersOwe": [],
+      "keyDates": [
+        {
+          "date": "2025-07-09",
+          "what": "Primer día de fotos en Casa Ocotillo"
+        },
+        {
+          "date": "2025-07-10",
+          "what": "Segundo día de fotos; azotea de 7 a 10"
+        },
+        {
+          "date": "2025-07-14",
+          "what": "Fecha en que Ximena quedó de mandar la hoja de contactos"
+        }
+      ],
+      "facts": [
+        "Ximena vuela a Oaxaca el martes 8 de julio en la noche.",
+        "Fotografía las habitaciones 3, 7 y 11 y la azotea (jueves de 7 a 10).",
+        "La lista de tomas de Luis tiene 46 tomas; Ximena agregó 4 del patio con la bugambilia a pedido de Sofía.",
+        "Las fotos se eligen por número de la hoja de contactos; solo las elegidas se retocan.",
+        "Los finales van en JPG a 2400 px para web y en TIFF."
+      ],
+      "summary": "Ximena avisó que fotografía Casa Ocotillo el 9 y 10 de julio con la lista de 46 tomas de Luis más 4 del patio, y explicó cómo se eligen y entregan las fotos."
+    }
+  },
+  {
+    "id": "s0243",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "small favour: gym freeze",
+    "state": {
+      "inbox": false,
+      "trash": true
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "harriet-lowe"
+        ],
+        "date": "2025-07-20T18:05:00+01:00",
+        "read": true,
+        "text": "Harriet, could you fill in the attached form for Plinth? They'll freeze my membership for up to three months with a note from a physio or GP. Between the shins and the flu I've been twice since March. I think they just need the dates you were treating me.\n\nLuis"
+      },
+      {
+        "from": "me",
+        "to": [
+          "hamish-fairweather"
+        ],
+        "date": "2025-07-20T18:09:00+01:00",
+        "read": true,
+        "text": "sorry, here it is",
+        "attachments": [
+          {
+            "filename": "Plinth_medical_freeze_form.pdf",
+            "mime": "application/pdf",
+            "size": 184320
+          }
+        ]
+      },
+      {
+        "from": "hamish-fairweather",
+        "to": [
+          "me"
+        ],
+        "date": "2025-07-21T07:40:00+01:00",
+        "read": true,
+        "text": "Dear Luis,\n\nI think this form has gone to the wrong Ha-.  I am many things, but I am not a physiotherapist, and I have not set foot in a gymnasium since a compulsory term of it in 1969, which I remember chiefly for the smell of the ropes.  I read no further than the first line, in case it holds anything private, and I have deleted it.\n\nI hope the flu has gone.  We missed you at Ifeoma's on the first.  The book divided us exactly down the middle, which is the most one can ask of a book.\n\nYours, Hamish Fairweather"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "ownerOwes": [],
+      "othersOwe": [],
+      "keyDates": [],
+      "facts": [
+        "Plinth Gym freezes a membership for up to three months with a note from a physio or GP.",
+        "Luis had been to the gym twice since March 2025, between shin splints and flu.",
+        "The form (Plinth_medical_freeze_form.pdf) went to Hamish instead of Harriet; Hamish deleted it.",
+        "Hamish last went to a gymnasium in 1969.",
+        "Luis missed the book club at Ifeoma's on 1 July 2025."
+      ],
+      "summary": "Luis asked Harriet to fill in Plinth Gym's form for a medical membership freeze, forgot the attachment, then sent the form to Hamish by mistake; Hamish said so, and the form never reached Harriet."
+    }
+  },
+  {
+    "id": "s0244",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Expense claim approved: 29 July, £64.80",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "philippa-dunn",
+        "to": [
+          "me"
+        ],
+        "date": "2025-08-07T11:35:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\n29 July, £64.80: your claim for the Tandem City pitch lunch and the two taxis back from Hackney is approved and will be paid with your 28 August salary.\n\nThe receipts you uploaded are fine for these, so there's nothing more to send. For next time: anything over £50 from a single supplier needs a VAT receipt, not the card slip, which is why I came back to you on the June ones.\n\nMany thanks, Philippa\n\nPhilippa Dunn\nFinance Manager, Acme Studio\nacme.example"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "ownerOwes": [],
+      "othersOwe": [],
+      "keyDates": [
+        {
+          "date": "2025-07-29",
+          "what": "Date of the expenses claimed"
+        },
+        {
+          "date": "2025-08-28",
+          "what": "Salary the claim is paid with"
+        }
+      ],
+      "facts": [
+        "The claim was £64.80 for the Tandem City pitch lunch and two taxis back from Hackney.",
+        "The uploaded receipts were enough; nothing more to send.",
+        "Over £50 from a single supplier needs a VAT receipt, not a card slip."
+      ],
+      "summary": "Philippa told Luis his £64.80 expense claim from 29 July (Tandem City pitch lunch and two taxis) is approved and will be paid with the 28 August salary."
+    }
+  },
+  {
+    "id": "s0245",
+    "account": "freelance",
+    "storyline": "ocotillo-sitio",
+    "lang": "es",
+    "tags": [
+      "client"
+    ],
+    "subject": "Acceso a Hospedia para Rodrigo",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "sofia-mendoza"
+        ],
+        "date": "2025-08-13T09:40:00+01:00",
+        "read": true,
+        "text": "Hola, Sofía:\n\nDe la hoja que mandó Ximena el 14 de julio quedaron 31 fotos. Ya le pasé los números para que retoque ésas.\n\nAhora sí, Hospedia. Rodrigo tiene apartadas las primeras dos semanas de septiembre para conectarlo, y para eso necesita:\n\n- un usuario de Hospedia con permisos de administrador, mejor uno nuevo a nombre de él y no el tuyo\n- la llave de la API, que sale en Configuración > Integraciones\n- saber si el huésped paga en el sitio al reservar o al llegar al hotel\n\nLo de la llave lo puede sacar Jorge si andas ocupada. Si prefieres, lo vemos en una llamada corta: yo puedo cualquier día después de las 4 de la tarde de Londres, que son las 9 de la mañana en Oaxaca.\n\nUn abrazo,\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+      },
+      {
+        "from": "sofia-mendoza",
+        "to": [
+          "me"
+        ],
+        "cc": [
+          "jorge-perez"
+        ],
+        "date": "2025-08-14T12:15:00-06:00",
+        "read": true,
+        "text": "Estimado Luis:\n\nGracias por ponerlo tan clarito. Hablé con Hospedia esta mañana y me explicaron que el usuario de administrador tiene que pedirlo el titular de la cuenta, que soy yo, así que ya quedó: a Rodrigo le llega hoy mismo una invitación a rodrigo@elizondo.example. La llave de la API se la pedí a Jorge, que conoce ese panel mejor que yo; te copio para que se la haga llegar directamente.\n\nSobre el cobro: preferimos que el huésped pague el 50% al reservar y el resto al llegar. Con las cancelaciones de la temporada pasada aprendimos la lección.\n\nNo hace falta la llamada, creo que con esto quedamos. Ximena me mandó un adelanto de las fotos de la azotea y me emocioné como niña chiquita.\n\nUn saludo afectuoso, Sofía Mendoza\n\nSofía Mendoza Alcalá\nDirectora | Hotel Casa Ocotillo\nCalle de García Vigil 512, Centro, Oaxaca"
+      },
+      {
+        "from": "jorge-perez",
+        "to": [
+          "me"
+        ],
+        "date": "2025-08-15T13:02:00-06:00",
+        "read": true,
+        "text": "Luis buenas tardes\n\nla llave se la mande a Rodrigo por mensaje para que no viaje por correo, ya la probo y si conecta\n\nJorge"
+      },
+      {
+        "from": "me",
+        "to": [
+          "sofia-mendoza",
+          "jorge-perez"
+        ],
+        "date": "2025-08-18T09:15:00+01:00",
+        "read": true,
+        "text": "Gracias a los dos. Rodrigo ya entra a Hospedia con su usuario y la conexión responde, así que septiembre queda en pie. Dejo anotado lo del 50% al reservar para que así quede en el sitio.\n\nUn abrazo,\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "ownerOwes": [],
+      "othersOwe": [],
+      "keyDates": [
+        {
+          "date": "2025-07-14",
+          "what": "Ximena mandó la hoja de contactos de la que se eligieron 31 fotos"
+        }
+      ],
+      "facts": [
+        "Quedaron 31 fotos elegidas de la sesión de Ximena.",
+        "Rodrigo tiene apartadas las primeras dos semanas de septiembre para conectar Hospedia.",
+        "Sofía es la titular de la cuenta de Hospedia; Rodrigo recibió un usuario de administrador propio.",
+        "Jorge le mandó la llave de la API a Rodrigo por mensaje, no por correo.",
+        "En el sitio el huésped paga el 50% al reservar y el resto al llegar.",
+        "4 de la tarde en Londres son las 9 de la mañana en Oaxaca (agosto)."
+      ],
+      "summary": "Luis pidió a Sofía lo necesario para que Rodrigo conecte Hospedia en septiembre; Sofía dio de alta un usuario para Rodrigo, Jorge le pasó la llave de la API y quedó que el huésped paga 50% al reservar y el resto al llegar."
+    }
+  },
+  {
+    "id": "s0246",
+    "account": "freelance",
+    "storyline": "ocotillo-sitio",
+    "lang": "es",
+    "tags": [
+      "client"
+    ],
+    "subject": "pruebas del motor de reservas",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "jorge-perez",
+        "to": [
+          "me"
+        ],
+        "date": "2025-10-04T13:30:00-06:00",
+        "read": true,
+        "text": "Luis buenas tardes\n\nhice 6 reservas con mi tarjeta. 4 bien, las 2 de la azotea me cobraron la noche completa en lugar del 50%. era una regla vieja de esa suite en Hospedia, ya la cambie.\n\nen mi celular se corta el calendario de la derecha. en el de mi hija sale completo. ya le mande captura a Rodrigo, dice que el martes 7 lo deja. la confirmacion llega en ingles aunque uno reserve en español. eso ya lo reporte con Hospedia.\n\nya puse las tarifas del 29 de oct al 3 de nov: doble $2,500, superior $2,900, suites 25% mas de lo normal. la señora Sofia quiere sacar el sitio antes de diciembre. en diciembre ya entran las de navidad por agencia y no quiere hacer el cambio con recepcion capturando grupos. se habla el lunes en la junta.\n\nJorge"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "ownerOwes": [],
+      "othersOwe": [],
+      "keyDates": [
+        {
+          "date": "2025-10-07",
+          "what": "Rodrigo dijo que para el martes corregía el calendario cortado en celular"
+        },
+        {
+          "date": "2025-10-29",
+          "what": "Inicio de las tarifas de Día de Muertos (hasta el 3 de noviembre)"
+        },
+        {
+          "date": "2025-11-03",
+          "what": "Fin de las tarifas de Día de Muertos"
+        }
+      ],
+      "facts": [
+        "Jorge hizo 6 reservas de prueba; 4 salieron bien.",
+        "Las 2 reservas de la suite azotea cobraron la noche completa en vez del 50%; Jorge cambió la regla de cobro en Hospedia.",
+        "En el celular de Jorge el calendario se ve cortado del lado derecho; en el de su hija no.",
+        "El correo de confirmación de Hospedia llega en inglés; Jorge levantó un reporte con Hospedia.",
+        "Tarifas de Día de Muertos 2025: doble $2,500, superior $2,900, suites 25% arriba de lo normal.",
+        "Sofía quiere publicar el sitio antes de diciembre para no cruzarlo con las reservas de Navidad que entran por agencia."
+      ],
+      "summary": "Jorge avisó que las pruebas del motor de reservas destaparon una regla de cobro que ya cambió, un calendario cortado en su celular y confirmaciones en inglés; también cargó las tarifas de Día de Muertos."
+    }
+  },
+  {
+    "id": "s0247",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "keys?",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "ben-hartley",
+          "harriet-lowe",
+          "ifeoma-nwosu",
+          "callum-reid",
+          "mateo-cordero"
+        ],
+        "date": "2025-11-09T10:40:00+00:00",
+        "read": true,
+        "text": "Has anyone got my keys? Two keys (one long brass, one small silver) and a grey door fob, on a red bottle-opener keyring. I definitely had them at Ben and Jo's last night because I opened Callum's beer with them. Mateo let us in with the spare at 1.\n\nBen, could you have a look round the garden by the fire pit? Everyone else, coat pockets?\n\nL"
+      },
+      {
+        "from": "ifeoma-nwosu",
+        "to": [
+          "me",
+          "ben-hartley",
+          "harriet-lowe",
+          "callum-reid",
+          "mateo-cordero"
+        ],
+        "date": "2025-11-09T11:15:00+00:00",
+        "read": true,
+        "text": "Hi lovely people\n\nNot in my bag or my coat, sorry. I was only there 9 till 10 between shifts, so probably not much use.\n\nIfe"
+      },
+      {
+        "from": "callum-reid",
+        "to": [
+          "me",
+          "ben-hartley",
+          "harriet-lowe",
+          "ifeoma-nwosu",
+          "mateo-cordero"
+        ],
+        "date": "2025-11-09T12:02:00+00:00",
+        "read": true,
+        "text": "Alright Luis\n\nChecked both jackets and the rucksack, nothing. To be fair that bottle opener has had a better season than our back four.\n\nCallum"
+      },
+      {
+        "from": "mateo-cordero",
+        "to": [
+          "me"
+        ],
+        "date": "2025-11-09T13:30:00+00:00",
+        "read": true,
+        "text": "hey Luis my train back is the 16.30 from King's Cross tomorrow, do you want me to leave the spare with Niamh or under the mat?\n\nI'm out all morning at the library so I won't see you"
+      },
+      {
+        "from": "me",
+        "to": [
+          "ben-hartley",
+          "harriet-lowe",
+          "ifeoma-nwosu",
+          "callum-reid",
+          "mateo-cordero"
+        ],
+        "cc": [
+          "olivia-marsh"
+        ],
+        "date": "2025-11-09T18:20:00+00:00",
+        "read": true,
+        "text": "Mateo, give it to Niamh please, not the mat.\n\nOlivia, I've copied you in case they don't turn up. If the fob's gone, what does a replacement cost, and do you need to switch the old one off? Nothing on the keyring has the address on it, for what it's worth.\n\nThanks,\nLuis"
+      },
+      {
+        "from": "olivia-marsh",
+        "to": [
+          "me"
+        ],
+        "date": "2025-11-10T09:35:00+00:00",
+        "read": true,
+        "text": "Dear Luis,\n\nThank you for letting us know. A replacement fob for the main entrance at 14 Albion Road is £35, and we deactivate a lost fob as soon as it is reported, which I have done this morning. The spare fob remains active.\n\nThe front door key to Flat 3 is a restricted key, so copies can only be cut by Hackney Lock & Key on presentation of the landlord's authorisation letter, which I attach. They charge £18 per key.\n\nKind regards,\n\nOlivia Marsh\nSenior Property Manager\nHalden & Pryce Lettings | 112 Stoke Newington Church Street, London N16 0LA\nT: 020 7946 0312\nThis email and any attachments are confidential and intended solely for the addressee.",
+        "attachments": [
+          {
+            "filename": "Key_cutting_authorisation_Flat3_14AlbionRoad.pdf",
+            "mime": "application/pdf",
+            "size": 96512
+          }
+        ]
+      },
+      {
+        "from": "harriet-lowe",
+        "to": [
+          "me",
+          "ben-hartley",
+          "ifeoma-nwosu",
+          "callum-reid",
+          "mateo-cordero"
+        ],
+        "date": "2025-11-10T20:05:00+00:00",
+        "read": true,
+        "text": "Hi Luis,\n\nLong shot, but when I went to get my coat from Ben's spare room there was a set of keys on the windowsill next to the big plant. I assumed they were Jo's. Worth a look before you pay for anything.\n\nHarriet\n\nHarriet Lowe MCSP\nDalston Step Clinic, Dalston"
+      },
+      {
+        "from": "ben-hartley",
+        "to": [
+          "me",
+          "harriet-lowe",
+          "ifeoma-nwosu",
+          "callum-reid",
+          "mateo-cordero"
+        ],
+        "date": "2025-11-11T07:45:00+00:00",
+        "read": true,
+        "text": "Hi all,\n\nMystery solved: they were on the spare room windowsill, exactly where Harriet said. Jo reckons you put them down when you went in to look for the speaker cable. Photo attached so you can confirm before anyone gets excited.\n\nOptions:\n- I drop them at yours on Wednesday on my way home, about 7pm\n- you pick them up from ours any evening this week\n- they live here now\n\nCheers, Ben",
+        "attachments": [
+          {
+            "filename": "IMG_4471.jpg",
+            "mime": "image/jpeg",
+            "size": 2214318
+          }
+        ]
+      },
+      {
+        "from": "me",
+        "to": [
+          "ben-hartley",
+          "harriet-lowe",
+          "ifeoma-nwosu",
+          "callum-reid",
+          "mateo-cordero"
+        ],
+        "cc": [
+          "olivia-marsh"
+        ],
+        "date": "2025-11-11T08:30:00+00:00",
+        "read": true,
+        "text": "That's them. Ben, Wednesday at 7 is perfect, thank you. Harriet, you're a genius.\n\nOlivia, sorry for the noise: they've turned up, so no replacement needed. Could you switch the old fob back on?\n\nThanks,\nLuis"
+      },
+      {
+        "from": "olivia-marsh",
+        "to": [
+          "me"
+        ],
+        "date": "2025-11-11T10:20:00+00:00",
+        "read": true,
+        "text": "Dear Luis,\n\nThank you for confirming. The fob has been reactivated.\n\nKind regards,\n\nOlivia Marsh\nSenior Property Manager\nHalden & Pryce Lettings | 112 Stoke Newington Church Street, London N16 0LA\nT: 020 7946 0312\nThis email and any attachments are confidential and intended solely for the addressee."
+      },
+      {
+        "from": "me",
+        "to": [
+          "ben-hartley"
+        ],
+        "date": "2025-11-12T19:18:00+00:00",
+        "read": true,
+        "text": "cheers for dropping them round. fob works too\n\nL"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [
+        {
+          "who": "ben-hartley",
+          "text": "Drop the keys at Luis's on Wednesday 12 November around 7pm",
+          "due": "2025-11-12",
+          "kept": true
+        }
+      ],
+      "ownerOwes": [],
+      "othersOwe": [],
+      "keyDates": [
+        {
+          "date": "2025-11-08",
+          "what": "Evening at Ben and Jo's where the keys were lost"
+        },
+        {
+          "date": "2025-11-12",
+          "what": "Luis confirmó que Ben le llevó las llaves y que el fob funciona"
+        }
+      ],
+      "facts": [
+        "The keys: one long brass, one small silver, and a grey door fob on a red bottle-opener keyring.",
+        "Mateo let Luis in with the spare at 1am. He planned to take the 16.30 from King's Cross on 10 November, and Luis asked him to leave the spare with Niamh.",
+        "A replacement main-entrance fob at 14 Albion Road costs £35.",
+        "The Flat 3 front door key is restricted: copies only at Hackney Lock & Key with the landlord's authorisation letter, £18 per key.",
+        "The keys were on the windowsill of Ben and Jo's spare room, by the big plant.",
+        "Olivia deactivated the fob on 10 November and reactivated it on 11 November."
+      ],
+      "summary": "Luis lost his keys and door fob after an evening at Ben and Jo's; Ben found them where Harriet had seen them and dropped them off, and Olivia reactivated the fob."
+    }
+  },
+  {
+    "id": "s0248",
+    "account": "freelance",
+    "storyline": "ocotillo-sitio",
+    "lang": "es",
+    "tags": [
+      "client"
+    ],
+    "subject": "Fecha para publicar el sitio",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "sofia-mendoza"
+        ],
+        "cc": [
+          "jorge-perez"
+        ],
+        "date": "2025-11-10T09:05:00+00:00",
+        "read": true,
+        "text": "Hola, Sofía:\n\nTodo listo de nuestro lado. Propongo publicar el jueves 13 a las 10 de la mañana de Oaxaca. Rodrigo hace el cambio de dominio y yo me quedo pendiente toda esa mañana.\n\nUn abrazo,\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+      },
+      {
+        "from": "jorge-perez",
+        "to": [
+          "me",
+          "sofia-mendoza"
+        ],
+        "date": "2025-11-10T12:40:00-06:00",
+        "read": true,
+        "text": "Luis buenas tardes el 13 me entra un grupo de boda con 9 habitaciones y no quiero que se me mueva nada en Hospedia mientras recibo al grupo. mejor la otra semana\n\nJorge"
+      },
+      {
+        "from": "sofia-mendoza",
+        "to": [
+          "me",
+          "jorge-perez"
+        ],
+        "date": "2025-11-11T09:30:00-06:00",
+        "read": true,
+        "text": "Estimado Luis:\n\nJorge tiene razón, ese día va a estar de locos. ¿Qué te parece el jueves 20, a la misma hora? Sigue siendo antes de las reservas de diciembre y ese jueves tenemos muy pocas llegadas.\n\nUn saludo afectuoso, Sofía Mendoza\n\nSofía Mendoza Alcalá\nDirectora | Hotel Casa Ocotillo\nCalle de García Vigil 512, Centro, Oaxaca"
+      },
+      {
+        "from": "me",
+        "to": [
+          "sofia-mendoza",
+          "jorge-perez"
+        ],
+        "date": "2025-11-11T16:20:00+00:00",
+        "read": true,
+        "text": "Jueves 20 a las 10, entonces. Ya le avisé a Rodrigo. Y como quedamos, el mantenimiento de $4,500 MXN al mes arranca en diciembre.\n\nUn abrazo,\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+      },
+      {
+        "from": "jorge-perez",
+        "to": [
+          "me"
+        ],
+        "date": "2025-11-12T08:50:00-06:00",
+        "read": true,
+        "text": "ok el 20\n\nJorge"
+      },
+      {
+        "from": "jorge-perez",
+        "to": [
+          "me",
+          "sofia-mendoza"
+        ],
+        "date": "2025-11-20T10:16:00-06:00",
+        "read": true,
+        "text": "ya abre el sitio con el dominio nuevo. me llego la reserva de prueba a recepcion\nJorge"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "ownerOwes": [],
+      "othersOwe": [],
+      "keyDates": [
+        {
+          "date": "2025-11-13",
+          "what": "Fecha propuesta original para publicar el sitio (descartada)"
+        },
+        {
+          "date": "2025-11-20",
+          "what": "Publicación del sitio, programada para las 10 de Oaxaca y confirmada esa mañana"
+        }
+      ],
+      "facts": [
+        "El 13 de noviembre llegaba un grupo de boda con 9 habitaciones.",
+        "Rodrigo hace el cambio de dominio.",
+        "El mantenimiento es de $4,500 MXN al mes desde diciembre de 2025.",
+        "La nueva fecha la propuso Sofía.",
+        "Jorge confirmó que abrió el sitio en el dominio nuevo y que la reserva de prueba llegó a recepción."
+      ],
+      "summary": "Por un grupo de boda, Casa Ocotillo movió la publicación del sitio del jueves 13 al jueves 20 de noviembre de 2025; Jorge confirmó esa mañana que el sitio y las reservaciones funcionaban."
+    }
+  },
+  {
+    "id": "s0249",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Your timesheet, w/c 12 Jan",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "kate-sutherland"
+        ],
+        "date": "2026-01-19T09:20:00+00:00",
+        "read": true,
+        "text": "Hey Kate,\n\nApproving Kestrel time and your sheet has three days on KES-02 last week. You're on Tandem, aren't you? Should those be on TAN-01?\n\nThanks, Luis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "kate-sutherland",
+        "to": [
+          "me"
+        ],
+        "date": "2026-01-19T09:41:00+00:00",
+        "read": true,
+        "text": "Hi\n\nKES-02 is right. Rhys borrowed me for three days while Anil was off. I was testing what the app does when you try again after paying with an expired card. All client side.\n\nKate"
+      },
+      {
+        "from": "me",
+        "to": [
+          "kate-sutherland"
+        ],
+        "date": "2026-01-19T09:50:00+00:00",
+        "read": true,
+        "text": "Ah, I'd missed that. Approved.\n\nThanks, Luis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "ownerOwes": [],
+      "othersOwe": [],
+      "keyDates": [],
+      "facts": [
+        "Kate logged three days on KES-02 in the week of 12 January 2026.",
+        "Rhys borrowed Kate for the Kestrel app's card retry (client side only) while Anil was off sick.",
+        "She was testing a retry after an expired card.",
+        "Tandem's code is TAN-01."
+      ],
+      "summary": "Luis thought Kate had logged three Tandem days to the Kestrel code; she explained Rhys had moved her onto Kestrel's card retry while Anil was off, and Luis approved the timesheet."
+    }
+  },
+  {
+    "id": "s0250",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work",
+      "client"
+    ],
+    "subject": "Open Studio, Thursday 12 February",
+    "listId": "everyone.acme.example",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "natasha-whyte",
+        "to": [
+          "list"
+        ],
+        "date": "2026-02-06T10:15:00+00:00",
+        "read": true,
+        "text": "Hi all,\n\nOpen Studio is THURSDAY 12 FEBRUARY, 6.30 to 9. About 60 clients and friends are coming, so desks need to be CLEAR BY 5PM on the day, and Kasia's prints go up on the long wall that morning. Drinks on the 3rd floor, food from Brine & Crumb.\n\nIf you've invited anyone yourself, send me their name BY WEDNESDAY so they're on the door list.\n\nTash\n\nNatasha Whyte\nStudio Operations Manager, Acme Studio\nacme.example"
+      },
+      {
+        "from": "steve-barlow",
+        "to": [
+          "list"
+        ],
+        "date": "2026-02-09T07:52:00+00:00",
+        "read": true,
+        "text": "Morning,\n\n6.30 or 7? Fiona told me 7. This says 6.30. My train from Leeds gets in at 18:12 so it matters. Is there parking? Fiona's giving me a lift back.\n\nSteve\n\nSteve Barlow | Head of E-commerce | Pennywort Grocers\nPennywort House, Kirkstall Road, Leeds LS4\nM: 07700 900 662"
+      },
+      {
+        "from": "hollie-tran",
+        "to": [
+          "list"
+        ],
+        "date": "2026-02-09T08:30:00+00:00",
+        "read": true,
+        "text": "think that one was meant for tash. hi steve\nh"
+      },
+      {
+        "from": "natasha-whyte",
+        "to": [
+          "list"
+        ],
+        "date": "2026-02-09T08:41:00+00:00",
+        "read": true,
+        "text": "Hi Steve, 6.30, doors from 6.15. No parking at the building, sorry, the nearest car park is on Saffron Hill.\n\nEveryone else: please DON'T reply-all to this one.\n\nTash\n\nNatasha Whyte\nStudio Operations Manager, Acme Studio\nacme.example"
+      },
+      {
+        "from": "jae-cho",
+        "to": [
+          "list"
+        ],
+        "date": "2026-02-09T09:05:00+00:00",
+        "read": true,
+        "text": "Keep the list open. It's doing better numbers than my table tennis sign-up.\nJae"
+      },
+      {
+        "from": "steve-barlow",
+        "to": [
+          "list"
+        ],
+        "date": "2026-02-10T08:20:00+00:00",
+        "read": true,
+        "text": "Morning,\n\nTrain's changed. Now arriving 18:47 not 18:12, so I'll be LATE not early. Somebody tell Fiona.\n\nSteve\n\nSteve Barlow | Head of E-commerce | Pennywort Grocers\nPennywort House, Kirkstall Road, Leeds LS4\nM: 07700 900 662"
+      },
+      {
+        "from": "jake-pemberton",
+        "to": [
+          "list"
+        ],
+        "date": "2026-02-11T09:12:00+00:00",
+        "read": true,
+        "text": "Everyone now accepts Acme senders only. Fiona copied the list when she sent Steve the invite.\nJake"
+      },
+      {
+        "from": "natasha-whyte",
+        "to": [
+          "list"
+        ],
+        "date": "2026-02-12T09:00:00+00:00",
+        "read": true,
+        "text": "Morning all, it's today. DESKS CLEAR BY 5PM, coats in the meeting room, and if you're on the door rota you've had a calendar invite.\n\nTash\n\nNatasha Whyte\nStudio Operations Manager, Acme Studio\nacme.example"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "ownerOwes": [],
+      "othersOwe": [],
+      "keyDates": [
+        {
+          "date": "2026-02-11",
+          "what": "Deadline to give Natasha the names of personal guests (Wednesday)"
+        },
+        {
+          "date": "2026-02-12",
+          "what": "Open Studio, 6.30 to 9pm, desks clear by 5pm"
+        }
+      ],
+      "facts": [
+        "Open Studio runs 6.30 to 9pm with doors from 6.15; about 60 clients and friends invited.",
+        "Food is from Brine & Crumb; drinks on the 3rd floor; Kasia's prints go on the long wall.",
+        "No parking at the building; nearest car park on Saffron Hill.",
+        "Steve's train from Leeds moved from an 18:12 arrival to 18:47.",
+        "Fiona told Steve 7pm and copied the studio list when she sent Steve the invite.",
+        "Jake set the everyone list to accept only acme.example senders on 11 February."
+      ],
+      "summary": "Natasha announced Acme's Open Studio for Thursday 12 February 2026; Steve Barlow replied to the whole studio list twice about the start time and his train, and Jake closed the list to outside senders."
+    }
+  },
+  {
+    "id": "s0251",
+    "account": "icloud",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "Whitstable film!",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "clara-moreau",
+        "to": [
+          "me"
+        ],
+        "date": "2026-06-19T21:10:00+02:00",
+        "read": true,
+        "text": "Hi Luis!\n\nThe two rolls from our Whitstable day in March came back today, and they're better than I deserve given I shot half of them into the sun. There's one of you and Niamh on the harbour wall with the chips that I think wants a frame.\n\nI'm in London for work on 25 and 26 June. I can leave work early on the 25th (from about 4) and I can't travel home before the 27th, so either evening works for me. Dinner? I'll bring the prints.\n\nClara x"
+      },
+      {
+        "from": "me",
+        "to": [
+          "clara-moreau"
+        ],
+        "date": "2026-06-20T10:30:00+01:00",
+        "read": true,
+        "text": "dinner yes! the 26th is better, I'm at work late on the 25th. warning: we move on the 27th so our place is all boxes, so somewhere in between. where are you staying?\n\nL"
+      },
+      {
+        "from": "clara-moreau",
+        "to": [
+          "me"
+        ],
+        "date": "2026-06-22T08:50:00+02:00",
+        "read": true,
+        "text": "Near King's Cross, the theatre's booked a hotel. The 26th then! I'll trust you on the place.\n\nClara x"
+      },
+      {
+        "from": "me",
+        "to": [
+          "clara-moreau"
+        ],
+        "date": "2026-06-22T19:15:00+01:00",
+        "read": true,
+        "text": "booked the Lebanese place on Upper Street, 7.30 on the 26th, under Cordero\n\nL"
+      },
+      {
+        "from": "clara-moreau",
+        "to": [
+          "me"
+        ],
+        "date": "2026-06-25T13:20:00+02:00",
+        "read": true,
+        "text": "Luis, I'm so sorry. The London trip is off: the transfer of our show fell through this morning and they've cancelled everyone's travel. That was my only work trip to London till December.\n\nCan you cancel the table? I'll post the prints instead, just tell me the new address.\n\nClara x"
+      },
+      {
+        "from": "me",
+        "to": [
+          "clara-moreau"
+        ],
+        "date": "2026-06-25T18:02:00+01:00",
+        "read": true,
+        "text": "no stress, table cancelled. new address from saturday: Flat B, 41 Mallory Road, London E5. the harbour wall one is going on a wall\n\nL"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "ownerOwes": [],
+      "othersOwe": [
+        "Clara: post the Whitstable prints to Flat B, 41 Mallory Road, London E5."
+      ],
+      "keyDates": [
+        {
+          "date": "2026-06-26",
+          "what": "Dinner that was cancelled (7.30, Lebanese place on Upper Street)"
+        },
+        {
+          "date": "2026-06-27",
+          "what": "Luis and Niamh move to Mallory Road"
+        }
+      ],
+      "facts": [
+        "Clara shot two rolls of film on a day in Whitstable with Luis and Niamh in March 2026.",
+        "One print shows Luis and Niamh on the harbour wall with chips.",
+        "The table was booked under Cordero at a Lebanese restaurant on Upper Street.",
+        "Clara's trip was cancelled because the transfer of her theatre's show fell through."
+      ],
+      "summary": "Clara planned dinner with Luis on 26 June to hand over film prints from their Whitstable day; her London work trip was cancelled, Luis cancelled the table, and she'll post the prints to Mallory Road instead."
+    }
+  },
+  {
+    "id": "s0252",
+    "account": "icloud",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "your bag (Larkspur ref LHRLA51960)",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "nikhil-mehta"
+        ],
+        "cc": [
+          "hayley-brooks"
+        ],
+        "date": "2026-07-04T10:12:00+01:00",
+        "read": true,
+        "text": "Nik,\n\nLarkspur rang me this morning because I'm the UK contact on your report. They've found the bag: it went to Dublin and sat there all week, and it's now at the Heathrow baggage office. They'll courier it free to any UK address, or to New York for £95, and they won't say if they'll reimburse it. For the stuff you bought, they told me to get you to send the receipts yourself by 17 July.\n\nI'd send it to Hayley's, since that's where you stayed, and it can wait there until you're over in December. Hayley, would that be ok? It's one big grey suitcase.\n\nL"
+      },
+      {
+        "from": "nikhil-mehta",
+        "to": [
+          "me"
+        ],
+        "cc": [
+          "hayley-brooks"
+        ],
+        "date": "2026-07-04T08:30:00-04:00",
+        "read": true,
+        "text": "Yo Luis\n\nlegend. Hayley's is perfect if she's ok with it, there's nothing in there I need before December, it's mostly jumpers anyway. I'll do the claim tonight, I've kept every receipt, £186 of emergency shirts and a toothbrush.\n\nSorry they keep calling you, I'll switch the contact to me.\n\nNik"
+      },
+      {
+        "from": "hayley-brooks",
+        "to": [
+          "me",
+          "nikhil-mehta"
+        ],
+        "date": "2026-07-05T20:15:00+01:00",
+        "read": true,
+        "text": "Hello my lovelies\n\nYes of course!! Give them:\n- Flat 1, 62 Holdcroft Road, London SE15\n- weekdays I'm in from 5pm (school!), Saturdays any time\n- my mobile, 07700 900 517\n\nIt can live under the stairs with the Christmas decorations. Mind you, the last thing you left here was a cafetiere and it's still in my cupboard.\n\nH xx"
+      },
+      {
+        "from": "hayley-brooks",
+        "to": [
+          "me",
+          "nikhil-mehta"
+        ],
+        "date": "2026-07-08T18:04:00+01:00",
+        "read": true,
+        "text": "It's here! Courier came just after five. Thanks for sorting, Luis. Nik, it's safe under the stairs.\n\nH xx"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [
+        {
+          "who": "nikhil-mehta",
+          "text": "File the expenses claim that night",
+          "due": "2026-07-04",
+          "kept": false
+        },
+        {
+          "who": "nikhil-mehta",
+          "text": "Switch the baggage report contact to himself",
+          "kept": false
+        }
+      ],
+      "ownerOwes": [],
+      "othersOwe": [],
+      "keyDates": [
+        {
+          "date": "2026-07-08",
+          "what": "Suitcase delivered to Hayley's after 5pm"
+        },
+        {
+          "date": "2026-07-17",
+          "what": "Deadline Larkspur gave Nikhil to submit receipts"
+        }
+      ],
+      "facts": [
+        "The airline is Larkspur, reference LHRLA51960.",
+        "The bag went to Dublin and then to the Heathrow baggage office.",
+        "Courier to any UK address is free; to New York £95, not guaranteed to be refunded.",
+        "Nikhil bought £186 of emergency shirts and a toothbrush.",
+        "Hayley's address: Flat 1, 62 Holdcroft Road, London SE15; she's in from 5pm on weekdays; mobile 07700 900 517.",
+        "It's one big grey suitcase, kept under Hayley's stairs until December."
+      ],
+      "summary": "Larkspur found Nikhil's suitcase at Heathrow; Luis arranged delivery to Hayley's, who confirmed it arrived and put it under her stairs, while Nikhil said he'd file his own expenses claim."
+    }
+  },
+  {
+    "id": "s0253",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "Caravel: the maths",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "harriet-lowe",
+        "to": [
+          "me"
+        ],
+        "date": "2026-07-11T10:05:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nYour £52 landed last night, thank you. One correction to my maths:\n\nBill at Caravel on Friday: £312 for six, service included\nSplit six ways: £52 each\nAfter they took the £24 service charge off for the 50-minute wait for mains: £48 each\n\nI've sent you all the £4 difference this morning. Should be in your account already.\n\nHarriet\n\nHarriet Lowe MCSP\nDalston Step Clinic, Dalston"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "ownerOwes": [],
+      "othersOwe": [],
+      "keyDates": [
+        {
+          "date": "2026-07-10",
+          "what": "Six-person dinner at Caravel"
+        },
+        {
+          "date": "2026-07-11",
+          "what": "Harriet sent the £4 refunds"
+        }
+      ],
+      "facts": [
+        "Dinner at Caravel on Friday 10 July 2026 cost £312 for six, service included.",
+        "The original split was £52 each; Harriet confirmed receiving Luis's £52.",
+        "Caravel took off the £24 service charge because mains took 50 minutes.",
+        "The final share was £48; Harriet refunded £4 to each of the other five on 11 July."
+      ],
+      "summary": "Harriet told Luis she got his £52 for Friday's dinner at Caravel, and since the restaurant dropped the £24 service charge, she's already sent everyone £4 back."
+    }
+  },
+  {
+    "id": "s0254",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "your 10k",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "darren-kirby"
+        ],
+        "date": "2026-08-25T19:40:00+01:00",
+        "read": true,
+        "text": "Hi Darren,\n\nWhen you came round about the extractor fan in June you said you were doing the Lea Valley 10k for the children's hospice, and I said I'd sponsor you. The link I wrote down doesn't work, I think I got a letter wrong. Have you got it? It's on the 6th, isn't it?\n\nLuis"
+      },
+      {
+        "from": "darren-kirby",
+        "to": [
+          "me"
+        ],
+        "date": "2026-08-26T08:12:00+01:00",
+        "read": true,
+        "text": "its giveit.example/darren-kirby-lv10k , sunday 6th yes. apreciate it\n\nRegards Darren\nDarren Kirby | Maintenance | Halden & Pryce Lettings"
+      },
+      {
+        "from": "me",
+        "to": [
+          "darren-kirby"
+        ],
+        "date": "2026-08-26T21:05:00+01:00",
+        "read": true,
+        "text": "Done, £30 in. Good luck on the 6th.\n\nLuis"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [
+        {
+          "text": "Sponsor Darren's Lea Valley 10k (promised in June)",
+          "kept": true
+        }
+      ],
+      "promisesToOwner": [],
+      "ownerOwes": [],
+      "othersOwe": [],
+      "keyDates": [
+        {
+          "date": "2026-09-06",
+          "what": "Lea Valley 10k (Sunday)"
+        }
+      ],
+      "facts": [
+        "Darren was due to run the Lea Valley 10k for a children's hospice on Sunday 6 September 2026.",
+        "His page is giveit.example/darren-kirby-lv10k.",
+        "Luis sponsored him £30.",
+        "Darren mentioned the run when he came to Albion Road about the extractor fan in June 2026."
+      ],
+      "summary": "Luis asked Darren for his sponsorship link for the Lea Valley 10k and gave £30."
+    }
+  },
+  {
+    "id": "s0255",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "portfolio for the junior role",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "jae-cho",
+        "to": [
+          "me"
+        ],
+        "date": "2026-09-26T11:20:00+01:00",
+        "read": true,
+        "text": "Luis,\n\nI'd get Tomasz Pieczek in for a chat. The bus timetable on tomaszpieczek.example is the best thing I've seen in the pile so far.\n\nIt's all stuff he set himself, though. I'd want to see how he takes feedback when there's an actual brief. A mate sent me the link. Do we still run him past Callie?\n\nJae"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "ownerOwes": [],
+      "othersOwe": [],
+      "keyDates": [],
+      "facts": [
+        "Tomasz Pieczek's portfolio is at tomaszpieczek.example; Jae's favourite piece is a bus timetable redesign.",
+        "All his case studies are self-initiated redesigns.",
+        "He came through a friend of Jae's, not through Callie."
+      ],
+      "summary": "Jae recommended a chat with Tomasz Pieczek about the junior role, flagged that all his portfolio projects are self-initiated, and asked whether to run him past Callie; Luis didn't reply."
+    }
+  },
+  {
+    "id": "s0256",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "Oliver's run (and a bit of news)",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "aisha-rahman",
+        "to": [
+          "me"
+        ],
+        "date": "2026-09-30T20:40:00+01:00",
+        "read": true,
+        "text": "Hi lovely,\n\nOliver finished the Thames Path 10k on Sunday in 52:10, which he would like everyone to know is a personal best, and the page closed at £1,240 for Little Lanterns. Thank you for the £40. He only saw your comment about the mustard ties when he got home and nearly spat his tea out.\n\nThe other news, since you'll hear it from Niamh anyway: we're having a baby! Due the end of March. I'm past twelve weeks so we're finally allowed to say. I'm fine, tired, and living on crackers.\n\nGive Biscuit a scratch from me.\n\nAisha x"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "ownerOwes": [],
+      "othersOwe": [],
+      "keyDates": [
+        {
+          "date": "2026-09-27",
+          "what": "Oliver ran the Thames Path 10k"
+        }
+      ],
+      "facts": [
+        "Oliver ran the Thames Path 10k in 52:10, a personal best.",
+        "The fundraising page closed at £1,240 for Little Lanterns.",
+        "Luis gave £40 and left a comment about the mustard ties.",
+        "Aisha was past twelve weeks pregnant at the end of September 2026.",
+        "Aisha said the baby was due at the end of March 2027."
+      ],
+      "summary": "Aisha thanked Luis for sponsoring Oliver's Thames Path 10k (52:10, £1,240 raised for Little Lanterns) and told him they're expecting a baby at the end of March."
+    }
+  },
+  {
+    "id": "s0257",
+    "account": "freelance",
+    "storyline": "odonto-san-pedro",
+    "lang": "es",
+    "tags": [
+      "client"
+    ],
+    "subject": "Fwd: Lineamientos de imagen exterior – Local 7",
+    "state": {
+      "inbox": true
+    },
+    "messages": [
+      {
+        "from": "paola-trevino",
+        "to": [
+          "me"
+        ],
+        "date": "2026-09-28T10:15:00-06:00",
+        "read": true,
+        "text": "Hola Luis, ¿cómo estás? Te reenvío lo que mandó la administración de la plaza de San Pedro. Ojo con el punto 1, revísalo por favor y me dices qué ocupas de nosotros.\n\nGracias, Paola\n\nPaola Treviño\nCoordinación de Marketing | Clínicas Diente de Sierra\npaola.trevino@dientedesierra.example",
+        "forward": {
+          "from": "Lic. Mónica Salinas <administracion@plazacalzada.example>",
+          "date": "2026-09-25T13:02:00-06:00",
+          "subject": "Lineamientos de imagen exterior – Local 7",
+          "to": "Paola Treviño <paola.trevino@dientedesierra.example>",
+          "text": "Buenas tardes, Lic. Treviño:\n\nLe comparto los lineamientos de la plaza para la imagen exterior del Local 7:\n\n1. Anuncio permanente: una sola pieza en la marquesina, máximo 4.00 × 1.20 m, con iluminación interna y aprobación previa de esta administración.\n2. Lonas promocionales: permitidas únicamente durante los 10 días previos a la apertura, montadas sobre la marquesina y en la misma medida.\n3. No se permite repartir volantes en el estacionamiento ni colocarlos en parabrisas.\n4. Los permisos se tramitan con al menos 10 días hábiles de anticipación.\n\nQuedo a sus órdenes.\n\nLic. Mónica Salinas\nAdministración | Plaza Calzada San Pedro"
+        }
+      },
+      {
+        "from": "me",
+        "to": [
+          "paola-trevino"
+        ],
+        "date": "2026-09-29T09:40:00+01:00",
+        "read": true,
+        "text": "Hola, Paola:\n\nGracias. Si entiendo bien el punto 1, ¿también quieren que diseñe el anuncio permanente de la marquesina? Eso no venía en lo que me pediste el 21 (lona, volantes, seis posts y la página) y es otro tipo de trabajo: lleva planos para el fabricante y la aprobación de la plaza. Lo puedo cotizar aparte, pero antes de meterme quiero confirmar que es eso lo que buscan.\n\nLo que sí tomo en cuenta desde ya: la lona mide lo mismo que la marquesina, 4 × 1.2 m, y los volantes no se pueden repartir en el estacionamiento.\n\nSaludos,\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+      },
+      {
+        "from": "paola-trevino",
+        "to": [
+          "me"
+        ],
+        "date": "2026-09-30T11:05:00-06:00",
+        "read": true,
+        "text": "No, perdón, me expliqué fatal. El anuncio permanente lo hace el mismo proveedor de las otras seis clínicas, con el diseño de siempre. Te lo mandé solo por las medidas y lo de los volantes. Para que quede claro:\n\nYa quedó:\n- Lona de fachada (4 × 1.2 m): va sobre la marquesina del 11 al 21 de noviembre\n- Volantes (media carta): se reparten en recepción de las seis clínicas, nada en la plaza\n- Posts (1080 × 1350): los seis de siempre\n\nFalta visto bueno:\n- El permiso de la lona con la plaza, ese lo tramito yo esta semana\n\nLa primera propuesta la seguimos esperando para el 5 de octubre, ¿verdad?\n\nGracias, Paola\n\nPaola Treviño\nCoordinación de Marketing | Clínicas Diente de Sierra\npaola.trevino@dientedesierra.example"
+      },
+      {
+        "from": "me",
+        "to": [
+          "paola-trevino"
+        ],
+        "date": "2026-10-01T08:50:00+01:00",
+        "read": true,
+        "text": "Clarísimo, gracias. Sí, el lunes 5 te mando la primera propuesta.\n\nSaludos,\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [
+        {
+          "text": "Mandar a Paola la primera propuesta el lunes 5 de octubre",
+          "due": "2026-10-05",
+          "kept": true
+        }
+      ],
+      "promisesToOwner": [
+        {
+          "who": "paola-trevino",
+          "text": "Tramitar el permiso de la lona con la plaza esa semana",
+          "kept": false
+        }
+      ],
+      "ownerOwes": [],
+      "othersOwe": [
+        "Paola: tramitar con la plaza el permiso de la lona."
+      ],
+      "keyDates": [
+        {
+          "date": "2026-10-05",
+          "what": "Primera propuesta de la campaña de San Pedro"
+        },
+        {
+          "date": "2026-11-11",
+          "what": "La lona puede subir a la marquesina (10 días antes de la apertura)"
+        },
+        {
+          "date": "2026-11-21",
+          "what": "Inauguración de la clínica de San Pedro"
+        }
+      ],
+      "facts": [
+        "La clínica nueva está en el Local 7 de Plaza Calzada San Pedro; la administradora es la Lic. Mónica Salinas.",
+        "El anuncio permanente de la marquesina mide como máximo 4.00 × 1.20 m y lo hace el proveedor de siempre, no Luis.",
+        "La lona mide 4 × 1.2 m y va sobre la marquesina del 11 al 21 de noviembre.",
+        "Los volantes son media carta y se reparten en recepción de las seis clínicas; la plaza no permite volantes en el estacionamiento.",
+        "Los posts son seis, de 1080 × 1350.",
+        "Los permisos de la plaza se tramitan con al menos 10 días hábiles de anticipación."
+      ],
+      "summary": "Paola reenvió los lineamientos de la plaza de San Pedro; Luis creyó que le pedían también el anuncio permanente, Paola aclaró que eso lo hace otro proveedor y que solo importaban las medidas de la lona y la regla de los volantes, y Luis confirmó la primera propuesta para el 5 de octubre."
+    }
+  },
+  {
+    "id": "s0258",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "gas saftey check flat 3 14 albion rd",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "darren-kirby",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-05T08:05:00+01:00",
+        "read": true,
+        "text": "annual gas saftey check booked thurs 8th oct, 8-12. engineer is Gary from Northside Gas. pls make sure someone is in and the cupbord by the boiler is clear\n\nRegards Darren\nDarren Kirby | Maintenance | Halden & Pryce Lettings"
+      },
+      {
+        "from": "me",
+        "to": [
+          "darren-kirby"
+        ],
+        "date": "2026-10-05T08:40:00+01:00",
+        "read": true,
+        "text": "Hi Darren, we moved out of Flat 3 at the end of June, so I can't let him in. Olivia should have the new tenants' details.\n\nLuis"
+      },
+      {
+        "from": "darren-kirby",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-05T09:15:00+01:00",
+        "read": true,
+        "text": "sorry my mistake, system still had you on it. cancelled, il rebook with the new tenants\n\nRegards Darren\nDarren Kirby | Maintenance | Halden & Pryce Lettings"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "ownerOwes": [],
+      "othersOwe": [],
+      "keyDates": [
+        {
+          "date": "2026-10-08",
+          "what": "Gas safety check at Flat 3, 14 Albion Road, 8-12 (cancelled for Luis)"
+        }
+      ],
+      "facts": [
+        "The engineer was Gary from Northside Gas.",
+        "Halden & Pryce's system still listed Luis as the tenant of Flat 3, 14 Albion Road.",
+        "Darren will rebook with the new tenants."
+      ],
+      "summary": "Darren booked Luis for a gas safety check at his old flat on 8 October; Luis reminded him they'd moved out in June, and Darren cancelled it to rebook with the new tenants."
+    }
+  },
+  {
+    "id": "s0259",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "client",
+      "work"
+    ],
+    "folder": "Label_22",
+    "subject": "Dinner after the launch?",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "margaret-okafor"
+        ],
+        "date": "2026-10-05T11:30:00+01:00",
+        "read": true,
+        "text": "Hi Margaret,\n\nPriya and I would like to take you and Ian out to dinner after the launch, to say thank you for this year. We were thinking Thursday 26 November at Fenwright's on Exmouth Market, 7pm. Would that work?\n\nThanks, Luis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "margaret-okafor",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-07T09:10:00+01:00",
+        "read": true,
+        "text": "Dear Luis,\n\nThank you for thinking of us. I'm afraid the museum's hospitality policy rules out dinner for both Ian and me while the contract is running. Ours goes through to March.\n\nI would be very glad to have you in for tea. With the launch on 12 November, I'm likely to be tied up until the board's open evening on the 19th. Any time after that would be lovely.\n\nWith best wishes,\n\nMargaret Okafor\nHead of Digital\nHolloway Museum of Making | 30 Seven Sisters Road, London N7\nPlease direct collection enquiries to collections@hollowaymuseum.example."
+      },
+      {
+        "from": "me",
+        "to": [
+          "margaret-okafor"
+        ],
+        "date": "2026-10-07T09:40:00+01:00",
+        "read": true,
+        "text": "Of course. Tea at the museum sounds lovely.\n\nThanks, Luis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "ownerOwes": [],
+      "othersOwe": [],
+      "keyDates": [
+        {
+          "date": "2026-11-12",
+          "what": "Holloway launch"
+        },
+        {
+          "date": "2026-11-19",
+          "what": "The board's open evening"
+        },
+        {
+          "date": "2026-11-26",
+          "what": "Proposed dinner date (declined)"
+        }
+      ],
+      "facts": [
+        "The proposed dinner was Thursday 26 November, 7pm, at Fenwright's on Exmouth Market, with Priya.",
+        "The Holloway Museum's gifts and hospitality policy bars staff from accepting meals from a supplier during a contract.",
+        "Acme's contract with the museum runs to March 2027.",
+        "Margaret suggested a cup of tea at the museum after the open evening instead."
+      ],
+      "summary": "Luis invited Margaret and Ian to a thank-you dinner on 26 November; Margaret declined because the museum's hospitality policy bars meals from a supplier during a contract, and suggested tea at the museum after the open evening."
+    }
+  },
+  {
+    "id": "s0260",
+    "account": "freelance",
+    "storyline": "odonto-san-pedro",
+    "lang": "es",
+    "tags": [
+      "client"
+    ],
+    "subject": "Propuesta San Pedro: ¿15 minutos?",
+    "state": {
+      "inbox": true
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "hector-garza"
+        ],
+        "cc": [
+          "paola-trevino"
+        ],
+        "date": "2026-10-07T16:10:00+01:00",
+        "read": true,
+        "text": "Dr. Garza:\n\nEl lunes le mandé a Paola la primera propuesta de la lona y del volante para San Pedro. Como esas dos piezas las autoriza usted, ¿le parece si se la presento en una llamada de 15 minutos? Puedo el jueves o el viernes a las 9 de la mañana de Monterrey, que son las 4 de la tarde en Londres.\n\nSaludos,\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+      },
+      {
+        "from": "hector-garza",
+        "to": [
+          "me"
+        ],
+        "cc": [
+          "paola-trevino"
+        ],
+        "date": "2026-10-08T07:45:00-06:00",
+        "read": true,
+        "text": "Luis: gracias, no hace falta la llamada. La reviso con Paola y le hago llegar mis comentarios por escrito.\nHG"
+      },
+      {
+        "from": "me",
+        "to": [
+          "hector-garza"
+        ],
+        "cc": [
+          "paola-trevino"
+        ],
+        "date": "2026-10-08T15:20:00+01:00",
+        "read": true,
+        "text": "Perfecto, Dr. Garza. Quedo atento a sus comentarios.\n\nSaludos,\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [
+        {
+          "who": "hector-garza",
+          "text": "Mandar sus comentarios por escrito sobre la lona y el volante",
+          "kept": true
+        }
+      ],
+      "ownerOwes": [],
+      "othersOwe": [],
+      "keyDates": [],
+      "facts": [
+        "La primera propuesta se mandó a Paola el lunes 5 de octubre.",
+        "El Dr. Garza autoriza la lona y el volante.",
+        "Las 9 de la mañana en Monterrey son las 4 de la tarde en Londres (octubre, antes del cambio de horario).",
+        "El Dr. Garza prefiere comentarios por escrito a una llamada."
+      ],
+      "summary": "Luis ofreció al Dr. Garza presentarle en una llamada la primera propuesta de la lona y el volante de San Pedro; él declinó la llamada y dijo que mandaría sus comentarios por escrito después de revisarla con Paola."
+    }
+  },
+  {
+    "id": "s0261",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Q1 planning: Pennywort after the beta",
+    "folder": "Label_21",
+    "state": {
+      "inbox": true
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "dev-malhotra",
+          "marcus-adeyemi"
+        ],
+        "date": "2026-10-08T10:05:00+01:00",
+        "read": true,
+        "text": "Hey both,\n\nPriya wants Q1 2027 plans by the end of the month. For Pennywort after the 1 December beta, could you each put a rough list in the planning sheet (tab \"Pennywort Q1\") by next Friday? Days, not detail.\n\nThanks, Luis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "dev-malhotra",
+        "to": [
+          "me",
+          "marcus-adeyemi"
+        ],
+        "date": "2026-10-08T14:30:00+01:00",
+        "read": true,
+        "text": "Hi Luis\n\nI've started a list for checkout fixes after the beta, about 12 days so far, but it's a guess until we see what 2,000 people actually do with it. One thing I'd like checked: does the points history screen count as mine or Marcus's?\n\nThanks, Dev"
+      },
+      {
+        "from": "marcus-adeyemi",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-09T17:50:00+01:00",
+        "read": true,
+        "text": "Hey Luis,\n\nI'd be guessing at who's doing the work if I put days against it now. Have you got twenty minutes on Monday before I fill it in? Easier to talk in person.\n\nMarcus\n\nMarcus Adeyemi\nSenior Product Designer, Acme Studio\nacme.example"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "ownerOwes": [],
+      "othersOwe": [],
+      "keyDates": [
+        {
+          "date": "2026-10-16",
+          "what": "Luis's deadline for the Pennywort Q1 lists"
+        },
+        {
+          "date": "2026-10-12",
+          "what": "Monday chat Marcus asked for"
+        },
+        {
+          "date": "2026-12-01",
+          "what": "Pennywort beta to 2,000 customers"
+        }
+      ],
+      "facts": [
+        "Priya wants Q1 2027 plans by the end of October.",
+        "The planning sheet tab is called \"Pennywort Q1\".",
+        "Dev estimates about 12 days of checkout fixes after the beta.",
+        "Marcus wanted to talk in person before putting numbers in."
+      ],
+      "summary": "Luis asked Dev and Marcus for rough Pennywort estimates after the beta; Dev put checkout at about 12 days and asked who owns points history, and Marcus asked to talk on Monday before filling in the sheet."
+    }
+  },
+  {
+    "id": "s0262",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "Autumn Handicap moved to Saturday 24 October",
+    "listId": "members.marshgaterunners.example",
+    "state": {
+      "inbox": false
+    },
+    "people": [
+      {
+        "id": "gwen-pattullo-marshgate-secretary",
+        "name": "Gwen Pattullo",
+        "email": "gwen.pattullo@hey.com",
+        "lang": "en",
+        "timezone": "Europe/London",
+        "accounts": [
+          "personal"
+        ],
+        "relationship": "runs the Marshgate Runners handicaps",
+        "style": {
+          "register": "brisk, friendly, all logistics",
+          "length": "short paragraphs",
+          "greeting": "Evening all, or the name",
+          "signoff": "Gwen",
+          "signature": "Gwen Pattullo\nHandicap organiser, Marshgate Runners",
+          "quoting": "bottom",
+          "quirks": [
+            "confirms each change by name"
+          ]
+        },
+        "facts": [
+          "runs the club's handicap races and the start sheet"
+        ]
+      },
+      {
+        "id": "rob-tilley-marshgate",
+        "name": "Rob Tilley",
+        "email": "robtilley@outlook.com",
+        "lang": "en",
+        "timezone": "Europe/London",
+        "accounts": [
+          "personal"
+        ],
+        "relationship": "Marshgate Runners member",
+        "style": {
+          "register": "easy-going",
+          "length": "one or two lines",
+          "greeting": "none",
+          "signoff": "Rob",
+          "signature": null,
+          "quoting": "bottom",
+          "quirks": []
+        },
+        "facts": [
+          "has a 16-year-old son"
+        ]
+      }
+    ],
+    "messages": [
+      {
+        "from": "gwen-pattullo-marshgate-secretary",
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-13T19:20:00+01:00",
+        "read": true,
+        "text": "Evening all,\n\nBad news about Saturday. The council's events team tell us Millfields is closed on the morning of the 17th for a funfair build, so the Autumn Handicap moves to Saturday 24 October. Same place, same time: 9am start, numbers from 8.30 at the bandstand.\n\nYour handicap start times don't change. If you've entered and can't make the 24th, tell me and I'll take you off the sheet.\n\nGwen\n\nGwen Pattullo\nHandicap organiser, Marshgate Runners"
+      },
+      {
+        "from": "harriet-lowe",
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-13T21:02:00+01:00",
+        "read": true,
+        "text": "Hi all,\n\nI'll have to drop out on the 24th, Pickle has the vet that morning. Gwen, take me off please.\n\nFor anyone running it off the back of a heavy week: if your shins or calves ache in the first mile and it's gone by the end, that's usually fine.\nIf it builds as you go, or it's still there the next morning, give it a miss.\n\nHarriet\n\nHarriet Lowe MCSP\nDalston Step Clinic, Dalston"
+      },
+      {
+        "from": "olivia-marsh",
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-14T08:55:00+01:00",
+        "read": true,
+        "text": "Dear all,\n\nPlease could I be removed from the start list for 24 October, as I will be away that weekend. I would be grateful if my entry fee could be carried over to the Christmas handicap.\n\nKind regards,\n\nOlivia Marsh\nSenior Property Manager\nHalden & Pryce Lettings | 112 Stoke Newington Church Street, London N16 0LA\nT: 020 7946 0312\nThis email and any attachments are confidential and intended solely for the addressee."
+      },
+      {
+        "from": "gwen-pattullo-marshgate-secretary",
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-14T18:30:00+01:00",
+        "read": true,
+        "text": "Harriet, Olivia: you're both off, and fees carry over to Christmas (it's £6 either way).\n\nWe now need two more marshals for the 24th, as the funfair has taken two of ours. Volunteers please.\n\nGwen\n\nGwen Pattullo\nHandicap organiser, Marshgate Runners"
+      },
+      {
+        "from": "rob-tilley-marshgate",
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-15T12:10:00+01:00",
+        "read": true,
+        "text": "I'll marshal. Can bring my lad too if 16 is old enough.\nRob"
+      },
+      {
+        "from": "gwen-pattullo-marshgate-secretary",
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-15T20:00:00+01:00",
+        "read": true,
+        "text": "Rob, 16 is fine as long as he's on the same point as you. That's both marshals, thank you.\n\nGwen\n\nGwen Pattullo\nHandicap organiser, Marshgate Runners"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "ownerOwes": [],
+      "othersOwe": [],
+      "keyDates": [
+        {
+          "date": "2026-10-17",
+          "what": "Original Autumn Handicap date (Millfields closed)"
+        },
+        {
+          "date": "2026-10-24",
+          "what": "Autumn Handicap at Millfields, 9am, numbers from 8.30 at the bandstand"
+        }
+      ],
+      "facts": [
+        "Handicap start times stay the same for the new date.",
+        "Harriet dropped out because her dog Pickle has a vet appointment on the morning of the 24th.",
+        "Olivia dropped out because she's away that weekend.",
+        "Entry fees (£6) carry over to the Christmas handicap.",
+        "Rob Tilley and his 16-year-old son are marshalling."
+      ],
+      "summary": "Marshgate Runners' Autumn Handicap moved from Saturday 17 to Saturday 24 October because Millfields is closed for a funfair build; Harriet and Olivia dropped out and Rob and his son filled the two missing marshal spots."
+    }
+  },
+  {
+    "id": "s0263",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Scan and go",
+    "state": {
+      "inbox": true
+    },
+    "messages": [
+      {
+        "from": "jonathan-ellery",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-20T08:47:00+01:00",
+        "read": false,
+        "text": "Hi Luis,\n\nSteve Barlow, on the phone to me last night: \"we always assumed scan and go was the point.\" It isn't in the statement of work, and Sam's change request for £14,500 is still unsigned. Until it's signed, nobody designs or builds any of it.\n\nCan you tell me by Thursday whether Marcus or Dev have already put time into it, and roughly how much?\n\nJonathan\n\nJonathan Veyland\nFounder & Managing Director\nAcme Studio | 3rd floor, 48 Turnmill Street, London EC1M 5RR\n+44 20 7946 0500\nFor Acme Studio project correspondence only."
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "ownerOwes": [
+        "Tell Jonathan by Thursday 22 October whether Marcus or Dev have already spent time on scan and go, and roughly how much."
+      ],
+      "othersOwe": [],
+      "keyDates": [
+        {
+          "date": "2026-10-22",
+          "what": "Jonathan's deadline for Luis's answer (Thursday)"
+        }
+      ],
+      "facts": [
+        "Steve Barlow told Jonathan: \"we always assumed scan and go was the point.\"",
+        "Scan and go isn't in Pennywort's statement of work.",
+        "Sam's change request for scan and go is £14,500 and unsigned.",
+        "Jonathan ruled that nobody designs or builds scan and go until the change request is signed."
+      ],
+      "summary": "Jonathan told Luis that Steve Barlow thinks scan and go was always in scope; it isn't, the £14,500 change request is unsigned, and nobody is to work on it until it is. He asked Luis by Thursday how much time Marcus or Dev have already spent on it."
+    }
+  },
+  {
+    "id": "s0264",
+    "account": "freelance",
+    "lang": "es",
+    "tags": [
+      "client"
+    ],
+    "subject": "Fajilla Semilla Viva: arte final",
+    "state": {
+      "inbox": true
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "ernesto-villasenor"
+        ],
+        "date": "2026-10-08T17:30:00+01:00",
+        "read": true,
+        "text": "Hola, Ernesto:\n\nTe mando el arte final de la fajilla para la edición de diciembre con Fundación Semilla Viva, ya con el logo y el \"38 escuelas\" como los aprobó Lucía. Va en dos versiones: papel kraft con tinta blanca y papel blanco a una tinta.\n\nPara cerrar el archivo de imprenta me falta un dato: cuántas fajillas van a imprimir. Chuy cobra distinto arriba de mil y prefiero acomodar el pliego antes de mandárselo. ¿Me lo confirmas?\n\nSaludos,\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418",
+        "attachments": [
+          {
+            "filename": "Fajilla_SemillaViva_dic2026_kraft.pdf",
+            "mime": "application/pdf",
+            "size": 2318450
+          },
+          {
+            "filename": "Fajilla_SemillaViva_dic2026_blanco.pdf",
+            "mime": "application/pdf",
+            "size": 1987342
+          }
+        ]
+      },
+      {
+        "from": "ernesto-villasenor",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-09T12:20:00-06:00",
+        "read": true,
+        "text": "Qué tal Luis,\n\nSe ven muy bien, me late más la kraft. El número no lo tengo todavía, depende de cuántas bolsas nos pida la fundación para sus eventos. Lo veo con Inés y te paso la cantidad el martes 13 sin falta.\n\nSaludos, Ernesto"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [
+        {
+          "who": "ernesto-villasenor",
+          "text": "Pasar la cantidad de fajillas a imprimir el martes 13 de octubre",
+          "due": "2026-10-13",
+          "kept": false
+        }
+      ],
+      "ownerOwes": [],
+      "othersOwe": [
+        "Ernesto: confirmar cuántas fajillas se imprimen (prometido para el martes 13 de octubre)."
+      ],
+      "keyDates": [
+        {
+          "date": "2026-10-13",
+          "what": "Ernesto prometió la cantidad de fajillas"
+        }
+      ],
+      "facts": [
+        "La fajilla es para la edición de diciembre de 2026 con Fundación Semilla Viva, con el logo y \"38 escuelas\" aprobados por Lucía.",
+        "Hay dos versiones: papel kraft con tinta blanca y papel blanco a una tinta; Ernesto prefiere la kraft.",
+        "Chuy (la imprenta) cobra distinto arriba de mil fajillas.",
+        "La cantidad depende de cuántas bolsas pida la fundación; Ernesto lo ve con Inés.",
+        "Archivos: Fajilla_SemillaViva_dic2026_kraft.pdf y Fajilla_SemillaViva_dic2026_blanco.pdf."
+      ],
+      "summary": "Luis mandó a Ernesto el arte final de la fajilla de diciembre con Fundación Semilla Viva y le pidió cuántas se van a imprimir; Ernesto prefirió la versión kraft y prometió la cantidad para el martes 13 de octubre, pero no la ha mandado."
+    }
+  },
+  {
+    "id": "s0265",
+    "account": "freelance",
+    "storyline": "odonto-san-pedro",
+    "lang": "es",
+    "tags": [
+      "client"
+    ],
+    "subject": "Segunda propuesta San Pedro",
+    "state": {
+      "inbox": true
+    },
+    "messages": [
+      {
+        "from": "me",
+        "to": [
+          "paola-trevino"
+        ],
+        "date": "2026-10-19T16:45:00+01:00",
+        "read": true,
+        "text": "Hola, Paola:\n\nTe mando la segunda propuesta con el cambio que me pidió por correo el Dr. Garza el martes pasado: el azul oscuro de la lona ya solo va en la franja de arriba, y el teléfono queda en azul sobre fondo blanco, mucho más visible desde la calle.\n\n- Lona de fachada, 4 × 1.2 m (PDF a escala 1:10)\n- Volante media carta, frente y vuelta\n- Seis posts de 1080 × 1350 (mismos textos que el 5)\n\nNecesito el visto bueno de la lona y el volante a más tardar el 3 de noviembre. La imprenta me pide el PDF y la medida final de la lona el día 6. Los posts los puedes aprobar tú; en cuanto me digas se los paso a Rodrigo para la página.\n\nSaludos,\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418",
+        "attachments": [
+          {
+            "filename": "SanPedro_Lona_4x1.2_v2.pdf",
+            "mime": "application/pdf",
+            "size": 3145728
+          },
+          {
+            "filename": "SanPedro_Volante_v2.pdf",
+            "mime": "application/pdf",
+            "size": 1468006
+          },
+          {
+            "filename": "SanPedro_Posts_v2.pdf",
+            "mime": "application/pdf",
+            "size": 5872025
+          }
+        ]
+      },
+      {
+        "from": "paola-trevino",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-20T10:30:00-06:00",
+        "read": true,
+        "text": "Gracias, Luis. El teléfono ya se lee de lejos.\n\nYa quedó:\n- Posts (1080 × 1350): aprobados los seis. Solo en el 4 cambia \"Agenda tu cita\" por \"Agenda tu primera cita\", que es la promo de apertura\n\nFalta visto bueno:\n- Lona (4 × 1.2 m) y volante (media carta): los veo con el Dr. Garza el viernes en la junta de dirección y te escribo en cuanto salga\n\nGracias, Paola\n\nPaola Treviño\nCoordinación de Marketing | Clínicas Diente de Sierra\npaola.trevino@dientedesierra.example"
+      },
+      {
+        "from": "me",
+        "to": [
+          "paola-trevino"
+        ],
+        "date": "2026-10-20T19:10:00+01:00",
+        "read": true,
+        "text": "Gracias, Paola. Cambio el post 4 y se los paso a Rodrigo con los demás. Quedo pendiente de lo del viernes.\n\nSaludos,\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [
+        {
+          "text": "Cambiar el post 4 y pasar los posts a Rodrigo",
+          "kept": false
+        }
+      ],
+      "promisesToOwner": [
+        {
+          "who": "paola-trevino",
+          "text": "Escribir en cuanto salga la revisión con el Dr. Garza del viernes",
+          "due": "2026-10-23",
+          "kept": false
+        }
+      ],
+      "ownerOwes": [
+        "Cambiar el texto del post 4 a \"Agenda tu primera cita\" y pasar los seis posts a Rodrigo para la página."
+      ],
+      "othersOwe": [
+        "Paola: revisar la lona y el volante con el Dr. Garza el viernes 23 de octubre y avisar a Luis.",
+        "Dr. Garza: visto bueno de la lona y el volante a más tardar el 3 de noviembre."
+      ],
+      "keyDates": [
+        {
+          "date": "2026-10-23",
+          "what": "Paola revisa la lona y el volante con el Dr. Garza en la junta de dirección"
+        },
+        {
+          "date": "2026-11-03",
+          "what": "Fecha límite para el visto bueno de la lona y el volante"
+        },
+        {
+          "date": "2026-11-06",
+          "what": "La imprenta necesita el PDF y la medida final de la lona"
+        }
+      ],
+      "facts": [
+        "En la segunda propuesta el azul oscuro de la lona va solo en la franja superior y el teléfono en azul sobre blanco.",
+        "Lona 4 × 1.2 m, volante media carta frente y vuelta, seis posts de 1080 × 1350.",
+        "Paola aprobó los seis posts y pidió cambiar «Agenda tu cita» por «Agenda tu primera cita» en el 4.",
+        "Rodrigo hace la página de la clínica.",
+        "Archivos: SanPedro_Lona_4x1.2_v2.pdf, SanPedro_Volante_v2.pdf, SanPedro_Posts_v2.pdf."
+      ],
+      "summary": "Luis mandó la segunda propuesta de la campaña de San Pedro con la franja azul solo arriba en la lona; Paola aprobó los seis posts con un cambio de texto en el 4 y revisará la lona y el volante con el Dr. Garza el viernes 23 de octubre."
+    }
+  },
+  {
+    "id": "s0266",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work",
+      "client"
+    ],
+    "folder": "Label_22",
+    "subject": "Holloway import + DNS",
+    "state": {
+      "inbox": true
+    },
+    "messages": [
+      {
+        "from": "rhys-morgan",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-14T16:20:00+01:00",
+        "read": true,
+        "text": "Ran the 210 from Margaret through staging. Four bounced on blank image rights. Still no DNS or old CMS export from Ian Ferris.\nR"
+      },
+      {
+        "from": "me",
+        "to": [
+          "rhys-morgan"
+        ],
+        "date": "2026-10-14T17:45:00+01:00",
+        "read": true,
+        "text": "I'll chase Ian and copy Margaret. What's the latest you can have DNS access and the old export and still make Thursday 12 November? I'll put the dates in her checklist for the 23rd.\n\nI've asked Zainab to check the four against Margaret's spreadsheet. Anything without cleared images can go out as text. For the 130 Margaret's promised by the 23rd, I'll put a line in the checklist for her to sign if we have to launch without them.\n\nThanks, Luis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "rhys-morgan",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-15T09:10:00+01:00",
+        "read": true,
+        "text": "DNS by 5 Nov. Export by 30 Oct or we can't test redirects. Drop TTL Monday, cut over Wednesday evening, live Thursday morning. Not Friday.\nR"
+      },
+      {
+        "from": "me",
+        "to": [
+          "rhys-morgan"
+        ],
+        "date": "2026-10-22T12:20:00+01:00",
+        "read": true,
+        "text": "Rhys, can you check this before I send Margaret the checklist tomorrow?\n\nIan still hasn't replied. I chased him on Monday, copied Margaret and gave him 30 October for the export and 5 November for DNS. Those are in the checklist under his name.\n\nZainab fixed one typo in the rights sheet. Three records go out without images. The museum hasn't cleared them.\n\nI've put down Monday 9 November for TTL, Wednesday 11 November in the evening for cutover, and Thursday 12 November at 9am for go-live. If the import fails on the night, it's your call.\n\nThanks, Luis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example"
+      },
+      {
+        "from": "rhys-morgan",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-22T14:48:00+01:00",
+        "read": false,
+        "text": "Thanks, that's fine.\nR"
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [
+        {
+          "text": "Send Margaret the revised launch checklist",
+          "due": "2026-10-23",
+          "kept": false
+        }
+      ],
+      "promisesToOwner": [
+        {
+          "who": "margaret-okafor",
+          "text": "Send the remaining 130 collection entries by 23 October",
+          "due": "2026-10-23",
+          "kept": false
+        }
+      ],
+      "ownerOwes": [
+        "Send Margaret the revised launch checklist on Friday 23 October."
+      ],
+      "othersOwe": [
+        "Ian Ferris (museum): the old CMS export by 30 October and DNS access by 5 November.",
+        "Margaret: the remaining 130 entries by 23 October, or sign off launching without them."
+      ],
+      "keyDates": [
+        {
+          "date": "2026-10-23",
+          "what": "Margaret's 130 remaining entries due; Luis's revised checklist due"
+        },
+        {
+          "date": "2026-10-30",
+          "what": "Latest date for the old CMS export"
+        },
+        {
+          "date": "2026-11-05",
+          "what": "Latest date for DNS access"
+        },
+        {
+          "date": "2026-11-09",
+          "what": "Planned TTL drop"
+        },
+        {
+          "date": "2026-11-11",
+          "what": "Cutover in the evening"
+        },
+        {
+          "date": "2026-11-12",
+          "what": "Holloway site live at 9am"
+        }
+      ],
+      "facts": [
+        "Of the 210 records Rhys tried importing to staging, 4 failed on blank image rights.",
+        "Three of the failing records will go out without images because the museum hasn't cleared them. Zainab corrected the fourth record's rights entry.",
+        "Rhys needs DNS by 5 November and the old CMS export by 30 October so he can test the redirects. The TTL drop is planned for the Monday before cutover.",
+        "Rhys won't launch on a Friday.",
+        "Rhys calls it if the import fails on the night.",
+        "Luis wrote to Ian on Monday 19 October with Margaret copied; still no reply by 22 October.",
+        "Rhys's last message only says thanks."
+      ],
+      "summary": "Rhys and Luis set the Holloway migration deadlines and agreed that three records go out without images; Rhys's unread email just acknowledges the checklist details and changes nothing."
+    }
+  },
+  {
+    "id": "s0267",
+    "account": "freelance",
+    "lang": "es",
+    "tags": [
+      "client"
+    ],
+    "folder": "Facturación/2026",
+    "subject": "Orden de compra fajilla diciembre",
+    "state": {
+      "inbox": true
+    },
+    "messages": [
+      {
+        "from": "emilio-cardenas",
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-22T09:12:00-06:00",
+        "read": false,
+        "text": "Buen día,\n\nAdjunto orden de compra OC-1187 por la fajilla de la edición de diciembre, $6,500.00 MXN más IVA. El Sr. Villaseñor indica que la fundación cubre la mitad. ¿Emitirá una sola factura a nombre de Tueste Laja y Niebla S.A. de C.V., o dos, una a cada razón social?\n\nAtte. C.P. Emilio Cárdenas\n\nC.P. Emilio Cárdenas Ruelas\nAdministración y Finanzas | Tueste Laja y Niebla S.A. de C.V.\nadministracion@lajayniebla.example",
+        "attachments": [
+          {
+            "filename": "OC-1187_fajilla_dic2026.pdf",
+            "mime": "application/pdf",
+            "size": 142336
+          }
+        ]
+      }
+    ],
+    "truth": {
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "ownerOwes": [
+        "Responder a Emilio si emite una factura a nombre de Tueste Laja y Niebla S.A. de C.V. o dos (una a Tueste y otra a la fundación)."
+      ],
+      "othersOwe": [],
+      "keyDates": [],
+      "facts": [
+        "La orden de compra es la OC-1187, por $6,500.00 MXN más IVA.",
+        "Según el Sr. Villaseñor, Fundación Semilla Viva cubre la mitad de la fajilla.",
+        "Adjunto: OC-1187_fajilla_dic2026.pdf."
+      ],
+      "summary": "Emilio mandó la orden de compra OC-1187 por la fajilla de diciembre ($6,500 MXN más IVA) y pregunta si Luis hará una sola factura a nombre de Tueste Laja y Niebla o dos, porque la fundación cubre la mitad."
+    }
+  }
+]

@@ -1,0 +1,242 @@
+[
+  {
+    "account": "personal",
+    "fromName": "Crate Finch Delivery",
+    "fromEmail": "updates@cratefinch-delivery.example",
+    "subject": "Action needed on delivery CF49017825",
+    "text": "The driver could not leave your parcel because the flat number did not match. Parcel CF49017825 is held at the depot until Friday.\n\nDelivery notice: https://cratefinch-delivery.example/notices/CF49017825",
+    "daysAgo": 0
+  },
+  {
+    "account": "acme",
+    "fromName": "Mailbox Storage",
+    "fromEmail": "quota@workspace-storage.example",
+    "subject": "Your mailbox is full",
+    "text": "Mailbox capacity: 99.8%. Incoming mail may be delayed. This warning repeats until space becomes available.\n\nWorkspace Storage | Automated account notice",
+    "daysAgo": 2
+  },
+  {
+    "account": "personal",
+    "fromName": "Copper Buoy Rewards",
+    "fromEmail": "bonus@copperbuoy.example",
+    "subject": "October member credit is now available",
+    "text": "Your Copper Buoy account shows a promotional credit of 0.041 BTC. This entry expires at the end of October.\n\nPromotion reference CB-0419",
+    "daysAgo": 3
+  },
+  {
+    "account": "freelance",
+    "fromName": "Mesa Postal",
+    "fromEmail": "avisos@cratefinch-mx.example",
+    "subject": "Paquete en resguardo · guía MX846510",
+    "text": "Tu paquete se quedó en la sucursal porque faltan datos en el domicilio. El registro de envío indica que vence el plazo de resguardo mañana.\n\nGuía MX846510 · https://cratefinch-mx.example/avisos/MX846510",
+    "daysAgo": 4
+  },
+  {
+    "account": "acme",
+    "fromName": "Fenmark Accounts",
+    "fromEmail": "billing@fenmark-systems.example",
+    "subject": "Overdue: document processing invoice FM-1048",
+    "text": "Our ledger shows £312.00 outstanding for September document processing. Account reference AC-771. Please quote FM-1048 in any correspondence.\n\nFenmark Accounts",
+    "daysAgo": 6
+  },
+  {
+    "account": "icloud",
+    "fromName": "Brindle Draws",
+    "fromEmail": "notifications@brindledraws.example",
+    "subject": "Your entry was drawn: autumn hamper",
+    "text": "Ticket BD-7706 was selected on Tuesday. Prize listed: one autumn pantry hamper. Winners not confirmed by Sunday will be replaced by reserve ticket holders.\n\nOctober draw desk",
+    "daysAgo": 7
+  },
+  {
+    "account": "personal",
+    "fromName": "Fernbank Security",
+    "fromEmail": "service@fernbank-verify.example",
+    "subject": "Notification: new device on your current account",
+    "text": "A new device was recorded against your current account this morning. An account review is pending.\n\nCase FB-8814\nNotice: https://fernbank-verify.example/notices/FB-8814",
+    "daysAgo": 8
+  },
+  {
+    "account": "acme",
+    "fromName": "Joel at Bracken Outreach",
+    "fromEmail": "joel@brackenoutreach.example",
+    "subject": "Can I send the list of search terms?",
+    "text": "We checked four searches covering design studios in Clerkenwell. Three results above your site are directory pages. Our £180 audit includes the terms and a list of sites accepting guest articles. Worth sending over?",
+    "daysAgo": 10
+  },
+  {
+    "account": "personal",
+    "fromName": "Squarepond Market",
+    "fromEmail": "deals@squarepond-market.example",
+    "subject": "Clearance: two heated throws for £19",
+    "text": "Warehouse clearance ends at midnight. Colours will be assigned after packing. We cannot reserve individual colours or alter delivery dates.\n\nClearance list: https://squarepond-market.example/october",
+    "daysAgo": 11
+  },
+  {
+    "account": "icloud",
+    "fromName": "KeepSafe Photos",
+    "fromEmail": "archive@keepsafe-photos.example",
+    "subject": "Your photo archive has been marked inactive",
+    "text": "Last activity was more than 180 days ago. Inactive archives enter our deletion queue at the end of the month.\n\nArchive status: inactive\nReference KS-17060",
+    "daysAgo": 13
+  },
+  {
+    "account": "personal",
+    "fromName": "Corvid Card Online",
+    "fromEmail": "security@corvidcard-alerts.example",
+    "subject": "Card activity notice · case CV-74116",
+    "text": "We recorded a declined purchase with the merchant name GADGET HARBOR. Your card status is under review. Case CV-74116 is available in the notice centre.\n\nhttps://corvidcard-alerts.example/notices/CV-74116",
+    "daysAgo": 14
+  },
+  {
+    "account": "acme",
+    "fromName": "Studio Ledger",
+    "fromEmail": "accounts@studio-ledger-help.example",
+    "subject": "September supplier invoice still showing open",
+    "text": "Please pass this to whoever handles supplier payments. Ledger reference SL-3981 is still showing open after the September run. Service shown: file conversion credits.\n\nBalance: £228.00",
+    "daysAgo": 16
+  },
+  {
+    "account": "personal",
+    "fromName": "Juniper Yield",
+    "fromEmail": "market@juniperyield.example",
+    "subject": "That staking window closes tonight",
+    "text": "The rate on our 30-day staking pool changes at 20:00 London time. This bulletin shows the current promotional rate only. Deposits are not covered by a savings guarantee.\n\nJuniper Yield market bulletin",
+    "daysAgo": 17
+  },
+  {
+    "account": "acme",
+    "fromName": "Aster Workspace",
+    "fromEmail": "admin@aster-workspace.example",
+    "subject": "Mailbox migration report",
+    "text": "Mailboxes scheduled for the overnight migration: 14. Mailboxes excluded: 1. Your address appears in the excluded group. The service desk has logged incident AST-611.\n\nAster Workspace infrastructure notices",
+    "daysAgo": 19
+  },
+  {
+    "account": "icloud",
+    "fromName": "Harbour Passage Parcel Desk",
+    "fromEmail": "notices@harbourpassage-parcels.example",
+    "subject": "Your delivery was returned to the terminal",
+    "text": "A parcel labelled HP-1658734 could not be cleared for home delivery and was returned to the terminal. The booking remains with the original sender.\n\nTerminal record: https://harbourpassage-parcels.example/notices/HP-1658734",
+    "daysAgo": 20
+  },
+  {
+    "account": "freelance",
+    "fromName": "Banco Altiplano Avisos",
+    "fromEmail": "seguridad@bancoaltiplano-aviso.example",
+    "subject": "Aviso de revisión de acceso · ALT-7231",
+    "text": "Detectamos un acceso desde un dispositivo no registrado. El expediente ALT-7231 quedó en revisión en el centro de avisos.\n\nAviso: https://bancoaltiplano-aviso.example/avisos/ALT-7231",
+    "daysAgo": 22
+  },
+  {
+    "account": "personal",
+    "fromName": "Elmglass Prize Desk",
+    "fromEmail": "draw@elmglass-prizes.example",
+    "subject": "Runner-up voucher notice EG-2218",
+    "text": "You were selected as a runner-up in the autumn kitchen draw. The listed prize is a £50 shopping voucher. Claim period: ten days from issue.\n\nEntry number EG-2218",
+    "daysAgo": 24
+  },
+  {
+    "account": "acme",
+    "fromName": "Marta | Mossbridge Listings",
+    "fromEmail": "marta@mossbridge-listings.example",
+    "subject": "Adding design firms to our London page",
+    "text": "We’re finishing the London agencies page this month. A highlighted place is £70 for six months and includes two links and a short description. The page covers independent product and brand studios. Is this your area?",
+    "daysAgo": 25
+  },
+  {
+    "account": "personal",
+    "fromName": "Flintcoin Desk",
+    "fromEmail": "bulletin@flintcoin-desk.example",
+    "subject": "October node rebate: notice 17",
+    "text": "The broker has published a list of balances eligible for a network rebate. Your subscription address was on last month's circulation list.\n\nThis is a market circular. You can find the rebate figures at https://flintcoin-desk.example/circulars/17.",
+    "daysAgo": 28
+  },
+  {
+    "account": "icloud",
+    "fromName": "Cairn Survey Group",
+    "fromEmail": "research@cairn-surveys.example",
+    "subject": "Invitation to test home coffee equipment",
+    "text": "Our London testing panel has eight slots left for home coffee equipment. Participants keep the sample. Places are selected from completed survey cards at the end of the week.\n\nPanel round CG-19",
+    "daysAgo": 29
+  },
+  {
+    "account": "personal",
+    "fromName": "Mintlock Domain Registry",
+    "fromEmail": "renewals@mintlock-registry.example",
+    "subject": "Unpaid registration directory charge",
+    "text": "Directory listing ML-9978 has been carried forward for one year. Total due is £89.00 including VAT. This charge covers the listing entry only and does not affect your domain registration.\n\nMintlock Directory Accounts",
+    "daysAgo": 31
+  },
+  {
+    "account": "acme",
+    "fromName": "Vectorwing Talent Notes",
+    "fromEmail": "agency@vectorwing-notes.example",
+    "subject": "6 freelance researchers available next week",
+    "text": "We have six researchers rolling off projects: two for moderated sessions, one quantitative and three generalists. Day rates from £290. Reply if there's a brief you want us to quote on.",
+    "daysAgo": 34
+  },
+  {
+    "account": "personal",
+    "fromName": "Vale Parcel Centre",
+    "fromEmail": "scans@valeparcel-centre.example",
+    "subject": "Attempted delivery: VPC-89117",
+    "text": "No answer was recorded on the first attempt. The postcode was not legible on the shipping label. The parcel will be returned to the sender after two working days.\n\nScan event VPC-89117",
+    "daysAgo": 35
+  },
+  {
+    "account": "freelance",
+    "fromName": "Control de Folios",
+    "fromEmail": "cobros@timbrebolsillo-cobros.example",
+    "subject": "Cargo pendiente por renovación de timbres",
+    "text": "El paquete de 100 timbres quedó registrado como pendiente de pago. Importe registrado: MXN $860.00.\n\nReferencia TB-48219. Si ya se cubrió el cargo, el aviso puede tardar en desaparecer.",
+    "daysAgo": 38
+  },
+  {
+    "account": "icloud",
+    "fromName": "Juniper Trip Vouchers",
+    "fromEmail": "offers@juniper-trip.example",
+    "subject": "Weekend hotel voucher for two",
+    "text": "A voucher for two nights has been allocated to this email address. Participating hotels and blackout dates vary. The voucher does not cover travel, breakfast or local taxes.\n\nAllocation JV-601.",
+    "daysAgo": 41
+  },
+  {
+    "account": "acme",
+    "fromName": "Lumen File Service",
+    "fromEmail": "renewals@lumen-files.example",
+    "subject": "Renewal notice: team file transfer plan",
+    "text": "Plan: Professional Workspace, 10 seats\nRenewal charge: £419.00\nReference: LF-402718\n\nThe renewal charge appeared on this month's draft invoice. Print a copy for your accounts department.",
+    "daysAgo": 43
+  },
+  {
+    "account": "personal",
+    "fromName": "The Penny Moor Club",
+    "fromEmail": "welcome@pennymoor-club.example",
+    "subject": "Welcome gift confirmation",
+    "text": "Our welcome desk reserved a cookware set against membership number PM-3441. We send one reminder before the claim period ends. Colour and finish will vary.",
+    "daysAgo": 46
+  },
+  {
+    "account": "personal",
+    "fromName": "Box Kite Offers",
+    "fromEmail": "bulletin@boxkite-offers.example",
+    "subject": "Cancelled orders: small garden sheds",
+    "text": "Four cancelled shed orders returned to stock this morning. Delivery covers mainland postcodes only. Listed sizes exclude the roof overhang.\n\nWarehouse bulletin BK-90",
+    "daysAgo": 50
+  },
+  {
+    "account": "acme",
+    "fromName": "Owen | Thornwell Search",
+    "fromEmail": "owen@thornwell-search.example",
+    "subject": "More visitors for your case-study pages",
+    "text": "I have three sponsored placements on design directories available this week. All include a logo and a link to a case study of your choice. Prices start at £95 per placement.",
+    "daysAgo": 55
+  },
+  {
+    "account": "icloud",
+    "fromName": "Clover Vault Accounts",
+    "fromEmail": "reminders@clovervault-accounts.example",
+    "subject": "Annual archive plan expires next week",
+    "text": "Your archive renewal is scheduled for next week. Service: 500 GB personal archive. Annual fee: £159.00. The renewal desk lists this account under CVA-88221.",
+    "daysAgo": 60
+  }
+]

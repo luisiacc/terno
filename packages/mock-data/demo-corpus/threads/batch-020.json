@@ -1,0 +1,2139 @@
+[
+  {
+    "id": "s0563",
+    "account": "freelance",
+    "lang": "es",
+    "tags": [
+      "client"
+    ],
+    "storyline": "barranca-empaque",
+    "subject": "¿La de 100 g también?",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2024-11-13T09:26:00-06:00",
+        "read": true,
+        "text": "Qué tal Luis,\n\nEncontré la bolsita de muestra que usamos en Chapu. Te mando la foto. ¿Todavía alcanzas a meter la de 100 g en la misma cotización de las otras dos?\n\nSaludos, Ernesto",
+        "from": "ernesto-villasenor",
+        "attachments": [
+          {
+            "filename": "bolsita-muestra-mostrador.jpg",
+            "mime": "image/jpeg",
+            "size": 836244
+          }
+        ]
+      },
+      {
+        "to": [
+          "ernesto-villasenor"
+        ],
+        "date": "2024-11-14T16:48:00+00:00",
+        "read": true,
+        "text": "Hola, Ernesto:\n\nPara este tiraje prefiero dejar la de 100 g fuera. En la foto se ve que la costura de atrás le quita casi todo el espacio al texto y sí tendría que diseñarla aparte. Con las de 250 g y 1 kg seguimos como quedamos.\n\nSaludos,\n\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418",
+        "from": "me"
+      },
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2024-11-15T08:51:00-06:00",
+        "read": true,
+        "text": "va, esa la dejamos como está",
+        "from": "ernesto-villasenor"
+      }
+    ],
+    "truth": {
+      "summary": "Luis dejó fuera la bolsa de muestra de 100 g y Ernesto confirmó que el rediseño sigue con las de 250 g y 1 kg.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "La bolsa de muestra de 100 g de Chapultepec se queda como está.",
+        "El encargo cubre 250 g y 1 kg."
+      ]
+    }
+  },
+  {
+    "id": "s0564",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "storyline": "ski-les-arcs",
+    "subject": "chalet money",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2024-11-17T19:23:00+00:00",
+        "read": true,
+        "text": "mate can you do £640 for the chalet if i put it on my card tomorrow",
+        "from": "tom-ashworth"
+      },
+      {
+        "to": [
+          "tom-ashworth"
+        ],
+        "date": "2024-11-17T19:41:00+00:00",
+        "read": true,
+        "text": "yeah £640 is fine. book it.\n\nit's the one in 1800 with the bench for boots by the front door right? i can already feel myself falling over on those stairs",
+        "from": "me"
+      },
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2024-11-19T20:16:00+00:00",
+        "read": true,
+        "text": "booked mate 24 to 31 jan and yes theres a bench with your name on it",
+        "from": "tom-ashworth"
+      }
+    ],
+    "truth": {
+      "summary": "Tom booked the chalet in Arc 1800 for 24–31 January at £640 each after Luis confirmed the price.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [
+        {
+          "text": "Put the chalet booking on his card",
+          "kept": true,
+          "who": "Tom Ashworth"
+        }
+      ],
+      "keyDates": [
+        {
+          "date": "2024-11-19",
+          "what": "Tom confirmed the booking"
+        },
+        {
+          "date": "2025-01-24",
+          "what": "Chalet check-in"
+        },
+        {
+          "date": "2025-01-31",
+          "what": "Chalet check-out"
+        }
+      ],
+      "facts": [
+        "The chalet is in Arc 1800 and costs £640 per person."
+      ]
+    }
+  },
+  {
+    "id": "s0565",
+    "account": "freelance",
+    "lang": "es",
+    "tags": [
+      "client"
+    ],
+    "storyline": "barranca-empaque",
+    "subject": "Tamaños de bolsa / costo de impresión",
+    "state": {
+      "inbox": true
+    },
+    "messages": [
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2024-11-28T10:18:00-06:00",
+        "read": true,
+        "text": "¡Hola Luis!\n\nTe adjunto la tabla con las medidas que usa Chuy en Grafos Atemajac. La bolsa de kilo de la foto vieja trae fuelle más chico, por eso no te van a salir las mismas medidas si la sacas de ahí. Copio a Emilio para que pida el precio con las medidas buenas.\n\nGracias, Mariana",
+        "from": "mariana-gomez",
+        "cc": [
+          "emilio-cardenas",
+          "ernesto-villasenor"
+        ]
+      },
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2024-11-28T10:21:00-06:00",
+        "read": true,
+        "text": "Ahora sí va la tabla.",
+        "from": "mariana-gomez",
+        "cc": [
+          "emilio-cardenas",
+          "ernesto-villasenor"
+        ],
+        "attachments": [
+          {
+            "filename": "medidas_bolsas_chuy_nov24.pdf",
+            "mime": "application/pdf",
+            "size": 96224
+          }
+        ]
+      },
+      {
+        "to": [
+          "mariana-gomez"
+        ],
+        "date": "2024-11-29T08:42:00-06:00",
+        "read": true,
+        "text": "Buen día,\n\n¿Las cantidades de 2,000 y 600 que indica la tabla son las que debo solicitar o son los mínimos del proveedor?\n\nAtte. C.P. Emilio Cárdenas\n\nC.P. Emilio Cárdenas Ruelas\nAdministración y Finanzas | Tueste Laja y Niebla S.A. de C.V.\nadministracion@lajayniebla.example",
+        "from": "emilio-cardenas",
+        "cc": [
+          "me",
+          "ernesto-villasenor"
+        ]
+      },
+      {
+        "to": [
+          "emilio-cardenas"
+        ],
+        "date": "2024-11-29T09:11:00-06:00",
+        "read": true,
+        "text": "Esas son las cantidades que vamos a pedir. Las de kilo se nos mueven más lento.",
+        "from": "ernesto-villasenor",
+        "cc": [
+          "mariana-gomez",
+          "me"
+        ]
+      },
+      {
+        "to": [
+          "mariana-gomez"
+        ],
+        "date": "2024-12-02T16:12:00+00:00",
+        "read": true,
+        "text": "Hola, Mariana:\n\nYa me cuadra el fuelle. Para cerrar la propuesta necesito saber cuánto cambia el millar si metemos blanco de fondo en el frente. En el reverso puede quedarse el papel tal cual. ¿Chuy nos puede separar ese costo?\n\nSaludos,\n\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418",
+        "from": "me",
+        "cc": [
+          "emilio-cardenas",
+          "ernesto-villasenor"
+        ]
+      },
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2024-12-05T10:55:00-06:00",
+        "read": true,
+        "text": "Buen día,\n\nPrecio solicitado con y sin blanco de fondo. No lo han entregado.\n\nAtte. C.P. Emilio Cárdenas\n\nC.P. Emilio Cárdenas Ruelas\nAdministración y Finanzas | Tueste Laja y Niebla S.A. de C.V.\nadministracion@lajayniebla.example",
+        "from": "emilio-cardenas"
+      }
+    ],
+    "truth": {
+      "summary": "Mariana mandó la tabla de medidas de la imprenta, Luis pidió separar el costo del blanco de fondo en el frente y Emilio lo solicitó a la imprenta, que todavía no lo entrega.",
+      "ownerOwes": [],
+      "othersOwe": [
+        "Emilio Cárdenas: pasar el precio de impresión con y sin blanco de fondo cuando lo entregue la imprenta."
+      ],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2024-11-28",
+          "what": "Mariana mandó la tabla de medidas (el adjunto llegó en un segundo correo)"
+        },
+        {
+          "date": "2024-12-05",
+          "what": "Emilio avisó que el precio ya se pidió y no ha llegado"
+        }
+      ],
+      "facts": [
+        "La cotización de impresión se pidió para 2,000 bolsas de 250 g y 600 de 1 kg.",
+        "Chuy, de Grafos Atemajac, maneja las medidas de las bolsas.",
+        "Luis pidió desglosar el blanco de fondo en el frente; el reverso puede ir sin blanco."
+      ]
+    }
+  },
+  {
+    "id": "s0566",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "storyline": "ski-les-arcs",
+    "subject": "deposit or whole lot?",
+    "state": {
+      "inbox": false,
+      "trash": true
+    },
+    "messages": [
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2024-12-08T17:14:00+00:00",
+        "read": true,
+        "text": "mate can you tell josh its £640 altogether and to put his surname as the ref when he sends it",
+        "from": "tom-ashworth"
+      },
+      {
+        "to": [
+          "josh-whitaker"
+        ],
+        "date": "2024-12-08T17:40:00+00:00",
+        "read": true,
+        "text": "here you go. i'd do the full lot in one if you can, easier for tom to see who he's got.",
+        "from": "me",
+        "forward": true,
+        "subject": "Fwd: deposit or whole lot?"
+      },
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2024-12-10T21:18:00+00:00",
+        "read": true,
+        "text": "LUIS\n\nDid the whole £640 just now. The ref is WHITAKER. I nearly sent it to the bloke who sold me those shelves because they're both saved as Tom on my phone lol. Can you tell our Tom it's from me if it just comes up as J W?\n\nJ",
+        "from": "josh-whitaker"
+      },
+      {
+        "to": [
+          "tom-ashworth"
+        ],
+        "date": "2024-12-11T08:42:00+00:00",
+        "read": true,
+        "text": "Josh did the whole £640 last night, ref WHITAKER. he thinks it might show as J W.",
+        "from": "me",
+        "subject": "Re: deposit or whole lot?"
+      }
+    ],
+    "truth": {
+      "summary": "Luis forwarded Tom’s payment note and relayed Josh’s confirmation that he’d sent his full £640 chalet share.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2024-12-10",
+          "what": "Josh sent his £640 chalet payment"
+        }
+      ],
+      "facts": [
+        "Josh used WHITAKER as the transfer reference and thought the sender might show as J W."
+      ]
+    }
+  },
+  {
+    "id": "s0567",
+    "account": "freelance",
+    "lang": "es",
+    "tags": [
+      "client"
+    ],
+    "storyline": "barranca-empaque",
+    "subject": "Propuesta de empaque / contenido neto",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "to": [
+          "mariana-gomez",
+          "emilio-cardenas"
+        ],
+        "date": "2024-12-16T15:52:00+00:00",
+        "read": true,
+        "text": "Hola, Mariana:\n\nYa tengo el diferencial de Chuy. Dejé el blanco solo en el frente. El precio de diseño queda en $24,000 MXN + IVA por las dos presentaciones, con la impresión por separado. Si a Ernesto le parece, puedo avanzar con esa versión. ¿Prefieren «Contenido neto 1 kg» en una línea o que el peso quede abajo?\n\nSaludos,\n\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418",
+        "from": "me"
+      },
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2024-12-16T10:29:00-06:00",
+        "read": true,
+        "text": "Buen día,\n\nErnesto autorizó los $24,000 MXN más IVA por diseño. La orden de impresión se tramitará por separado.\n\nAtte. C.P. Emilio Cárdenas\n\nC.P. Emilio Cárdenas Ruelas\nAdministración y Finanzas | Tueste Laja y Niebla S.A. de C.V.\nadministracion@lajayniebla.example",
+        "from": "emilio-cardenas",
+        "cc": [
+          "mariana-gomez"
+        ]
+      },
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2024-12-17T11:06:00-06:00",
+        "read": true,
+        "text": "¡Hola Luis!\n\nEn una línea. Ya vi una bolsa de kilo en el exhibidor y abajo se lo come el reborde de la charola. En la chica dejamos «Contenido neto 250 g» a la misma altura, para que Inés las pueda poner juntas sin que parezca que una quedó chueca. ¿Me cambias eso antes de sacar los archivos?\n\nGracias, Mariana",
+        "from": "mariana-gomez",
+        "cc": [
+          "emilio-cardenas"
+        ]
+      },
+      {
+        "to": [
+          "mariana-gomez"
+        ],
+        "date": "2024-12-18T17:25:00+00:00",
+        "read": true,
+        "text": "Sí, van en una línea y a la misma altura. Me voy a Guadalajara mañana y no llevo la compu de trabajo. Te paso las dos caras ya corregidas cuando vuelva a Londres.\n\nSaludos,\n\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418",
+        "from": "me"
+      }
+    ],
+    "truth": {
+      "summary": "Ernesto autorizó $24,000 MXN + IVA por el diseño de las dos bolsas; Mariana pidió el contenido neto en una línea y a la misma altura, y Luis quedó de mandarle las dos caras corregidas al volver de Guadalajara.",
+      "ownerOwes": [
+        "Mandar a Mariana las dos caras corregidas al volver a Londres."
+      ],
+      "othersOwe": [],
+      "promisesByOwner": [
+        {
+          "text": "Pasar a Mariana las dos caras corregidas cuando vuelva a Londres",
+          "kept": true
+        }
+      ],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2024-12-16",
+          "what": "Emilio comunicó la aprobación de Ernesto"
+        },
+        {
+          "date": "2024-12-19",
+          "what": "Luis se va a Guadalajara"
+        }
+      ],
+      "facts": [
+        "Diseño de las dos presentaciones: $24,000 MXN + IVA; la impresión se tramita por separado.",
+        "El blanco se limita al frente.",
+        "Contenido neto en una sola línea y a la misma altura en ambas bolsas."
+      ]
+    }
+  },
+  {
+    "id": "s0568",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "storyline": "ski-les-arcs",
+    "subject": "a mildly stupid suggestion re january",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2024-12-30T20:54:00+00:00",
+        "read": true,
+        "text": "LUIS\n\nAny chance you'd go out a day early with me? I was having a look at the train and there's a cheap room over a bar in Bourg for the Thursday. It's £78 for the two of us and there's a bus up in the morning. We could leave the stupid enormous bags there for a few hours and ski while we wait for the chalet keys. I can't remember if you've got skis or are hiring. I haven't got anything longer than a tennis racket in the flat at the moment so I'm definately hiring.\n\nI realise I'm emailing you about snow while you're in Mexico lol. This started with me looking up where in the station you get the bus from and somehow I've now opened a tab for a hotel in a town I can't pronounce. It says free cancellation till the 2nd but I'd rather not put another thing on my card if it's just me. No pressure at all if the Friday is already set.\n\nJ",
+        "from": "josh-whitaker"
+      },
+      {
+        "to": [
+          "josh-whitaker"
+        ],
+        "date": "2025-01-02T09:35:00-06:00",
+        "read": true,
+        "text": "Hiring too. Thanks for finding it but I'll stick with the Friday. I'm still in Guadalajara and by the time I'm back I've got about one weekend to buy all the bits I thought I already owned.\n\nIf you do go on Thursday, don't tell me how good the snow was till at least Saturday.",
+        "from": "me"
+      }
+    ],
+    "truth": {
+      "summary": "Luis declined Josh’s suggestion of an extra night in Bourg and kept his Friday travel plan.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2025-01-02",
+          "what": "Free cancellation cut-off shown on the room Josh found"
+        },
+        {
+          "date": "2025-01-24",
+          "what": "Luis travels on the Friday as planned"
+        }
+      ],
+      "facts": [
+        "Josh found a £78 room for two in Bourg for the Thursday before check-in.",
+        "Both planned to hire skis."
+      ]
+    }
+  },
+  {
+    "id": "s0569",
+    "account": "freelance",
+    "lang": "es",
+    "tags": [
+      "client"
+    ],
+    "storyline": "barranca-empaque",
+    "subject": "Barniz en el frente",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "to": [
+          "me",
+          "ernesto-villasenor"
+        ],
+        "date": "2025-01-06T10:02:00-06:00",
+        "read": true,
+        "text": "¡Hola Luis!\n\nYa puse las caras corregidas que mandaste en la carpeta de Inés. Aparte, Chuy mandó la ficha del barniz que brilla solo donde cae. Quiere saber si lo metemos encima del dibujo del cerro. Te paso el ejemplo que trajo, se ve bonito en la foto pero en la barra de Providencia tenemos la lámpara prácticamente encima del anaquel. ¿Cómo lo ves?\n\nGracias, Mariana",
+        "from": "mariana-gomez",
+        "cc": [
+          "emilio-cardenas"
+        ],
+        "attachments": [
+          {
+            "filename": "muestra_barniz_selectivo.jpg",
+            "mime": "image/jpeg",
+            "size": 717211
+          }
+        ]
+      },
+      {
+        "to": [
+          "mariana-gomez"
+        ],
+        "date": "2025-01-07T09:04:00-06:00",
+        "read": true,
+        "text": "Buen día,\n\nEl proveedor cotizó $3,800 MXN más IVA adicionales por el barniz selectivo. El costo aplica a las dos medidas.\n\nAtte. C.P. Emilio Cárdenas\n\nC.P. Emilio Cárdenas Ruelas\nAdministración y Finanzas | Tueste Laja y Niebla S.A. de C.V.\nadministracion@lajayniebla.example",
+        "from": "emilio-cardenas",
+        "cc": [
+          "me",
+          "ernesto-villasenor"
+        ]
+      },
+      {
+        "to": [
+          "mariana-gomez",
+          "ernesto-villasenor"
+        ],
+        "date": "2025-01-07T16:39:00+00:00",
+        "read": true,
+        "text": "Yo dejaría el mate. El cerro llega casi hasta el nombre del café y justo donde da el reflejo en la foto se pierde la última letra. Si a Ernesto le interesa probarlo más adelante, lo pondría en una edición donde el dibujo vaya más abajo.\n\nSaludos,\n\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418",
+        "from": "me",
+        "cc": [
+          "emilio-cardenas"
+        ]
+      },
+      {
+        "to": [
+          "mariana-gomez",
+          "me"
+        ],
+        "date": "2025-01-08T09:12:00-06:00",
+        "read": true,
+        "text": "Qué tal Luis,\n\nQuedémonos con el mate. Me gusta la muestra pero no quiero mover el tiraje para meterle otra prueba. Mariana, dile a Chuy que quite ese renglón.\n\nSaludos, Ernesto",
+        "from": "ernesto-villasenor",
+        "cc": [
+          "emilio-cardenas"
+        ]
+      },
+      {
+        "to": [
+          "ernesto-villasenor",
+          "me"
+        ],
+        "date": "2025-01-09T11:34:00-06:00",
+        "read": true,
+        "text": "Chuy ya lo quitó. Le pedí a Inés que se fije en el mate cuando reciba la primera prueba de la bolsa, porque el retazo de la foto se quedó ahí en la imprenta y luego se nos cruza con las muestras buenas.\n\nGracias, Mariana",
+        "from": "mariana-gomez",
+        "cc": [
+          "emilio-cardenas"
+        ]
+      }
+    ],
+    "truth": {
+      "summary": "El equipo rechazó el barniz selectivo y Chuy lo quitó de la cotización, conservando el acabado mate.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2025-01-08",
+          "what": "Ernesto decidió conservar el mate"
+        }
+      ],
+      "facts": [
+        "El barniz selectivo habría sumado $3,800 MXN + IVA para las dos medidas.",
+        "La luz del anaquel de Providencia preocupaba a Mariana por el reflejo."
+      ]
+    }
+  },
+  {
+    "id": "s0570",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "storyline": "ski-les-arcs",
+    "subject": "the last bus up",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2025-01-13T18:09:00+00:00",
+        "read": true,
+        "text": "Alright Luis\n\nThe 18:40 bus from Bourg is the last one on the winter sheet I've got. Our train gets in at 18:27, so it's possible if it actually runs to time. Thirteen minutes is a reasonable amount of time to move two people about twenty feet.\n\nCallum",
+        "from": "callum-reid",
+        "attachments": [
+          {
+            "filename": "Bourg-Arc1800-winter-bus.pdf",
+            "mime": "application/pdf",
+            "size": 146072
+          }
+        ]
+      },
+      {
+        "to": [
+          "callum-reid"
+        ],
+        "date": "2025-01-13T20:24:00+00:00",
+        "read": true,
+        "text": "where does it stop our end? i have a memory of there being two stops in 1800 and choosing the wrong one last time",
+        "from": "me"
+      },
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2025-01-15T17:49:00+00:00",
+        "read": true,
+        "text": "Alright Luis\n\nCharvet, by the covered steps. The one after is Villards. Could get off there and walk back if you fancy getting the week's exercise in before tea.\n\nCallum",
+        "from": "callum-reid"
+      },
+      {
+        "to": [
+          "callum-reid"
+        ],
+        "date": "2025-01-22T20:06:00+00:00",
+        "read": true,
+        "text": "meet on the platform if it's late and split a cab?",
+        "from": "me"
+      },
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2025-01-23T17:08:00+00:00",
+        "read": true,
+        "text": "I'll look for you by the bus bay either way. Callum",
+        "from": "callum-reid"
+      }
+    ],
+    "truth": {
+      "summary": "Callum and Luis planned to try the last bus from Bourg to Charvet and find each other at the bus bay if the train ran late.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2025-01-24",
+          "what": "Travel day, with the train due at 18:27 before the 18:40 bus"
+        }
+      ],
+      "facts": [
+        "Charvet is the Arc 1800 stop by the covered steps; Villards comes after it.",
+        "A taxi was the fallback if needed; the thread gives no record of which transport they used."
+      ]
+    }
+  },
+  {
+    "id": "s0571",
+    "account": "freelance",
+    "lang": "es",
+    "tags": [
+      "client"
+    ],
+    "storyline": "barranca-empaque",
+    "subject": "Bueno para tirar",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "to": [
+          "me",
+          "ernesto-villasenor"
+        ],
+        "date": "2025-01-27T09:41:00-06:00",
+        "read": true,
+        "text": "¡Hola Luis!\n\nChuy mandó la prueba mate. Inés trae la de kilo, te mando su foto. El peso ya se lee arriba del borde.\n\nGracias, Mariana",
+        "from": "mariana-gomez",
+        "attachments": [
+          {
+            "filename": "prueba_mate_1kg.jpg",
+            "mime": "image/jpeg",
+            "size": 1238401
+          }
+        ]
+      },
+      {
+        "to": [
+          "mariana-gomez",
+          "ernesto-villasenor"
+        ],
+        "date": "2025-01-27T17:46:00+00:00",
+        "read": true,
+        "text": "La veo bien. ¿En la de 250 g también quedó el peso en una sola línea?\n\nSaludos,\n\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418",
+        "from": "me"
+      },
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2025-01-28T09:14:00-06:00",
+        "read": true,
+        "text": "Sí, quedó igual. Inés las puso juntas para revisar.",
+        "from": "mariana-gomez",
+        "cc": [
+          "ernesto-villasenor"
+        ]
+      },
+      {
+        "to": [
+          "mariana-gomez",
+          "me"
+        ],
+        "date": "2025-01-28T10:32:00-06:00",
+        "read": true,
+        "text": "Va con esas dos. Mariana, dale el sí a Chuy.",
+        "from": "ernesto-villasenor"
+      }
+    ],
+    "truth": {
+      "summary": "Ernesto dio el visto bueno a las pruebas mate de 250 g y 1 kg para mandar a producción.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2025-01-28",
+          "what": "Ernesto autorizó las dos bolsas para el tiraje"
+        }
+      ],
+      "facts": [
+        "Inés comparó las dos bolsas; la línea del peso se mantuvo en ambas y se lee arriba del borde."
+      ]
+    }
+  },
+  {
+    "id": "s0572",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "storyline": "ski-les-arcs",
+    "subject": "cleaning",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "to": [
+          "josh-whitaker",
+          "tom-ashworth"
+        ],
+        "date": "2025-02-09T19:40:00+00:00",
+        "read": true,
+        "text": "tom, yours came in, cheers. callum's too.\n\njosh, did yours go this weekend? £40, the cleaning one. it went on my card on the 3rd",
+        "from": "me"
+      },
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2025-02-10T12:17:00+00:00",
+        "read": true,
+        "text": "LUIS\n\nNope, sorry, completely forgot. I'll do it this weekend, for real this time. Can you send me the reciept for the clean? I'm doing a spreadsheet of what the whole trip cost me and it's already making me feel ill lol\n\nJ",
+        "from": "josh-whitaker"
+      },
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2025-02-11T19:08:00+00:00",
+        "read": true,
+        "text": "mate its the pdf with sortie in the filename if youre looking",
+        "from": "tom-ashworth"
+      }
+    ],
+    "truth": {
+      "summary": "Tom and Callum have paid their £40 cleaning shares; Josh forgot his, promised it again for the coming weekend and asked Luis for the cleaning receipt.",
+      "ownerOwes": [
+        "Send Josh the chalet cleaning receipt."
+      ],
+      "othersOwe": [
+        "Josh Whitaker: pay Luis £40 for the chalet cleaning."
+      ],
+      "promisesByOwner": [],
+      "promisesToOwner": [
+        {
+          "who": "Josh Whitaker",
+          "text": "Pay his £40 cleaning share the weekend after 3 February",
+          "due": "2025-02-09",
+          "kept": false
+        },
+        {
+          "who": "Josh Whitaker",
+          "text": "Pay his £40 cleaning share this weekend, for real this time",
+          "due": "2025-02-16",
+          "kept": false
+        }
+      ],
+      "keyDates": [
+        {
+          "date": "2025-02-03",
+          "what": "£160 cleaning charge went on Luis's card"
+        },
+        {
+          "date": "2025-02-10",
+          "what": "Josh promised again to pay that weekend"
+        }
+      ],
+      "facts": [
+        "The cleaning charge was £160, £40 each.",
+        "Tom and Callum had paid by 9 February.",
+        "The cleaning receipt is the PDF with sortie in the filename."
+      ]
+    }
+  },
+  {
+    "id": "s0573",
+    "account": "freelance",
+    "lang": "es",
+    "tags": [
+      "client"
+    ],
+    "storyline": "barranca-empaque",
+    "subject": "¿Sigue en pie la revisión del viernes?",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "to": [
+          "ernesto-villasenor"
+        ],
+        "date": "2025-02-18T16:06:00+00:00",
+        "read": true,
+        "text": "Hola, Ernesto:\n\n¿Dejamos en pie la llamada de revisión del viernes? Habíamos apartado las 10 de Guadalajara, 4 de la tarde en Londres. Inés me dijo que ya no esperaba otra prueba.\n\nSaludos,\n\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418",
+        "from": "me"
+      },
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2025-02-21T08:43:00-06:00",
+        "read": true,
+        "text": "Qué tal Luis,\n\nCancélala. Ya llegaron las bolsas impresas y están bien las dos. Emilio hizo hoy la transferencia del saldo en la fecha de la factura. Te dejo el comprobante.\n\nSaludos, Ernesto",
+        "from": "ernesto-villasenor",
+        "attachments": [
+          {
+            "filename": "comprobante_saldo_empaque_210225.pdf",
+            "mime": "application/pdf",
+            "size": 68472
+          }
+        ]
+      },
+      {
+        "to": [
+          "ernesto-villasenor"
+        ],
+        "date": "2025-02-21T15:27:00+00:00",
+        "read": true,
+        "text": "Ya cayó, Ernesto. Quito la llamada del calendario.\n\nSaludos,\n\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418",
+        "from": "me"
+      }
+    ],
+    "truth": {
+      "summary": "Ernesto canceló la revisión final porque ya tenía las dos bolsas impresas y Luis confirmó el pago puntual del saldo.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2025-02-21",
+          "what": "Llegaron las bolsas impresas, se pagó el saldo y se canceló la llamada de revisión"
+        }
+      ],
+      "facts": [
+        "La revisión estaba prevista a las 10:00 en Guadalajara y las 16:00 en Londres.",
+        "El comprobante del saldo se adjuntó y Luis confirmó que recibió la transferencia."
+      ]
+    }
+  },
+  {
+    "id": "s0574",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "storyline": "ski-les-arcs",
+    "subject": "josh's £40",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2025-02-25T19:25:00+00:00",
+        "read": true,
+        "text": "mate does he have the receipt now or do you need this",
+        "from": "tom-ashworth",
+        "attachments": [
+          {
+            "filename": "Les-Arcs-sortie-menage.pdf",
+            "mime": "application/pdf",
+            "size": 122556
+          }
+        ]
+      },
+      {
+        "to": [
+          "tom-ashworth"
+        ],
+        "date": "2025-02-25T20:01:00+00:00",
+        "read": true,
+        "text": "he's got it. i sent it last week. still no £40 though",
+        "from": "me"
+      },
+      {
+        "to": [
+          "tom-ashworth",
+          "josh-whitaker"
+        ],
+        "date": "2025-03-07T17:35:00+00:00",
+        "read": true,
+        "text": "josh, the bank of luis is once again accepting £40 deposits for the les arcs cleaning fund",
+        "from": "me"
+      },
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2025-03-07T18:10:00+00:00",
+        "read": true,
+        "text": "mate send him the payment details again he changed banks and lost all the saved ones",
+        "from": "tom-ashworth"
+      }
+    ],
+    "truth": {
+      "summary": "Luis confirmed he’d sent the cleaning receipt and nudged Josh on 7 March; Josh’s £40 is still outstanding and Tom asked Luis to resend the payment details.",
+      "ownerOwes": [
+        "Send Josh the payment details again."
+      ],
+      "othersOwe": [
+        "Josh Whitaker: pay Luis £40 for the chalet cleaning."
+      ],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2025-03-07",
+          "what": "Luis reminded Josh about the outstanding £40"
+        }
+      ],
+      "facts": [
+        "Tom reattached the chalet cleaning PDF on 25 February.",
+        "Tom said Josh lost his saved payees when he changed banks."
+      ]
+    }
+  },
+  {
+    "id": "s0575",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "the one on the bridge",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "to": [
+          "imogen-barnes",
+          "me"
+        ],
+        "date": "2025-05-26T18:17:00+01:00",
+        "read": true,
+        "text": "Dear all,\n\nWho took the one of the three of us on the footbridge?  I have been through the camera twice and appear to have taken seventeen pictures of a coot.  He was a handsome coot, I grant you, and he stood very still, which is more than either of you managed.  Kirsty tells me there is a way of sharing these things through the telephone.  I remain unpersuaded.\n\nYours,\nHamish Fairweather",
+        "from": "hamish-fairweather"
+      },
+      {
+        "to": [
+          "hamish-fairweather",
+          "me"
+        ],
+        "date": "2025-05-27T19:35:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nWas it you? Mine's just Hamish's elbow and the water. Sorry.\n\nBest, Imogen",
+        "from": "imogen-barnes"
+      },
+      {
+        "to": [
+          "imogen-barnes",
+          "hamish-fairweather"
+        ],
+        "date": "2025-05-27T21:08:00+01:00",
+        "read": true,
+        "text": "only the cafe chalkboard on mine. try the red flask couple?",
+        "from": "me"
+      },
+      {
+        "to": [
+          "imogen-barnes",
+          "me"
+        ],
+        "date": "2025-05-30T17:54:00+01:00",
+        "read": true,
+        "text": "Dear all,\n\nThere was also a disposable camera.  Was it ours?\n\nYours,\nHamish Fairweather",
+        "from": "hamish-fairweather"
+      }
+    ],
+    "truth": {
+      "summary": "Hamish looked for a group photo from the footbridge, but nobody established who took it or followed up about the disposable camera.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "Hamish had coot photos, Imogen had an elbow photo and Luis had a picture of the cafe chalkboard."
+      ]
+    }
+  },
+  {
+    "id": "s0576",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "Tomorrow at 11:20",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "to": [
+          "kerry-simmonds"
+        ],
+        "date": "2025-07-30T08:42:00+01:00",
+        "read": true,
+        "text": "Hi Kerry,\n\nCould I move tomorrow's 11:20 check-up to first thing if there's a gap? I can make the original one if it needs to stay there.\n\nThanks,\nLuis",
+        "from": "me"
+      },
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2025-07-30T09:26:00+01:00",
+        "read": true,
+        "text": "Dear Mr Cordero,\n\nWe have had a cancellation for 08:20 tomorrow. Would you like me to move your appointment to this time?\n\nKind regards,\n\nKerry Simmonds\nReception, Whitlock Cut Dental\n8 Wilton Way, London E8 1BG | 020 7946 0745\nPlease give 48 hours' notice of cancellations or a £35 fee applies.",
+        "from": "kerry-simmonds"
+      },
+      {
+        "to": [
+          "kerry-simmonds"
+        ],
+        "date": "2025-07-30T09:41:00+01:00",
+        "read": true,
+        "text": "08:20 would be perfect, thanks.",
+        "from": "me"
+      },
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2025-07-30T09:49:00+01:00",
+        "read": true,
+        "text": "Dear Mr Cordero,\n\nYour check-up has been moved to 08:20 on Thursday 31 July. We have released the 11:20 slot.\n\nKind regards,\n\nKerry Simmonds\nReception, Whitlock Cut Dental\n8 Wilton Way, London E8 1BG | 020 7946 0745\nPlease give 48 hours' notice of cancellations or a £35 fee applies.",
+        "from": "kerry-simmonds"
+      }
+    ],
+    "truth": {
+      "summary": "Kerry moved Luis’s 31 July check-up at Whitlock Cut Dental from 11:20 to 08:20.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2025-07-31",
+          "what": "08:20 check-up at Whitlock Cut Dental"
+        }
+      ],
+      "facts": [
+        "The new slot was available because of a cancellation.",
+        "The old 11:20 slot was released."
+      ]
+    }
+  },
+  {
+    "id": "s0577",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "May portfolio morning",
+    "state": {
+      "inbox": false
+    },
+    "listId": "everyone.acme.example",
+    "messages": [
+      {
+        "to": [
+          "list"
+        ],
+        "date": "2026-04-20T10:24:00+01:00",
+        "read": true,
+        "text": "Morning,\n\nWe can give six students a decent stretch with someone's actual work in front of us if we keep this in the studio. The case for doing it elsewhere is that we could get a few more people in. The downside is we'd spend half the morning getting them there, and the two who have Friday shifts would be on a train by the time we started looking at anyone's work.\n\nCallie has been speaking to the college. I've attached the rough running order she and I were working from, mostly so it's clear what the studio would be signing up to. I'd like each person to bring one piece they got stuck on, including the bits they cut. If we do polished decks again we easily lose the first hour to everyone trying to get their laptop to talk to the screen.\n\nCan someone check if the big room is free from ten on 15 May? I've put Rupert on here because he offered us the small room at Merefurrow when we spoke about this in March.\n\nMarcus\n\nMarcus Adeyemi\nSenior Product Designer, Acme Studio\nacme.example",
+        "from": "marcus-adeyemi",
+        "cc": [
+          "callie-fraser",
+          "rupert-ashdown"
+        ],
+        "attachments": [
+          {
+            "filename": "portfolio-morning-rough-running-order.pdf",
+            "mime": "application/pdf",
+            "size": 70166
+          }
+        ]
+      },
+      {
+        "to": [
+          "list"
+        ],
+        "date": "2026-04-20T14:09:00+01:00",
+        "read": true,
+        "text": "Hi all,\n\nThe six can all do 15 May from ten, but the college needs two of them back by half one. I can ask them to email a single piece the week before if that helps. One of them asked whether it could be a project they never finished and I said yes, which I think accounts for at least two of the sign-ups this morning. If you want to run through how we pair them up I can do Tuesday at 11:15 or Wednesday at 12:40.\n\nSpeak soon, Callie\n\nCallie Fraser\nSenior Consultant, Northlight Talent\n+44 7700 900 231",
+        "from": "callie-fraser",
+        "cc": [
+          "rupert-ashdown"
+        ]
+      },
+      {
+        "to": [
+          "list"
+        ],
+        "date": "2026-04-21T10:48:00+01:00",
+        "read": true,
+        "text": "Dear all,\n\nThe small room is free that Friday from half past nine, so we could put coffee out before you started. I am afraid the minibus is in use by the garden group that morning, though. To be back at the college by half past one they'd need to leave here shortly after eleven and the train from Faversham is no help if they miss it. If you can do this in London I expect the students will get a great deal more out of it there.\n\nWith kind regards,\nRupert Ashdown",
+        "from": "rupert-ashdown",
+        "cc": [
+          "callie-fraser"
+        ]
+      },
+      {
+        "to": [
+          "list"
+        ],
+        "date": "2026-04-22T11:48:00+01:00",
+        "read": true,
+        "text": "The big room is booked, so let's stay on Turnmill Street. Thanks for offering the room, Rupert. I'd rather keep the six together until twelve and give the two who need to get back enough time to eat something.\n\nCallie, yes to the unfinished piece. Can you tell them loose sheets are fine? Last time we made it sound like a job interview and one student brought the folder she'd already used for three interviews. She only showed us the work she actually wanted help with while we were walking her to the lift.\n\nMarcus\n\nMarcus Adeyemi\nSenior Product Designer, Acme Studio\nacme.example",
+        "from": "marcus-adeyemi",
+        "cc": [
+          "callie-fraser",
+          "rupert-ashdown"
+        ]
+      }
+    ],
+    "truth": {
+      "summary": "Marcus kept the six-student portfolio morning at Acme after declining Rupert’s offer of a room at Merefurrow.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-05-15",
+          "what": "Portfolio morning in Acme’s big room, starting at 10:00"
+        }
+      ],
+      "facts": [
+        "Two students need to be back at college by 13:30.",
+        "Students can bring unfinished work, and Marcus asked Callie to tell them loose sheets were fine.",
+        "Merefurrow had a free room but its minibus was already in use."
+      ]
+    }
+  },
+  {
+    "id": "s0578",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "the bread money",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "to": [
+          "harriet-lowe",
+          "me"
+        ],
+        "date": "2026-04-28T19:49:00+01:00",
+        "read": true,
+        "text": "Dear all,\n\nI can divide £28.80 for the sourdough by three.  What I cannot do is find the biscuit tin, which has the float in it and very possibly the baker's receipt.  It has not been seen since the Trollope evening, and I refuse to believe anyone at St Jude's would want it, Trollope or no.  Could we settle at the hall tomorrow?\n\nYours,\nHamish Fairweather",
+        "from": "hamish-fairweather"
+      },
+      {
+        "to": [
+          "hamish-fairweather",
+          "me"
+        ],
+        "date": "2026-04-29T12:26:00+01:00",
+        "read": true,
+        "text": "Hi Hamish, hi Luis,\n\nI can't make the hall tonight. Hamish, would Tuesday before class work? I've got the £9.60 in cash.\n\nHarriet\n\nHarriet Lowe MCSP\nDalston Step Clinic, Dalston",
+        "from": "harriet-lowe"
+      },
+      {
+        "to": [
+          "hamish-fairweather",
+          "harriet-lowe"
+        ],
+        "date": "2026-04-29T13:03:00+01:00",
+        "read": true,
+        "text": "tuesday works. i'll bring change this time.",
+        "from": "me"
+      },
+      {
+        "to": [
+          "harriet-lowe",
+          "me"
+        ],
+        "date": "2026-04-30T18:12:00+01:00",
+        "read": true,
+        "text": "Dear all,\n\nTuesday it is.  And I had left the tin underneath the bread.\n\nYours,\nHamish Fairweather",
+        "from": "hamish-fairweather"
+      }
+    ],
+    "truth": {
+      "summary": "Hamish, Harriet and Luis moved settling the £28.80 sourdough bill at St Jude's hall from Wednesday to the following Tuesday, before Harriet's class.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [
+        {
+          "text": "Bring change to settle the bread bill on Tuesday",
+          "due": "2026-05-05",
+          "kept": false
+        }
+      ],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-05-05",
+          "what": "Rescheduled cash settlement at the hall"
+        }
+      ],
+      "facts": [
+        "The £28.80 sourdough bill splits into three £9.60 shares.",
+        "Harriet has her £9.60 in cash.",
+        "Hamish found the biscuit tin under the bread."
+      ]
+    }
+  },
+  {
+    "id": "s0579",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "Pet chip check in the courtyard",
+    "state": {
+      "inbox": false
+    },
+    "listId": "residents.albioncourt.example",
+    "messages": [
+      {
+        "to": [
+          "list"
+        ],
+        "date": "2026-07-17T09:42:00+01:00",
+        "read": true,
+        "text": "Dear residents,\n\nLauriston Vets offered to bring a chip reader tomorrow morning. The managing agent has just told me the courtyard gate will be secured while the paving sets. Emma, could you say where people should go instead? The sign in the entrance still says 10:30 in the courtyard.\n\nKind regards,\n\nKerry Simmonds\nReception, Whitlock Cut Dental\n8 Wilton Way, London E8 1BG | 020 7946 0745\nPlease give 48 hours' notice of cancellations or a £35 fee applies.",
+        "from": "kerry-simmonds",
+        "cc": [
+          "emma-pike"
+        ]
+      },
+      {
+        "to": [
+          "list"
+        ],
+        "date": "2026-07-17T11:27:00+01:00",
+        "read": true,
+        "text": "Hi all,\n\nWe'll cancel the courtyard visit in that case. If you'd still like us to check a chip, I can fit you in at the surgery at 10:40 or 11:20 tomorrow. Call with your pet's name and which time you'd like.\n\nEmma\n\nEmma Pike | Lauriston Vets | 020 7946 0168",
+        "from": "emma-pike",
+        "cc": [
+          "kerry-simmonds"
+        ]
+      },
+      {
+        "to": [
+          "list"
+        ],
+        "date": "2026-07-18T08:32:00+01:00",
+        "read": true,
+        "text": "Dear residents,\n\nThe sign has been taken down. There will be no chip check at Albion Court today.\n\nKind regards,\n\nKerry Simmonds\nReception, Whitlock Cut Dental\n8 Wilton Way, London E8 1BG | 020 7946 0745\nPlease give 48 hours' notice of cancellations or a £35 fee applies.",
+        "from": "kerry-simmonds"
+      }
+    ],
+    "truth": {
+      "summary": "The courtyard chip check was cancelled because the gate would be secured, and Emma offered two alternatives at the surgery.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-07-18",
+          "what": "Courtyard event cancelled; surgery slots offered at 10:40 and 11:20"
+        }
+      ],
+      "facts": [
+        "The original plan was 10:30 in the Albion Court courtyard.",
+        "Kerry took the entrance sign down."
+      ]
+    }
+  },
+  {
+    "id": "s0580",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "client",
+      "work"
+    ],
+    "subject": "The people with the refill shops",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2026-08-24T10:07:00+01:00",
+        "read": true,
+        "text": "Ask Arjun for the intro to Sprig Refill.\nOnly catch is they run two of the shops themselves, so I wouldn't pitch this as a franchise problem yet.\n\nJae",
+        "from": "jae-cho"
+      },
+      {
+        "to": [
+          "arjun-sethi"
+        ],
+        "date": "2026-08-25T11:14:00+01:00",
+        "read": true,
+        "text": "Hi Arjun,\n\nCould you put us in touch with whoever runs ops at Sprig Refill? Jae mentioned they were still counting container returns by hand at closing. I'd like to hear what's actually getting lost between the shop and the depot before we send them any work.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example",
+        "from": "me",
+        "cc": [
+          "jae-cho"
+        ]
+      },
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2026-08-26T08:32:00+01:00",
+        "read": true,
+        "text": "Fine to use my name. I'll ask whether Rupa wants an intro when she's back on the 1st.\n\nA",
+        "from": "arjun-sethi",
+        "cc": [
+          "jae-cho"
+        ]
+      },
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2026-09-01T14:54:00+01:00",
+        "read": true,
+        "text": "Hold off on the deck. No intro yet.\n\nJae",
+        "from": "jae-cho"
+      }
+    ],
+    "truth": {
+      "summary": "Arjun said he’d ask Rupa at Sprig Refill about an introduction, and the studio held off on sending a deck with no introduction confirmed.",
+      "ownerOwes": [],
+      "othersOwe": [
+        "Arjun Sethi: ask Rupa whether she wants an introduction and report back."
+      ],
+      "promisesByOwner": [],
+      "promisesToOwner": [
+        {
+          "text": "Ask whether Rupa wants an introduction when she returns",
+          "kept": false,
+          "due": "2026-09-01",
+          "who": "Arjun Sethi"
+        }
+      ],
+      "keyDates": [
+        {
+          "date": "2026-09-01",
+          "what": "Rupa expected back; no introduction by that afternoon"
+        }
+      ],
+      "facts": [
+        "The issue raised was counting container returns by hand at closing.",
+        "Sprig runs two of the shops itself."
+      ]
+    }
+  },
+  {
+    "id": "s0581",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "lunch by the canal?",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "to": [
+          "jake-pemberton",
+          "jae-cho"
+        ],
+        "date": "2026-09-03T11:04:00+01:00",
+        "read": true,
+        "text": "Hey,\n\nI'd pick the place by the canal for the team lunch. It's close enough that people can duck out after an hour. Did either of you keep the menu?\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example",
+        "from": "me"
+      },
+      {
+        "to": [
+          "me",
+          "jae-cho"
+        ],
+        "date": "2026-09-03T11:07:00+01:00",
+        "read": true,
+        "text": "Menu from the counter. The lunch prices are on page two.\n\nJake",
+        "from": "jake-pemberton",
+        "attachments": [
+          {
+            "filename": "Sill-Kitchen-lunch-Sept.pdf",
+            "mime": "application/pdf",
+            "size": 218394
+          }
+        ]
+      },
+      {
+        "to": [
+          "me",
+          "jake-pemberton"
+        ],
+        "date": "2026-09-04T12:17:00+01:00",
+        "read": true,
+        "text": "Try Monday 14th at 12:30.\nSill's downstairs bit is all stools, so ask for a normal table.\n\nJae",
+        "from": "jae-cho"
+      },
+      {
+        "to": [
+          "jae-cho",
+          "jake-pemberton"
+        ],
+        "date": "2026-09-08T16:52:00+01:00",
+        "read": true,
+        "text": "They can do six at a table on the 14th. I'm still checking whether we're six. The woman on the phone said she'd heard 'sixteen' and was very relieved when I corrected it.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example",
+        "from": "me"
+      },
+      {
+        "to": [
+          "me",
+          "jae-cho"
+        ],
+        "date": "2026-09-11T13:22:00+01:00",
+        "read": true,
+        "text": "Count me in if it's 12:30. On support again at two.\n\nJake",
+        "from": "jake-pemberton"
+      }
+    ],
+    "truth": {
+      "summary": "Sill Kitchen could seat six on 14 September, and the thread ends before Luis confirms the headcount or books the table.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-09-14",
+          "what": "Proposed lunch at 12:30"
+        }
+      ],
+      "facts": [
+        "Jake sent the menu PDF and said lunch prices are on page two.",
+        "The downstairs seating is stools; Jae said to ask for a normal table.",
+        "Jake could make 12:30 before returning to support at 14:00."
+      ]
+    }
+  },
+  {
+    "id": "s0582",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "work"
+    ],
+    "subject": "Spare for Layer Day",
+    "state": {
+      "inbox": true
+    },
+    "messages": [
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2026-09-26T11:07:00+01:00",
+        "read": true,
+        "text": "Luis, want my Layer Day ticket for this afternoon? Badge desk closes at two.\n\nJae",
+        "from": "jae-cho"
+      }
+    ],
+    "truth": {
+      "summary": "Jae offered Luis a same-day Layer Day ticket, and no reply arrived before the offer expired.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-09-26",
+          "what": "Layer Day badge desk shuts at 14:00"
+        }
+      ],
+      "facts": [
+        "Jae had a spare ticket and offered it to Luis that morning."
+      ]
+    }
+  },
+  {
+    "id": "s0583",
+    "account": "icloud",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "the double museum pass",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-02T18:14:00+02:00",
+        "read": true,
+        "text": "Hi Luis!\n\nShall I buy the double pass at the Lantern Museum for December? I can leave the theatre before five on the Friday, but I won't be able to actually get to London until the Saturday morning. I was thinking we could use it for the little model theatres show after lunch and at least one of us would use it again.\n\nClara x",
+        "from": "clara-moreau"
+      },
+      {
+        "to": [
+          "clara-moreau"
+        ],
+        "date": "2026-10-02T18:43:00+01:00",
+        "read": true,
+        "text": "hang on before you pay. is that one of the passes where both names have to be at the same address?",
+        "from": "me"
+      },
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-03T09:26:00+02:00",
+        "read": true,
+        "text": "You caught it. The second name has to live with the first. I've emptied the basket. I'll still come on the December weekend and we can see if anyone fancies the show once we know where lunch is.\n\nClara x",
+        "from": "clara-moreau"
+      },
+      {
+        "to": [
+          "clara-moreau"
+        ],
+        "date": "2026-10-03T11:16:00+01:00",
+        "read": true,
+        "text": "fine by me. i'd rather leave the afternoon loose anyway.",
+        "from": "me"
+      }
+    ],
+    "truth": {
+      "summary": "Clara dropped the joint museum membership because both members must live at one address, while keeping her December reunion plans.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-12-12",
+          "what": "Clara expects to arrive in London on the Saturday morning"
+        }
+      ],
+      "facts": [
+        "The pass was for the Lantern Museum.",
+        "No payment was made.",
+        "They might still see the model theatres show after reunion lunch."
+      ]
+    }
+  },
+  {
+    "id": "s0584",
+    "account": "freelance",
+    "lang": "es",
+    "tags": [
+      "client"
+    ],
+    "subject": "Cobro de cambios cuando el cliente entrega la lista tarde",
+    "state": {
+      "inbox": true
+    },
+    "listId": "comunidad.disenoindependiente.example",
+    "messages": [
+      {
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-09T09:12:00-06:00",
+        "read": true,
+        "text": "Caso LG-41. Hola, buen día.\n\nPara una carta de bebidas: si el negocio manda la lista de precios el día que estaba prevista la entrega, ¿cobran otra ronda o recorren la fecha? Me interesa cómo lo dejan escrito desde la cotización. El cliente de este caso ya pagó el anticipo.\n\nSaludos, Fer",
+        "from": "fernanda-rios"
+      },
+      {
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-09T10:41:00-06:00",
+        "read": true,
+        "text": "Yo recorro la fecha si la carta todavía está en diseño. Lo que me cuesta explicar es cuándo cambiar un precio ya impreso pasa a ser trabajo nuevo. Luego van con Inés con la misma foto del menú de hace tres semanas y ella tiene que adivinar cuál quieren.\n\nGracias, Mariana",
+        "from": "mariana-gomez"
+      },
+      {
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-12T08:36:00-06:00",
+        "read": true,
+        "text": "Buen día,\n\nConviene asentar desde qué día se cuenta el plazo. Si depende de los insumos del cliente, que conste la fecha en que se recibieron completos.\n\nAtte. C.P. Emilio Cárdenas\n\nC.P. Emilio Cárdenas Ruelas\nAdministración y Finanzas | Tueste Laja y Niebla S.A. de C.V.\nadministracion@lajayniebla.example",
+        "from": "emilio-cardenas"
+      },
+      {
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-13T17:16:00+01:00",
+        "read": true,
+        "text": "Lo separo en la cotización. La ronda incluida empieza cuando ya está la lista completa. Si después piden cambiar la lista aprobada, primero confirmamos cuánto cuesta abrir el archivo otra vez.\n\nSaludos,\n\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418",
+        "from": "me"
+      },
+      {
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-15T09:19:00-06:00",
+        "read": true,
+        "text": "Para LG-41 me sirve la parte de cuándo empieza la ronda. Luis, ¿puedes pegar aquí esa frase exactamente como la mandas? La versión que puse yo dice «con los insumos necesarios» y ya me discutieron qué entra en necesarios.\n\nSaludos, Fer",
+        "from": "fernanda-rios"
+      }
+    ],
+    "truth": {
+      "summary": "La lista discutió cómo separar una ronda incluida de los cambios posteriores, y Fernanda quedó esperando que Luis compartiera el texto exacto sobre cuándo arranca la ronda.",
+      "ownerOwes": [
+        "Pegar en la lista la frase exacta de la cotización que define cuándo empieza la ronda incluida."
+      ],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "LG-41 trata de una carta de bebidas cuyo cliente ya pagó el anticipo.",
+        "Luis cuenta la ronda incluida desde que recibe la lista completa y acuerda el costo de reabrir un archivo aprobado antes de hacerlo."
+      ]
+    }
+  },
+  {
+    "id": "s0585",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "somewhere to print near here",
+    "state": {
+      "inbox": false
+    },
+    "messages": [
+      {
+        "to": [
+          "rita-valente",
+          "chloe-bennett"
+        ],
+        "date": "2026-10-12T18:23:00+01:00",
+        "read": true,
+        "text": "where did you two print stuff when you stayed with us? need one copy of a gp letter and my printer just ate it",
+        "from": "me"
+      },
+      {
+        "to": [
+          "me",
+          "chloe-bennett"
+        ],
+        "date": "2026-10-12T19:05:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nThe library on Church Street, next to the town hall with the clock. But that was when you were still on Albion Road, so it may be a long walk now. Ask at the desk, the self-service screen wanted a card I didn't have.\n\nLove, Rita",
+        "from": "rita-valente"
+      },
+      {
+        "to": [
+          "me",
+          "rita-valente"
+        ],
+        "date": "2026-10-13T08:32:00+01:00",
+        "read": true,
+        "text": "Hi both!\n\nClapton Library, round the corner from the pond. I did my tickets there in August (20 mins before the 10:04, never again). If it all fails I'll print it at work and bring it on the 29th (19:30 from Temple Meads). Still okay for the spare room, are you two in?\n\nChlo x",
+        "from": "chloe-bennett"
+      },
+      {
+        "to": [
+          "rita-valente",
+          "chloe-bennett"
+        ],
+        "date": "2026-10-13T18:38:00+01:00",
+        "read": true,
+        "text": "yes we're in, spare room's yours. printed it at clapton, 20p and the man at the desk knew exactly which screen i was stuck on. cheers both",
+        "from": "me"
+      }
+    ],
+    "truth": {
+      "summary": "Rita and Chloe suggested libraries for printing; Luis printed his GP letter at Clapton Library for 20p and confirmed Chloe can stay on the 29th.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-10-13",
+          "what": "Luis printed the letter"
+        },
+        {
+          "date": "2026-10-29",
+          "what": "Chloe arrives (19:30 from Temple Meads) and stays in the spare room"
+        }
+      ],
+      "facts": [
+        "Rita printed at the Church Street library by the town hall when they lived on Albion Road.",
+        "Chloe suggested Clapton Library near the pond and offered to print it at work.",
+        "Printing cost 20p."
+      ]
+    }
+  },
+  {
+    "id": "s0586",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "the extra clean at St Jude's",
+    "state": {
+      "inbox": true
+    },
+    "messages": [
+      {
+        "to": [
+          "harriet-lowe",
+          "marta-silva"
+        ],
+        "date": "2026-10-14T18:06:00+01:00",
+        "read": true,
+        "text": "Hi both,\n\nCan we hold off on splitting the £32 for St Jude's until we know whether they actually want us to do the extra clean? The hall form says we have to leave it as we found it, which I took to mean put the tables back and sweep up under the tea urn. At the bottom of the invoice it says 'cleaning included', but that could mean they're charging for the usual clean and they still want us to do the kitchen. I've asked the person who sent it and got an automatic reply saying she only reads that address on Thursdays.\n\nMarta, it's the hall job I mean. Friday at ours is all as usual. Harriet, if you've already put my half in the envelope, can you leave it with you for now?\n\nL",
+        "from": "me"
+      },
+      {
+        "to": [
+          "me",
+          "marta-silva"
+        ],
+        "date": "2026-10-15T12:27:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nI saw the caretaker after class on Tuesday and went back this morning with the invoice. The hall clean includes the kitchen floor and worktop. He only needs us to wash the mugs and take the rubbish out to the bins, which I can do when I put the mats away.\n\nI hadn't put any cash in the envelope. Marta, can we drop the extra clean altogether?\n\nHarriet\n\nHarriet Lowe MCSP\nDalston Step Clinic, Dalston",
+        "from": "harriet-lowe"
+      },
+      {
+        "to": [
+          "me",
+          "harriet-lowe"
+        ],
+        "date": "2026-10-15T15:04:00+01:00",
+        "read": true,
+        "text": "Hi Luis\nYes, I'll take the hall kitchen off. See you Friday at 9 for the flat.\nMarta",
+        "from": "marta-silva"
+      }
+    ],
+    "truth": {
+      "summary": "The hall's charge already covered the kitchen clean, so Harriet asked Marta to drop the extra £32 hall clean and Marta agreed; there is no bill to split.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-10-16",
+          "what": "Marta’s normal flat clean still arranged for 09:00"
+        }
+      ],
+      "facts": [
+        "The hall clean includes the kitchen floor and worktop.",
+        "Harriet offered to wash the mugs and take out the rubbish herself.",
+        "No cash had been put in the envelope."
+      ]
+    }
+  },
+  {
+    "id": "s0587",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "blue bag under the stairs",
+    "state": {
+      "inbox": false
+    },
+    "listId": "residents.albioncourt.example",
+    "messages": [
+      {
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-17T10:12:00+01:00",
+        "read": true,
+        "text": "hi all, is the blue bag the one with orange bibs poking out? the five-a-side bag's been missing since thursday and i dropped something round to kerry's on the way home, so it might be ours. i can come by for it tomorrow.\n\ncc tom and josh in case one of you has it after all, and hamish because the book club stuff lives down there too",
+        "from": "me",
+        "cc": [
+          "hamish-fairweather",
+          "josh-whitaker",
+          "tom-ashworth"
+        ]
+      },
+      {
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-17T10:49:00+01:00",
+        "read": true,
+        "text": "LUIS\n\nI've got the football bag. It was in the boot under that towel I thought I'd lost. There's a blue bag with bibs in it at my place unless someone has been very tidy and made us a second set lol.\n\nJ",
+        "from": "josh-whitaker",
+        "cc": [
+          "hamish-fairweather",
+          "tom-ashworth"
+        ]
+      },
+      {
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-17T13:07:00+01:00",
+        "read": true,
+        "text": "Dear all,\n\nThe bag under the stairs is mine.  The orange shapes are the ends of the canvas bunting from the book stall, which I sewed myself in 1997 for a school fete and which has outlived the school.  I left it with Kerry while I went for the trestle table and we have both forgotten it.  I shall collect it this afternoon.\n\nYours,\nHamish Fairweather",
+        "from": "hamish-fairweather",
+        "cc": [
+          "tom-ashworth",
+          "josh-whitaker"
+        ]
+      },
+      {
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-17T13:22:00+01:00",
+        "read": true,
+        "text": "mate our bibs barely qualify as orange after thursday",
+        "from": "tom-ashworth"
+      },
+      {
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-18T09:33:00+01:00",
+        "read": true,
+        "text": "Dear all,\n\nCollected yesterday.  Thank you, Kerry.\n\nYours,\nHamish Fairweather",
+        "from": "hamish-fairweather"
+      }
+    ],
+    "truth": {
+      "summary": "Luis thought the blue bag under the Albion Court stairs was the missing five-a-side bag, but Josh had that in his boot and the blue bag held Hamish's book stall bunting, which Hamish collected.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [
+        {
+          "text": "Collect the bag of bunting that afternoon",
+          "kept": true,
+          "due": "2026-10-17",
+          "who": "Hamish Fairweather"
+        }
+      ],
+      "keyDates": [
+        {
+          "date": "2026-10-17",
+          "what": "Hamish collected his bag from Albion Court"
+        }
+      ],
+      "facts": [
+        "The five-a-side bag went missing after Thursday's game; Josh found it in his boot under a towel.",
+        "The bunting came from the book stall; Hamish had left the bag with Kerry."
+      ]
+    }
+  },
+  {
+    "id": "s0588",
+    "account": "freelance",
+    "lang": "es",
+    "tags": [
+      "client"
+    ],
+    "subject": "¿Quién revisa la caja al recoger?",
+    "state": {
+      "inbox": true
+    },
+    "listId": "comunidad.disenoindependiente.example",
+    "messages": [
+      {
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-13T11:24:00-06:00",
+        "read": true,
+        "text": "¿Alguien usa una hojita de recepción para los impresos? Adjunto la que llevamos ayer. Quiero que quepa en media carta.\n\nGracias, Mariana",
+        "from": "mariana-gomez",
+        "attachments": [
+          {
+            "filename": "recepcion_tiraje_media-carta.pdf",
+            "mime": "application/pdf",
+            "size": 45724
+          }
+        ]
+      },
+      {
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-14T15:50:00+01:00",
+        "read": true,
+        "text": "Yo dejaría un renglón para el número de cajas abiertas. A veces firmas y luego nadie sabe de cuál salió la muestra.\n\nSaludos,\n\nLuis Cordero\nDiseño de marca y producto\nhola@luiscordero.example · +44 7700 900 418",
+        "from": "me"
+      },
+      {
+        "to": [
+          "list"
+        ],
+        "date": "2026-10-16T13:13:00-06:00",
+        "read": true,
+        "text": "Sí, eso me falta. ¿Alguien la quiere probar en su próxima recogida?",
+        "from": "mariana-gomez"
+      }
+    ],
+    "truth": {
+      "summary": "Mariana compartió una hoja de recepción para impresos y pidió que alguien la probara, pero nadie se ofreció en el hilo.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [],
+      "facts": [
+        "La hoja debe caber en media carta.",
+        "Luis sugirió anotar el número de cajas abiertas para ubicar de dónde salió la muestra."
+      ]
+    }
+  },
+  {
+    "id": "s0589",
+    "account": "personal",
+    "lang": "en",
+    "tags": [
+      "personal"
+    ],
+    "subject": "receipts for the six sessions",
+    "state": {
+      "inbox": true
+    },
+    "messages": [
+      {
+        "to": [
+          "harriet-lowe"
+        ],
+        "date": "2026-10-12T19:32:00+01:00",
+        "read": true,
+        "text": "hi harriet, do you still have the receipts for my six shin sessions in 2025? my cash plan wants the dates and what i paid",
+        "from": "me"
+      },
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-13T12:18:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nThe six £55 ones from March to May 2025? I can pull those together. Does one PDF with the dates on it work?\n\nHarriet\n\nHarriet Lowe MCSP\nDalston Step Clinic, Dalston",
+        "from": "harriet-lowe"
+      },
+      {
+        "to": [
+          "harriet-lowe"
+        ],
+        "date": "2026-10-13T13:54:00+01:00",
+        "read": true,
+        "text": "one pdf is perfect. the dates and the £55 against each are enough, cheers",
+        "from": "me"
+      },
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-15T16:32:00+01:00",
+        "read": true,
+        "text": "Hi Luis,\n\nFound the dates. The invoices come off the old booking system and Dan's the only one who knows his way round it, so I'll get the PDF over to you by 5 on Monday.\n\nHarriet\n\nHarriet Lowe MCSP\nDalston Step Clinic, Dalston",
+        "from": "harriet-lowe"
+      }
+    ],
+    "truth": {
+      "summary": "Harriet promised Luis an itemised PDF of his six physio sessions by 17:00 on 19 October, and the thread shows no delivery.",
+      "ownerOwes": [],
+      "othersOwe": [
+        "Harriet Lowe: send Luis the itemised receipt PDF."
+      ],
+      "promisesByOwner": [],
+      "promisesToOwner": [
+        {
+          "text": "Email the itemised PDF of the six physio sessions by 17:00",
+          "kept": false,
+          "due": "2026-10-19",
+          "who": "Harriet Lowe"
+        }
+      ],
+      "keyDates": [
+        {
+          "date": "2026-10-19",
+          "what": "Harriet’s 17:00 deadline for emailing the PDF"
+        }
+      ],
+      "facts": [
+        "Six shin sessions took place between March and May 2025 at £55 each.",
+        "Luis needs the dates and amounts for his cash plan.",
+        "One PDF with each date and amount is enough.",
+        "The invoices are on the clinic's old booking system, which Dan knows."
+      ]
+    }
+  },
+  {
+    "id": "s0590",
+    "account": "acme",
+    "lang": "en",
+    "tags": [
+      "client",
+      "work"
+    ],
+    "subject": "Preview showing the old masthead",
+    "state": {
+      "inbox": true
+    },
+    "messages": [
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-20T10:05:00+01:00",
+        "read": true,
+        "text": "Dear Luis,\n\nFor 12 November, could you confirm which preview the board should be seeing? The staff link I have used to check the opening hours since August now opens with a burgundy band and the old museum name. I've attached what I see on the laptop. I can still get as far as the new opening hours after clicking Visit, so I don't know whether I am looking at the August build or only part of it. I have held off putting the link into the board papers.\n\nWith best wishes,\n\nMargaret Okafor\nHead of Digital\nHolloway Museum of Making | 30 Seven Sisters Road, London N7\nPlease direct collection enquiries to collections@hollowaymuseum.example.",
+        "from": "margaret-okafor",
+        "attachments": [
+          {
+            "filename": "museum-preview-20-oct.png",
+            "mime": "image/png",
+            "size": 225641
+          }
+        ]
+      },
+      {
+        "to": [
+          "jake-pemberton"
+        ],
+        "date": "2026-10-20T14:21:00+01:00",
+        "read": true,
+        "text": "Jake,\n\nCan you check the old staff preview? The Visit page has the new hours but the masthead's from the previous build. I've attached Margaret's screenshot from this morning.\n\nThanks,\nLuis\n\nLuis Cordero\nLead Product Designer, Acme Studio\n3rd floor, 48 Turnmill Street, London EC1M 5RR\nacme.example",
+        "from": "me",
+        "cc": [
+          "margaret-okafor"
+        ],
+        "attachments": [
+          {
+            "filename": "museum-preview-20-oct.png",
+            "mime": "image/png",
+            "size": 225641
+          }
+        ]
+      },
+      {
+        "to": [
+          "me"
+        ],
+        "date": "2026-10-21T09:16:00+01:00",
+        "read": true,
+        "text": "Try the October preview from the pinned studio note. The August shortcut still points at a separate build.\n\nJake",
+        "from": "jake-pemberton",
+        "cc": [
+          "margaret-okafor"
+        ]
+      }
+    ],
+    "truth": {
+      "summary": "Margaret reported the old masthead on the staff preview and Jake suggested the October preview, with no subsequent confirmation of what the board saw.",
+      "ownerOwes": [],
+      "othersOwe": [],
+      "promisesByOwner": [],
+      "promisesToOwner": [],
+      "keyDates": [
+        {
+          "date": "2026-10-20",
+          "what": "Margaret captured the staff preview"
+        },
+        {
+          "date": "2026-11-12",
+          "what": "Planned launch"
+        }
+      ],
+      "facts": [
+        "The staff preview combined the old burgundy masthead with current opening hours.",
+        "Margaret held the link out of the board papers.",
+        "Jake said the August shortcut points to a separate build."
+      ]
+    }
+  }
+]

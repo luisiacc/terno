@@ -1,0 +1,884 @@
+[
+ {
+  "id": "s0028",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Christmas 2024 in Guadalajara",
+  "people": [
+   "niamh-gallagher"
+  ],
+  "shape": "ask-answer",
+  "outcome": "declined politely",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2024-11-04",
+   "2024-11-07"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 5 of the storyline \"Christmas 2024 in Guadalajara\": write what happens in this stretch (2024-11-04 to 2024-11-07), consistent with its summary."
+  ],
+  "storyline": "christmas-gdl-2024"
+ },
+ {
+  "id": "s0029",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Christmas 2024 in Guadalajara",
+  "people": [
+   "niamh-gallagher"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2024-11-12",
+   "2024-11-22"
+  ],
+  "length": "long",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 5 of the storyline \"Christmas 2024 in Guadalajara\": write what happens in this stretch (2024-11-12 to 2024-11-22), consistent with its summary."
+  ],
+  "storyline": "christmas-gdl-2024"
+ },
+ {
+  "id": "s0030",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Christmas 2024 in Guadalajara",
+  "people": [
+   "niamh-gallagher",
+   "daniela-cordero"
+  ],
+  "shape": "luis-starts",
+  "outcome": "decided",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2024-12-02",
+   "2024-12-07"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 3 of 5 of the storyline \"Christmas 2024 in Guadalajara\": write what happens in this stretch (2024-12-02 to 2024-12-07), consistent with its summary."
+  ],
+  "storyline": "christmas-gdl-2024"
+ },
+ {
+  "id": "s0031",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Christmas 2024 in Guadalajara",
+  "people": [
+   "niamh-gallagher"
+  ],
+  "shape": "ask-answer",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2024-12-19",
+   "2024-12-22"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 4 of 5 of the storyline \"Christmas 2024 in Guadalajara\": write what happens in this stretch (2024-12-19 to 2024-12-22), consistent with its summary."
+  ],
+  "storyline": "christmas-gdl-2024"
+ },
+ {
+  "id": "s0032",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Christmas 2024 in Guadalajara",
+  "people": [
+   "daniela-cordero",
+   "niamh-gallagher"
+  ],
+  "shape": "group",
+  "outcome": "waiting on them",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2024-12-30",
+   "2025-01-06"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 5 of 5 of the storyline \"Christmas 2024 in Guadalajara\": write what happens in this stretch (2024-12-30 to 2025-01-06), consistent with its summary."
+  ],
+  "storyline": "christmas-gdl-2024"
+ },
+ {
+  "id": "s0033",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "free: un cambio de alcance",
+  "people": [
+   "mariana-gomez"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-04-06",
+   "2025-04-06"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0034",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a lost key",
+  "people": [
+   "hamish-fairweather"
+  ],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-01-23",
+   "2026-01-23"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0035",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Declaración anual 2025",
+  "people": [
+   "brenda-salas",
+   "guadalupe-ibarra"
+  ],
+  "shape": "group",
+  "outcome": "declined politely",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-02-23",
+   "2026-03-02"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 5 of the storyline \"Declaración anual 2025\": write what happens in this stretch (2026-02-23 to 2026-03-02), consistent with its summary."
+  ],
+  "trash": true,
+  "storyline": "declaracion-anual-2026"
+ },
+ {
+  "id": "s0036",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Declaración anual 2025",
+  "people": [
+   "guadalupe-ibarra",
+   "brenda-salas"
+  ],
+  "shape": "luis-starts",
+  "outcome": "resolved",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-03-12",
+   "2026-03-17"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 2 of 5 of the storyline \"Declaración anual 2025\": write what happens in this stretch (2026-03-12 to 2026-03-17), consistent with its summary."
+  ],
+  "storyline": "declaracion-anual-2026"
+ },
+ {
+  "id": "s0037",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Declaración anual 2025",
+  "people": [
+   "brenda-salas",
+   "guadalupe-ibarra"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-03-21",
+   "2026-03-31"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 5 of the storyline \"Declaración anual 2025\": write what happens in this stretch (2026-03-21 to 2026-03-31), consistent with its summary."
+  ],
+  "trash": true,
+  "storyline": "declaracion-anual-2026"
+ },
+ {
+  "id": "s0038",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Declaración anual 2025",
+  "people": [
+   "guadalupe-ibarra",
+   "brenda-salas"
+  ],
+  "shape": "group",
+  "outcome": "ongoing",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-04-08",
+   "2026-04-15"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 4 of 5 of the storyline \"Declaración anual 2025\": write what happens in this stretch (2026-04-08 to 2026-04-15), consistent with its summary."
+  ],
+  "storyline": "declaracion-anual-2026"
+ },
+ {
+  "id": "s0039",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Declaración anual 2025",
+  "people": [
+   "brenda-salas",
+   "guadalupe-ibarra"
+  ],
+  "shape": "luis-starts",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-04-24",
+   "2026-04-29"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 5 of 5 of the storyline \"Declaración anual 2025\": write what happens in this stretch (2026-04-24 to 2026-04-29), consistent with its summary."
+  ],
+  "storyline": "declaracion-anual-2026"
+ },
+ {
+  "id": "s0040",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: a warranty claim",
+  "people": [
+   "andrei-popescu"
+  ],
+  "shape": "luis-starts",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-06-10",
+   "2026-06-12"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0041",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "a travel agent following up",
+  "people": [],
+  "shape": "ask-answer",
+  "outcome": "decided",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-06-16",
+   "2026-06-19"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0042",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "free: la imprenta",
+  "people": [
+   "mariana-gomez"
+  ],
+  "shape": "ask-answer",
+  "outcome": "resolved",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-06-25",
+   "2026-06-25"
+  ],
+  "length": "medium",
+  "attachments": "some",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0043",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a camera lens for sale",
+  "people": [
+   "imogen-barnes",
+   "harriet-lowe"
+  ],
+  "shape": "forward",
+  "outcome": "declined politely",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2026-08-10",
+   "2026-08-13"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0044",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a print proof",
+  "people": [
+   "natasha-whyte",
+   "margaret-okafor"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-08-12",
+   "2026-08-22"
+  ],
+  "length": "mixed",
+  "attachments": "forgotten",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0045",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Tandem City e-bike unlock flow",
+  "people": [
+   "chiara-russo",
+   "dan-whelan"
+  ],
+  "shape": "forward",
+  "outcome": "declined politely",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2026-08-21",
+   "2026-08-24"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 5 of the storyline \"Tandem City e-bike unlock flow\": write what happens in this stretch (2026-08-21 to 2026-08-24), consistent with its summary."
+  ],
+  "storyline": "tandem-ebike-unlock"
+ },
+ {
+  "id": "s0046",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "free: una revisión del sitio",
+  "people": [
+   "mariana-gomez",
+   "emilio-cardenas"
+  ],
+  "shape": "luis-starts",
+  "outcome": "ongoing",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-08-23",
+   "2026-08-25"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "client"
+  ],
+  "inbox": true,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0047",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Tandem City e-bike unlock flow",
+  "people": [
+   "gabriel-santos",
+   "freya-lindgren",
+   "chiara-russo"
+  ],
+  "shape": "group",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-09-01",
+   "2026-09-08"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 5 of the storyline \"Tandem City e-bike unlock flow\": write what happens in this stretch (2026-09-01 to 2026-09-08), consistent with its summary."
+  ],
+  "storyline": "tandem-ebike-unlock"
+ },
+ {
+  "id": "s0048",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "free: un cambio de alcance",
+  "people": [
+   "mariana-gomez",
+   "lucia-herrera"
+  ],
+  "shape": "forward",
+  "outcome": "decided",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2026-09-10",
+   "2026-09-13"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0049",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Tandem City e-bike unlock flow",
+  "people": [
+   "freya-lindgren"
+  ],
+  "shape": "ask-answer",
+  "outcome": "rescheduled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-09-20",
+   "2026-09-23"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 5 of the storyline \"Tandem City e-bike unlock flow\": write what happens in this stretch (2026-09-20 to 2026-09-23), consistent with its summary."
+  ],
+  "storyline": "tandem-ebike-unlock"
+ },
+ {
+  "id": "s0050",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a visa question",
+  "people": [
+   "ben-hartley",
+   "harriet-lowe",
+   "tom-ashworth",
+   "mateo-cordero",
+   "joanna-kowalczyk"
+  ],
+  "shape": "group",
+  "outcome": "ongoing",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-09-24",
+   "2026-10-01"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0051",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Tandem City e-bike unlock flow",
+  "people": [
+   "freya-lindgren",
+   "kate-sutherland"
+  ],
+  "shape": "forward",
+  "outcome": "resolved",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2026-10-04",
+   "2026-10-07"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "must": [
+   "Part 4 of 5 of the storyline \"Tandem City e-bike unlock flow\": write what happens in this stretch (2026-10-04 to 2026-10-07), consistent with its summary."
+  ],
+  "storyline": "tandem-ebike-unlock"
+ },
+ {
+  "id": "s0052",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a sick pet",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on Luis",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-17",
+   "2026-10-20"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [],
+  "unreadFrom": "2026-10-19T15:30:00Z"
+ },
+ {
+  "id": "s0053",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "planted: owner-promise",
+  "people": [
+   "nikhil-mehta"
+  ],
+  "shape": "ask-answer",
+  "outcome": "Luis owes what he promised",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-22"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "in the 14 days before the anchor Luis promised something with a time (I'll send it Friday, I'll call you tomorrow), in his own message; due between 7 days before the anchor and 10 days after; nothing in the thread shows it done."
+  ],
+  "plant": "owner-promise",
+  "lastFrom": "me"
+ },
+ {
+  "id": "s0054",
+  "account": "personal",
+  "lang": "en",
+  "kind": "planted: waiting-on-you",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on Luis",
+  "messages": [
+   3,
+   6
+  ],
+  "window": [
+   "2026-10-12",
+   "2026-10-22"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "a recent Inbox thread: Luis wrote earlier in it, and the latest message, from a person, asks him something he hasn't answered."
+  ],
+  "unreadFrom": "2026-10-21T05:27:39Z",
+  "plant": "waiting-on-you",
+  "firstFrom": "me",
+  "lastFrom": "them"
+ },
+ {
+  "id": "s0055",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Tandem City e-bike unlock flow",
+  "people": [
+   "dan-whelan",
+   "kate-sutherland",
+   "freya-lindgren",
+   "chiara-russo"
+  ],
+  "shape": "group",
+  "outcome": "resolved",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-10-15",
+   "2026-10-22"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 5 of 5 of the storyline \"Tandem City e-bike unlock flow\": write what happens in this stretch (2026-10-15 to 2026-10-22), consistent with its summary."
+  ],
+  "unreadFrom": "2026-10-21T18:30:00Z",
+  "storyline": "tandem-ebike-unlock"
+ },
+ {
+  "id": "s0056",
+  "account": "acme",
+  "lang": "en",
+  "kind": "planted: waiting-on-you",
+  "people": [
+   "natasha-whyte"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on Luis",
+  "messages": [
+   3,
+   6
+  ],
+  "window": [
+   "2026-10-12",
+   "2026-10-22"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "must": [
+   "a recent Inbox thread: Luis wrote earlier in it, and the latest message, from a person, asks him something he hasn't answered."
+  ],
+  "plant": "waiting-on-you",
+  "firstFrom": "me",
+  "lastFrom": "them"
+ },
+ {
+  "id": "s0057",
+  "account": "personal",
+  "lang": "en",
+  "kind": "planted: deadline",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis, before the date",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-22"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "lastFrom": "them",
+  "must": [
+   "in the 14 days before the anchor someone asked Luis to do something by a stated date within the 10 days after the anchor; he hasn't done it.",
+   "The date he must act by falls between 2026-10-23 and 2026-11-01."
+  ],
+  "plant": "deadline"
+ }
+]

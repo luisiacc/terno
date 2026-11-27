@@ -1,0 +1,778 @@
+[
+ {
+  "id": "s0506",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "storyline: Deposit back from Keetons Road",
+  "people": [
+   "graham-petts"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "cancelled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2024-10-29",
+   "2024-11-08"
+  ],
+  "length": "medium",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 5 of the storyline \"Deposit back from Keetons Road\": write what happens in this stretch (2024-10-29 to 2024-11-08), consistent with its summary."
+  ],
+  "storyline": "bermondsey-deposit"
+ },
+ {
+  "id": "s0507",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "storyline: Deposit back from Keetons Road",
+  "people": [
+   "graham-petts"
+  ],
+  "shape": "group",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2024-11-19",
+   "2024-11-26"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 5 of the storyline \"Deposit back from Keetons Road\": write what happens in this stretch (2024-11-19 to 2024-11-26), consistent with its summary."
+  ],
+  "storyline": "bermondsey-deposit"
+ },
+ {
+  "id": "s0508",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "storyline: Deposit back from Keetons Road",
+  "people": [
+   "graham-petts"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on them",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2024-12-03",
+   "2024-12-13"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 5 of the storyline \"Deposit back from Keetons Road\": write what happens in this stretch (2024-12-03 to 2024-12-13), consistent with its summary."
+  ],
+  "storyline": "bermondsey-deposit"
+ },
+ {
+  "id": "s0509",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "storyline: Deposit back from Keetons Road",
+  "people": [
+   "graham-petts"
+  ],
+  "shape": "ask-answer",
+  "outcome": "resolved",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2024-12-28",
+   "2024-12-31"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 4 of 5 of the storyline \"Deposit back from Keetons Road\": write what happens in this stretch (2024-12-28 to 2024-12-31), consistent with its summary."
+  ],
+  "storyline": "bermondsey-deposit"
+ },
+ {
+  "id": "s0510",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "storyline: Deposit back from Keetons Road",
+  "people": [
+   "graham-petts"
+  ],
+  "shape": "forward",
+  "outcome": "ongoing",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2025-01-14",
+   "2025-01-17"
+  ],
+  "length": "mixed",
+  "attachments": "forgotten",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 5 of 5 of the storyline \"Deposit back from Keetons Road\": write what happens in this stretch (2025-01-14 to 2025-01-17), consistent with its summary."
+  ],
+  "storyline": "bermondsey-deposit"
+ },
+ {
+  "id": "s0511",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "free: las tipografías",
+  "people": [
+   "lucia-herrera"
+  ],
+  "shape": "ask-answer",
+  "outcome": "declined politely",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-09-06",
+   "2025-09-06"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0512",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Font licence for Kestrel",
+  "people": [
+   "ingrid-solberg",
+   "lena-hofmann",
+   "philippa-dunn"
+  ],
+  "shape": "group",
+  "outcome": "waiting on them",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-02-19",
+   "2026-02-26"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 3 of the storyline \"Font licence for Kestrel\": write what happens in this stretch (2026-02-19 to 2026-02-26), consistent with its summary."
+  ],
+  "storyline": "kerning-house-license"
+ },
+ {
+  "id": "s0513",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Font licence for Kestrel",
+  "people": [
+   "ingrid-solberg",
+   "philippa-dunn",
+   "lena-hofmann"
+  ],
+  "shape": "group",
+  "outcome": "waiting on Luis",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-03-02",
+   "2026-03-09"
+  ],
+  "length": "medium",
+  "attachments": "forgotten",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 3 of the storyline \"Font licence for Kestrel\": write what happens in this stretch (2026-03-02 to 2026-03-09), consistent with its summary."
+  ],
+  "trash": true,
+  "storyline": "kerning-house-license"
+ },
+ {
+  "id": "s0514",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Font licence for Kestrel",
+  "people": [
+   "ingrid-solberg"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "rescheduled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-03-10",
+   "2026-03-20"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 3 of the storyline \"Font licence for Kestrel\": write what happens in this stretch (2026-03-10 to 2026-03-20), consistent with its summary."
+  ],
+  "storyline": "kerning-house-license"
+ },
+ {
+  "id": "s0515",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: selling a bike",
+  "people": [
+   "harriet-lowe",
+   "rita-valente",
+   "hamish-fairweather",
+   "kerry-simmonds",
+   "sunita-varma",
+   "callum-reid"
+  ],
+  "shape": "group",
+  "outcome": "cancelled",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-06-28",
+   "2026-07-04"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0516",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a plumber's quote",
+  "people": [
+   "harriet-lowe",
+   "kerry-simmonds"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-07-11",
+   "2026-07-14"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0517",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: selling a bike",
+  "people": [
+   "harriet-lowe",
+   "kerry-simmonds"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on Luis",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-07-11",
+   "2026-07-16"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0518",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: a lost luggage claim",
+  "people": [
+   "felix-brandt"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on Luis",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-08-13",
+   "2026-08-15"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0519",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a spare concert ticket",
+  "people": [
+   "hamish-fairweather"
+  ],
+  "shape": "luis-starts",
+  "outcome": "rescheduled",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-09-12",
+   "2026-09-12"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0520",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Hiring a junior designer",
+  "people": [
+   "hollie-tran",
+   "callie-fraser",
+   "shona-mcleod",
+   "jake-pemberton"
+  ],
+  "shape": "group",
+  "outcome": "resolved",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-09-15",
+   "2026-09-22"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 3 of the storyline \"Hiring a junior designer\": write what happens in this stretch (2026-09-15 to 2026-09-22), consistent with its summary."
+  ],
+  "storyline": "acme-junior-hire"
+ },
+ {
+  "id": "s0521",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a user research readout",
+  "people": [
+   "jae-cho"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-10-02",
+   "2026-10-02"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0522",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a discussion on Marshgate Runners members (the running club's members list: race entries, kit, lost property, socials)",
+  "people": [
+   "kwame-mensah"
+  ],
+  "shape": "list",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-09-30",
+   "2026-10-04"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list members@marshgaterunners.example (listId members.marshgaterunners.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "harriers"
+ },
+ {
+  "id": "s0523",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a client dinner",
+  "people": [
+   "jae-cho",
+   "anil-joshi"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on them",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-09-29",
+   "2026-10-07"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0524",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Hiring a junior designer",
+  "people": [
+   "hollie-tran",
+   "jake-pemberton"
+  ],
+  "shape": "luis-starts",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-10-02",
+   "2026-10-07"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "firstFrom": "me",
+  "must": [
+   "Part 2 of 3 of the storyline \"Hiring a junior designer\": write what happens in this stretch (2026-10-02 to 2026-10-07), consistent with its summary."
+  ],
+  "storyline": "acme-junior-hire"
+ },
+ {
+  "id": "s0525",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a freelancer's availability",
+  "people": [
+   "callie-fraser"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on Luis",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-07",
+   "2026-10-07"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0526",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a brand guidelines question",
+  "people": [
+   "duncan-shaw"
+  ],
+  "shape": "ask-answer",
+  "outcome": "cancelled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-08"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0527",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "un proveedor de impresión que ofrece servicios",
+  "people": [],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-08"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0528",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a discussion on Marshgate Runners members (the running club's members list: race entries, kit, lost property, socials)",
+  "people": [
+   "kwame-mensah"
+  ],
+  "shape": "list",
+  "outcome": "waiting on them",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-10-05",
+   "2026-10-10"
+  ],
+  "length": "medium",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list members@marshgaterunners.example (listId members.marshgaterunners.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "harriers"
+ },
+ {
+  "id": "s0529",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: a travel plan with old friends",
+  "people": [
+   "rita-valente",
+   "felix-brandt"
+  ],
+  "shape": "luis-starts",
+  "outcome": "ongoing",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-10-14",
+   "2026-10-14"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0530",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a discussion on Albion Court residents (his building's residents: bins, the lift, parcels, a noisy party, the managing agent)",
+  "people": [
+   "harriet-lowe",
+   "hamish-fairweather",
+   "kwame-mensah"
+  ],
+  "shape": "list",
+  "outcome": "waiting on Luis",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-10-13",
+   "2026-10-17"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "On the list residents@albioncourt.example (listId residents.albioncourt.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "building"
+ },
+ {
+  "id": "s0531",
+  "account": "personal",
+  "lang": "en",
+  "kind": "planted: promise-to-owner",
+  "people": [
+   "ifeoma-nwosu"
+  ],
+  "shape": "ask-answer",
+  "outcome": "they owe what they promised",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-21"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "in the 14 days before the anchor someone promised Luis something with a time (I'll send the deck Monday); about half are already due and nothing came."
+  ],
+  "plant": "promise-to-owner",
+  "lastFrom": "them"
+ },
+ {
+  "id": "s0532",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Hiring a junior designer",
+  "people": [
+   "shona-mcleod"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "cancelled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-12",
+   "2026-10-22"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "must": [
+   "Part 3 of 3 of the storyline \"Hiring a junior designer\": write what happens in this stretch (2026-10-12 to 2026-10-22), consistent with its summary."
+  ],
+  "unreadFrom": "2026-10-21T11:30:00Z",
+  "storyline": "acme-junior-hire"
+ }
+]

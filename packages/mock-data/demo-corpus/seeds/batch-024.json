@@ -1,0 +1,862 @@
+[
+ {
+  "id": "s0681",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: access to a design file",
+  "people": [
+   "hollie-tran"
+  ],
+  "shape": "ask-answer",
+  "outcome": "decided",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2024-12-13",
+   "2024-12-15"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0682",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a seller on a marketplace",
+  "people": [],
+  "shape": "ask-answer",
+  "outcome": "waiting on them",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-03-28",
+   "2025-03-30"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0683",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: something left behind at a dinner",
+  "people": [
+   "kerry-simmonds"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on Luis",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-03-31",
+   "2025-04-03"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0684",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a holiday request",
+  "people": [
+   "kate-sutherland",
+   "chiara-russo"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "decided",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-08-14",
+   "2025-08-17"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0685",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "a discussion on Comunidad de diseño independiente (una lista de diseñadores independientes en México: tarifas, clientes que no pagan, herramientas, chambas)",
+  "people": [
+   "mariana-gomez",
+   "renata-aguilar"
+  ],
+  "shape": "list",
+  "outcome": "waiting on them",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2025-09-25",
+   "2025-10-01"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list comunidad@disenoindependiente.example (listId comunidad.disenoindependiente.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "disenio"
+ },
+ {
+  "id": "s0686",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a wrong-recipient email meant for another Luis",
+  "people": [],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-10-14",
+   "2025-10-14"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0687",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: borrowing something",
+  "people": [
+   "peter-stavros"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-10-31",
+   "2025-10-31"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0688",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Kestrel Pay app redesign",
+  "people": [
+   "jae-cho"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-11-14",
+   "2025-11-14"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "Part 1 of 6 of the storyline \"Kestrel Pay app redesign\": write what happens in this stretch (2025-11-14 to 2025-11-14), consistent with its summary."
+  ],
+  "storyline": "kestrel-app-redesign"
+ },
+ {
+  "id": "s0689",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Kestrel Pay app redesign",
+  "people": [
+   "arjun-sethi",
+   "rhys-morgan",
+   "gabriel-santos"
+  ],
+  "shape": "group",
+  "outcome": "rescheduled",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2025-12-09",
+   "2025-12-16"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 6 of the storyline \"Kestrel Pay app redesign\": write what happens in this stretch (2025-12-09 to 2025-12-16), consistent with its summary."
+  ],
+  "trash": true,
+  "storyline": "kestrel-app-redesign"
+ },
+ {
+  "id": "s0690",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Kestrel Pay app redesign",
+  "people": [
+   "freya-lindgren"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-01-17",
+   "2026-01-17"
+  ],
+  "length": "medium",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "Part 3 of 6 of the storyline \"Kestrel Pay app redesign\": write what happens in this stretch (2026-01-17 to 2026-01-17), consistent with its summary."
+  ],
+  "storyline": "kestrel-app-redesign"
+ },
+ {
+  "id": "s0691",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Kestrel Pay app redesign",
+  "people": [
+   "gabriel-santos"
+  ],
+  "shape": "luis-starts",
+  "outcome": "ongoing",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-02-14",
+   "2026-02-19"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 4 of 6 of the storyline \"Kestrel Pay app redesign\": write what happens in this stretch (2026-02-14 to 2026-02-19), consistent with its summary."
+  ],
+  "storyline": "kestrel-app-redesign"
+ },
+ {
+  "id": "s0692",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: an accessibility audit",
+  "people": [
+   "rhys-morgan"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on Luis",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-03-13",
+   "2026-03-15"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0693",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Kestrel Pay app redesign",
+  "people": [
+   "rhys-morgan",
+   "freya-lindgren"
+  ],
+  "shape": "luis-starts",
+  "outcome": "declined politely",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-03-18",
+   "2026-03-23"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 5 of 6 of the storyline \"Kestrel Pay app redesign\": write what happens in this stretch (2026-03-18 to 2026-03-23), consistent with its summary."
+  ],
+  "storyline": "kestrel-app-redesign"
+ },
+ {
+  "id": "s0694",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: a travel plan with old friends",
+  "people": [
+   "lorraine-whitby",
+   "felix-brandt"
+  ],
+  "shape": "luis-starts",
+  "outcome": "cancelled",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-04-07",
+   "2026-04-11"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0695",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Kestrel Pay app redesign",
+  "people": [
+   "gabriel-santos"
+  ],
+  "shape": "luis-starts",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-04-19",
+   "2026-04-24"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 6 of 6 of the storyline \"Kestrel Pay app redesign\": write what happens in this stretch (2026-04-19 to 2026-04-24), consistent with its summary."
+  ],
+  "storyline": "kestrel-app-redesign"
+ },
+ {
+  "id": "s0696",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: an expense claim",
+  "people": [
+   "anil-joshi",
+   "gabriel-santos"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-07-03",
+   "2026-07-07"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0697",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a favour for a friend's CV",
+  "people": [
+   "tom-ashworth",
+   "mei-lin-chou"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on them",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-07-09",
+   "2026-07-12"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0698",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Brightwell Trust annual report",
+  "people": [
+   "zainab-bello",
+   "kasia-zielinska"
+  ],
+  "shape": "forward",
+  "outcome": "declined politely",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2026-08-31",
+   "2026-09-03"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 4 of the storyline \"Brightwell Trust annual report\": write what happens in this stretch (2026-08-31 to 2026-09-03), consistent with its summary."
+  ],
+  "storyline": "brightwell-annual-report"
+ },
+ {
+  "id": "s0699",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Brightwell Trust annual report",
+  "people": [
+   "zainab-bello",
+   "terry-nolan",
+   "kasia-zielinska",
+   "helen-ashby"
+  ],
+  "shape": "group",
+  "outcome": "cancelled",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-09-12",
+   "2026-09-19"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 4 of the storyline \"Brightwell Trust annual report\": write what happens in this stretch (2026-09-12 to 2026-09-19), consistent with its summary."
+  ],
+  "storyline": "brightwell-annual-report"
+ },
+ {
+  "id": "s0700",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a client's legal review",
+  "people": [
+   "duncan-shaw",
+   "gabriel-santos"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-09-23",
+   "2026-10-02"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0701",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a lost key",
+  "people": [
+   "chloe-bennett"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on them",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-09-30",
+   "2026-10-03"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0702",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Brightwell Trust annual report",
+  "people": [
+   "zainab-bello"
+  ],
+  "shape": "ask-answer",
+  "outcome": "cancelled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-03",
+   "2026-10-06"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 4 of the storyline \"Brightwell Trust annual report\": write what happens in this stretch (2026-10-03 to 2026-10-06), consistent with its summary."
+  ],
+  "storyline": "brightwell-annual-report"
+ },
+ {
+  "id": "s0703",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a change to the statement of work",
+  "people": [
+   "freya-lindgren"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-10-13",
+   "2026-10-13"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0704",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a brand guidelines question",
+  "people": [
+   "ian-ferris"
+  ],
+  "shape": "ask-answer",
+  "outcome": "cancelled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-13",
+   "2026-10-15"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0705",
+  "account": "personal",
+  "lang": "en",
+  "kind": "planted: awaiting",
+  "people": [
+   "sunita-varma"
+  ],
+  "shape": "luis-starts",
+  "outcome": "no answer yet",
+  "messages": [
+   1,
+   3
+  ],
+  "window": [
+   "2026-10-09",
+   "2026-10-16"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Luis, in his own message sent 6 to 13 days before the anchor, asked someone outside his own addresses a clear question or for something; nobody has answered."
+  ],
+  "plant": "awaiting",
+  "lastFrom": "me"
+ },
+ {
+  "id": "s0706",
+  "account": "personal",
+  "lang": "en",
+  "kind": "planted: awaiting",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "luis-starts",
+  "outcome": "no answer yet",
+  "messages": [
+   1,
+   3
+  ],
+  "window": [
+   "2026-10-09",
+   "2026-10-16"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Luis, in his own message sent 6 to 13 days before the anchor, asked someone outside his own addresses a clear question or for something; nobody has answered."
+  ],
+  "plant": "awaiting",
+  "lastFrom": "me"
+ },
+ {
+  "id": "s0707",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "free: el hosting",
+  "people": [
+   "mariana-gomez"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on Luis",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-18",
+   "2026-10-19"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0708",
+  "account": "acme",
+  "lang": "en",
+  "kind": "planted: owner-promise",
+  "people": [
+   "sam-whitfield"
+  ],
+  "shape": "luis-starts",
+  "outcome": "Luis owes what he promised",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-22"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "firstFrom": "me",
+  "must": [
+   "in the 14 days before the anchor Luis promised something with a time (I'll send it Friday, I'll call you tomorrow), in his own message; due between 7 days before the anchor and 10 days after; nothing in the thread shows it done."
+  ],
+  "plant": "owner-promise",
+  "lastFrom": "me"
+ },
+ {
+  "id": "s0709",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Brightwell Trust annual report",
+  "people": [
+   "kasia-zielinska"
+  ],
+  "shape": "ask-answer",
+  "outcome": "resolved",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-19",
+   "2026-10-22"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 4 of 4 of the storyline \"Brightwell Trust annual report\": write what happens in this stretch (2026-10-19 to 2026-10-22), consistent with its summary."
+  ],
+  "unreadFrom": "2026-10-22T14:30:00Z",
+  "storyline": "brightwell-annual-report"
+ },
+ {
+  "id": "s0710",
+  "account": "acme",
+  "lang": "en",
+  "kind": "planted: owner-promise",
+  "people": [
+   "philippa-dunn"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "Luis owes what he promised",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-22"
+  ],
+  "length": "medium",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "must": [
+   "in the 14 days before the anchor Luis promised something with a time (I'll send it Friday, I'll call you tomorrow), in his own message; due between 7 days before the anchor and 10 days after; nothing in the thread shows it done."
+  ],
+  "plant": "owner-promise",
+  "lastFrom": "me"
+ }
+]

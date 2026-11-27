@@ -1,0 +1,881 @@
+[
+ {
+  "id": "s0358",
+  "account": "personal",
+  "lang": "en",
+  "kind": "planted: facts",
+  "people": [
+   "kerry-simmonds",
+   "joanna-kowalczyk"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on Luis",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2024-10-29",
+   "2024-11-02"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "rich in facts a question could find, stated plainly with a distinctive word or name: who paid what and when, an address, a booking reference, a time, a decision and who made it."
+  ],
+  "plant": "facts"
+ },
+ {
+  "id": "s0359",
+  "account": "acme",
+  "lang": "en",
+  "kind": "an agency proposing a partnership",
+  "people": [],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2024-12-31",
+   "2024-12-31"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0360",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: retro notes",
+  "people": [
+   "terry-nolan"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "ongoing",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-04-10",
+   "2025-04-15"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0361",
+  "account": "acme",
+  "lang": "en",
+  "kind": "an agency proposing a partnership",
+  "people": [],
+  "shape": "unanswered",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-05-09",
+   "2025-05-09"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0362",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Acme design system v2",
+  "people": [
+   "kate-sutherland",
+   "lauren-gage",
+   "anil-joshi",
+   "kasia-zielinska"
+  ],
+  "shape": "group",
+  "outcome": "decided",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2025-06-27",
+   "2025-07-04"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 6 of the storyline \"Acme design system v2\": write what happens in this stretch (2025-06-27 to 2025-07-04), consistent with its summary."
+  ],
+  "storyline": "design-system-v2"
+ },
+ {
+  "id": "s0363",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Acme design system v2",
+  "people": [
+   "kate-sutherland"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-07-26",
+   "2025-08-05"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 6 of the storyline \"Acme design system v2\": write what happens in this stretch (2025-07-26 to 2025-08-05), consistent with its summary."
+  ],
+  "storyline": "design-system-v2"
+ },
+ {
+  "id": "s0364",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Acme design system v2",
+  "people": [
+   "kasia-zielinska"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "decided",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-08-27",
+   "2025-09-06"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 6 of the storyline \"Acme design system v2\": write what happens in this stretch (2025-08-27 to 2025-09-06), consistent with its summary."
+  ],
+  "trash": true,
+  "storyline": "design-system-v2"
+ },
+ {
+  "id": "s0365",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Acme design system v2",
+  "people": [
+   "anil-joshi"
+  ],
+  "shape": "luis-starts",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-10-04",
+   "2025-10-09"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 4 of 6 of the storyline \"Acme design system v2\": write what happens in this stretch (2025-10-04 to 2025-10-09), consistent with its summary."
+  ],
+  "storyline": "design-system-v2"
+ },
+ {
+  "id": "s0366",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Acme design system v2",
+  "people": [
+   "kate-sutherland"
+  ],
+  "shape": "ask-answer",
+  "outcome": "resolved",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-11-07",
+   "2025-11-10"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 5 of 6 of the storyline \"Acme design system v2\": write what happens in this stretch (2025-11-07 to 2025-11-10), consistent with its summary."
+  ],
+  "storyline": "design-system-v2"
+ },
+ {
+  "id": "s0367",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Acme design system v2",
+  "people": [
+   "kate-sutherland"
+  ],
+  "shape": "ask-answer",
+  "outcome": "cancelled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-12-09",
+   "2025-12-12"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 6 of 6 of the storyline \"Acme design system v2\": write what happens in this stretch (2025-12-09 to 2025-12-12), consistent with its summary."
+  ],
+  "storyline": "design-system-v2"
+ },
+ {
+  "id": "s0368",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a conference ticket",
+  "people": [
+   "natasha-whyte"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-05-15",
+   "2026-05-18"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0369",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Pennywort loyalty app",
+  "people": [
+   "marcus-adeyemi",
+   "freya-lindgren",
+   "steve-barlow",
+   "dev-malhotra",
+   "sam-whitfield"
+  ],
+  "shape": "group",
+  "outcome": "declined politely",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-06-17",
+   "2026-06-24"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 6 of the storyline \"Pennywort loyalty app\": write what happens in this stretch (2026-06-17 to 2026-06-24), consistent with its summary."
+  ],
+  "storyline": "pennywort-loyalty-app"
+ },
+ {
+  "id": "s0370",
+  "account": "acme",
+  "lang": "en",
+  "kind": "a student asking for portfolio advice",
+  "people": [],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-07-04",
+   "2026-07-04"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0371",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Pennywort loyalty app",
+  "people": [
+   "sam-whitfield",
+   "freya-lindgren"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-07-08",
+   "2026-07-18"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 6 of the storyline \"Pennywort loyalty app\": write what happens in this stretch (2026-07-08 to 2026-07-18), consistent with its summary."
+  ],
+  "storyline": "pennywort-loyalty-app"
+ },
+ {
+  "id": "s0372",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: The Marshgate Half 2026",
+  "people": [
+   "gareth-pugh"
+  ],
+  "shape": "ask-answer",
+  "outcome": "decided",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-07-21",
+   "2026-07-24"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 6 of the storyline \"The Marshgate Half 2026\": write what happens in this stretch (2026-07-21 to 2026-07-24), consistent with its summary."
+  ],
+  "storyline": "marshgate-half-2026"
+ },
+ {
+  "id": "s0373",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Pennywort loyalty app",
+  "people": [
+   "freya-lindgren",
+   "dev-malhotra"
+  ],
+  "shape": "luis-starts",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-08-06",
+   "2026-08-11"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 3 of 6 of the storyline \"Pennywort loyalty app\": write what happens in this stretch (2026-08-06 to 2026-08-11), consistent with its summary."
+  ],
+  "storyline": "pennywort-loyalty-app"
+ },
+ {
+  "id": "s0374",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: The Marshgate Half 2026",
+  "people": [
+   "gareth-pugh",
+   "bea-collins"
+  ],
+  "shape": "group",
+  "outcome": "rescheduled",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-08-04",
+   "2026-08-11"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 6 of the storyline \"The Marshgate Half 2026\": write what happens in this stretch (2026-08-04 to 2026-08-11), consistent with its summary."
+  ],
+  "storyline": "marshgate-half-2026"
+ },
+ {
+  "id": "s0375",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: The Marshgate Half 2026",
+  "people": [
+   "bea-collins"
+  ],
+  "shape": "luis-starts",
+  "outcome": "decided",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-08-24",
+   "2026-08-29"
+  ],
+  "length": "medium",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "firstFrom": "me",
+  "must": [
+   "Part 3 of 6 of the storyline \"The Marshgate Half 2026\": write what happens in this stretch (2026-08-24 to 2026-08-29), consistent with its summary."
+  ],
+  "storyline": "marshgate-half-2026"
+ },
+ {
+  "id": "s0376",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Pennywort loyalty app",
+  "people": [
+   "sam-whitfield"
+  ],
+  "shape": "forward",
+  "outcome": "resolved",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2026-09-01",
+   "2026-09-04"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 4 of 6 of the storyline \"Pennywort loyalty app\": write what happens in this stretch (2026-09-01 to 2026-09-04), consistent with its summary."
+  ],
+  "storyline": "pennywort-loyalty-app"
+ },
+ {
+  "id": "s0377",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: The Marshgate Half 2026",
+  "people": [
+   "bea-collins"
+  ],
+  "shape": "ask-answer",
+  "outcome": "resolved",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-09-13",
+   "2026-09-16"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 4 of 6 of the storyline \"The Marshgate Half 2026\": write what happens in this stretch (2026-09-13 to 2026-09-16), consistent with its summary."
+  ],
+  "storyline": "marshgate-half-2026"
+ },
+ {
+  "id": "s0378",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Pennywort loyalty app",
+  "people": [
+   "freya-lindgren"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "declined politely",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-09-18",
+   "2026-09-28"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 5 of 6 of the storyline \"Pennywort loyalty app\": write what happens in this stretch (2026-09-18 to 2026-09-28), consistent with its summary."
+  ],
+  "storyline": "pennywort-loyalty-app"
+ },
+ {
+  "id": "s0379",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: borrowing something",
+  "people": [
+   "mateo-cordero"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on Luis",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-02",
+   "2026-10-02"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0380",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: The Marshgate Half 2026",
+  "people": [
+   "bea-collins"
+  ],
+  "shape": "luis-starts",
+  "outcome": "ongoing",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-09-29",
+   "2026-10-04"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 5 of 6 of the storyline \"The Marshgate Half 2026\": write what happens in this stretch (2026-09-29 to 2026-10-04), consistent with its summary."
+  ],
+  "storyline": "marshgate-half-2026"
+ },
+ {
+  "id": "s0381",
+  "account": "acme",
+  "lang": "en",
+  "kind": "a discussion on Acme everyone (the whole studio: announcements, leaving drinks, office notices, the odd reply-all)",
+  "people": [
+   "kate-sutherland",
+   "rhys-morgan"
+  ],
+  "shape": "list",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-10-06",
+   "2026-10-09"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list everyone@acme.example (listId everyone.acme.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "allstudio"
+ },
+ {
+  "id": "s0382",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Marcus is leaving",
+  "people": [
+   "hollie-tran"
+  ],
+  "shape": "ask-answer",
+  "outcome": "declined politely",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-14",
+   "2026-10-17"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 2 of the storyline \"Marcus is leaving\": write what happens in this stretch (2026-10-14 to 2026-10-17), consistent with its summary."
+  ],
+  "storyline": "marcus-leaving"
+ },
+ {
+  "id": "s0383",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Pennywort loyalty app",
+  "people": [
+   "marcus-adeyemi",
+   "freya-lindgren",
+   "steve-barlow"
+  ],
+  "shape": "group",
+  "outcome": "waiting on them",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-10-15",
+   "2026-10-22"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": true,
+  "must": [
+   "Part 6 of 6 of the storyline \"Pennywort loyalty app\": write what happens in this stretch (2026-10-15 to 2026-10-22), consistent with its summary."
+  ],
+  "unreadFrom": "2026-10-21T21:30:00Z",
+  "storyline": "pennywort-loyalty-app"
+ },
+ {
+  "id": "s0384",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: The Marshgate Half 2026",
+  "people": [
+   "gareth-pugh",
+   "bea-collins"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "cancelled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-12",
+   "2026-10-22"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 6 of 6 of the storyline \"The Marshgate Half 2026\": write what happens in this stretch (2026-10-12 to 2026-10-22), consistent with its summary."
+  ],
+  "storyline": "marshgate-half-2026"
+ },
+ {
+  "id": "s0385",
+  "account": "acme",
+  "lang": "en",
+  "kind": "planted: owner-promise",
+  "people": [
+   "gabriel-santos"
+  ],
+  "shape": "ask-answer",
+  "outcome": "Luis owes what he promised",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-22"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "must": [
+   "in the 14 days before the anchor Luis promised something with a time (I'll send it Friday, I'll call you tomorrow), in his own message; due between 7 days before the anchor and 10 days after; nothing in the thread shows it done."
+  ],
+  "unreadFrom": "2026-10-20T03:21:55Z",
+  "plant": "owner-promise",
+  "lastFrom": "me"
+ },
+ {
+  "id": "s0386",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: recruiting for a usability test",
+  "people": [
+   "dev-malhotra"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-10-22",
+   "2026-10-22"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0387",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Marcus is leaving",
+  "people": [
+   "shona-mcleod"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "cancelled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-12",
+   "2026-10-22"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 2 of the storyline \"Marcus is leaving\": write what happens in this stretch (2026-10-12 to 2026-10-22), consistent with its summary."
+  ],
+  "unreadFrom": "2026-10-22T14:30:00Z",
+  "storyline": "marcus-leaving"
+ }
+]

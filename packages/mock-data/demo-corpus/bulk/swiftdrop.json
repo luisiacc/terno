@@ -1,0 +1,196 @@
+[
+  {
+    "brand": "swiftdrop",
+    "currency": "£",
+    "account": "personal",
+    "schedule": {
+      "every": "random",
+      "zone": "Europe/London",
+      "perWeek": [
+        0.75,
+        1.25
+      ]
+    },
+    "templates": [
+      {
+        "weight": 24,
+        "subject": "Crate Finch has your parcel · CF{tracking}",
+        "text": "Parcel received at our depot\n\nYour parcel has been scanned into our network. We’ll send a delivery window once it’s loaded onto a van.\n\nTracking number: CF{tracking}\nService: {service}\nLatest scan: {date} at {time}\n\nTrack parcel: https://cratefinch.example/track/CF{tracking}\n\nCrate Finch sent this service email because the sender shared your address for these delivery updates.\n\nCrate Finch Delivery Ltd, Unit 5, Meridian Goods Yard, Dartford DA1 1RT. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#f7f8fa;color:#275b63;border-left:5px solid #275b63;font-size:19px;font-weight:bold\">Crate Finch</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Parcel received at our depot</h1><p style=\"margin:0 0 16px\">Your parcel has been scanned into our network. We’ll send a delivery window once it’s loaded onto a van.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Tracking number</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">CF{tracking}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Service</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{service}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Latest scan</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{date} at {time}</td></tr></table><p style=\"margin:0\"><a style=\"color:#275b63;text-decoration:underline\" href=\"https://cratefinch.example/track/CF{tracking}\">Track parcel</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">Crate Finch sent this service email because the sender shared your address for these delivery updates.<br>Crate Finch Delivery Ltd, Unit 5, Meridian Goods Yard, Dartford DA1 1RT. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "tracking": {
+            "int": [
+              1000000000,
+              9999999999
+            ]
+          },
+          "service": [
+            "Tracked 48",
+            "Tracked 24",
+            "Economy tracked",
+            "Two-day signed delivery"
+          ]
+        }
+      },
+      {
+        "weight": 37,
+        "subject": "Your Crate Finch parcel is arriving today",
+        "text": "Out for delivery\n\nYour parcel is on the van. We’ll update the tracking page if the route changes.\n\nTracking number: CF{tracking}\nDelivery date: {date}\nEstimate: Within {minutes} minutes\n\nIf the sender permits it, use tracking to choose a safe place or a different day.\n\nTrack or change delivery: https://cratefinch.example/track/CF{tracking}\n\nCrate Finch sent this service email because the sender shared your address for these delivery updates.\n\nCrate Finch Delivery Ltd, Unit 5, Meridian Goods Yard, Dartford DA1 1RT. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#f7f8fa;color:#275b63;border-left:5px solid #275b63;font-size:19px;font-weight:bold\">Crate Finch</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Out for delivery</h1><p style=\"margin:0 0 16px\">Your parcel is on the van. We’ll update the tracking page if the route changes.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Tracking number</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">CF{tracking}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Delivery date</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{date}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Estimate</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">Within {minutes} minutes</td></tr></table><p style=\"margin:0 0 16px\">If the sender permits it, use tracking to choose a safe place or a different day.</p><p style=\"margin:0\"><a style=\"color:#275b63;text-decoration:underline\" href=\"https://cratefinch.example/track/CF{tracking}\">Track or change delivery</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">Crate Finch sent this service email because the sender shared your address for these delivery updates.<br>Crate Finch Delivery Ltd, Unit 5, Meridian Goods Yard, Dartford DA1 1RT. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "tracking": {
+            "int": [
+              1000000000,
+              9999999999
+            ]
+          },
+          "minutes": {
+            "int": [
+              30,
+              150
+            ]
+          }
+        }
+      },
+      {
+        "weight": 9,
+        "subject": "We missed you · Crate Finch delivery CF{tracking}",
+        "text": "We couldn’t deliver your parcel\n\nOur driver attempted delivery but couldn’t hand over the parcel or leave it securely.\n\nTracking number: CF{tracking}\nAttempted at: {time} on {date}\n\nWe’ll try again on the next delivery day. To change the delivery, check the options on the tracking page.\n\nSee redelivery options: https://cratefinch.example/track/CF{tracking}\n\nCrate Finch sent this service email because the sender shared your address for these delivery updates.\n\nCrate Finch Delivery Ltd, Unit 5, Meridian Goods Yard, Dartford DA1 1RT. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#f7f8fa;color:#275b63;border-left:5px solid #275b63;font-size:19px;font-weight:bold\">Crate Finch</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">We couldn’t deliver your parcel</h1><p style=\"margin:0 0 16px\">Our driver attempted delivery but couldn’t hand over the parcel or leave it securely.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Tracking number</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">CF{tracking}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Attempted at</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{time} on {date}</td></tr></table><p style=\"margin:0 0 16px\">We’ll try again on the next delivery day. To change the delivery, check the options on the tracking page.</p><p style=\"margin:0\"><a style=\"color:#275b63;text-decoration:underline\" href=\"https://cratefinch.example/track/CF{tracking}\">See redelivery options</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">Crate Finch sent this service email because the sender shared your address for these delivery updates.<br>Crate Finch Delivery Ltd, Unit 5, Meridian Goods Yard, Dartford DA1 1RT. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "tracking": {
+            "int": [
+              1000000000,
+              9999999999
+            ]
+          }
+        }
+      },
+      {
+        "weight": 12,
+        "subject": "We left your parcel with a neighbour",
+        "text": "Delivered to a neighbour\n\nYour driver left the parcel with a neighbour. The delivery record shows the house or flat number.\n\nTracking number: CF{tracking}\nDelivered at: {time} on {date}\n\nIf you can’t find it, select Get help on the tracking page.\n\nSee delivery details: https://cratefinch.example/track/CF{tracking}/proof\n\nCrate Finch sent this service email because the sender shared your address for these delivery updates.\n\nCrate Finch Delivery Ltd, Unit 5, Meridian Goods Yard, Dartford DA1 1RT. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#f7f8fa;color:#275b63;border-left:5px solid #275b63;font-size:19px;font-weight:bold\">Crate Finch</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Delivered to a neighbour</h1><p style=\"margin:0 0 16px\">Your driver left the parcel with a neighbour. The delivery record shows the house or flat number.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Tracking number</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">CF{tracking}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Delivered at</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{time} on {date}</td></tr></table><p style=\"margin:0 0 16px\">If you can’t find it, select Get help on the tracking page.</p><p style=\"margin:0\"><a style=\"color:#275b63;text-decoration:underline\" href=\"https://cratefinch.example/track/CF{tracking}/proof\">See delivery details</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">Crate Finch sent this service email because the sender shared your address for these delivery updates.<br>Crate Finch Delivery Ltd, Unit 5, Meridian Goods Yard, Dartford DA1 1RT. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "tracking": {
+            "int": [
+              1000000000,
+              9999999999
+            ]
+          }
+        }
+      },
+      {
+        "weight": 18,
+        "subject": "Crate Finch delivered parcel CF{tracking}",
+        "text": "Your parcel has been delivered\n\nThe delivery scan is complete. You can find proof of delivery in the tracking record.\n\nTracking number: CF{tracking}\nDelivered at: {time} on {date}\n\nSee delivery record: https://cratefinch.example/track/CF{tracking}/proof\n\nCrate Finch sent this service email because the sender shared your address for these delivery updates.\n\nCrate Finch Delivery Ltd, Unit 5, Meridian Goods Yard, Dartford DA1 1RT. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#f7f8fa;color:#275b63;border-left:5px solid #275b63;font-size:19px;font-weight:bold\">Crate Finch</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Your parcel has been delivered</h1><p style=\"margin:0 0 16px\">The delivery scan is complete. You can find proof of delivery in the tracking record.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Tracking number</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">CF{tracking}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Delivered at</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{time} on {date}</td></tr></table><p style=\"margin:0\"><a style=\"color:#275b63;text-decoration:underline\" href=\"https://cratefinch.example/track/CF{tracking}/proof\">See delivery record</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">Crate Finch sent this service email because the sender shared your address for these delivery updates.<br>Crate Finch Delivery Ltd, Unit 5, Meridian Goods Yard, Dartford DA1 1RT. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "tracking": {
+            "int": [
+              1000000000,
+              9999999999
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "brand": "swiftdrop",
+    "currency": "£",
+    "account": "icloud",
+    "schedule": {
+      "every": "random",
+      "zone": "Europe/London",
+      "perWeek": [
+        0.22,
+        0.48
+      ]
+    },
+    "templates": [
+      {
+        "weight": 24,
+        "subject": "Crate Finch has your parcel · CF{tracking}",
+        "text": "Parcel received at our depot\n\nYour parcel has been scanned into our network. We’ll send a delivery window once it’s loaded onto a van.\n\nTracking number: CF{tracking}\nService: {service}\nLatest scan: {date} at {time}\n\nTrack parcel: https://cratefinch.example/track/CF{tracking}\n\nCrate Finch sent this service email because the sender shared your address for these delivery updates.\n\nCrate Finch Delivery Ltd, Unit 5, Meridian Goods Yard, Dartford DA1 1RT. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#f7f8fa;color:#275b63;border-left:5px solid #275b63;font-size:19px;font-weight:bold\">Crate Finch</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Parcel received at our depot</h1><p style=\"margin:0 0 16px\">Your parcel has been scanned into our network. We’ll send a delivery window once it’s loaded onto a van.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Tracking number</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">CF{tracking}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Service</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{service}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Latest scan</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{date} at {time}</td></tr></table><p style=\"margin:0\"><a style=\"color:#275b63;text-decoration:underline\" href=\"https://cratefinch.example/track/CF{tracking}\">Track parcel</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">Crate Finch sent this service email because the sender shared your address for these delivery updates.<br>Crate Finch Delivery Ltd, Unit 5, Meridian Goods Yard, Dartford DA1 1RT. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "tracking": {
+            "int": [
+              1000000000,
+              9999999999
+            ]
+          },
+          "service": [
+            "Tracked 48",
+            "Tracked 24",
+            "Economy tracked",
+            "Two-day signed delivery"
+          ]
+        }
+      },
+      {
+        "weight": 37,
+        "subject": "Your Crate Finch parcel is arriving today",
+        "text": "Out for delivery\n\nYour parcel is on the van. We’ll update the tracking page if the route changes.\n\nTracking number: CF{tracking}\nDelivery date: {date}\nEstimate: Within {minutes} minutes\n\nIf the sender permits it, use tracking to choose a safe place or a different day.\n\nTrack or change delivery: https://cratefinch.example/track/CF{tracking}\n\nCrate Finch sent this service email because the sender shared your address for these delivery updates.\n\nCrate Finch Delivery Ltd, Unit 5, Meridian Goods Yard, Dartford DA1 1RT. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#f7f8fa;color:#275b63;border-left:5px solid #275b63;font-size:19px;font-weight:bold\">Crate Finch</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Out for delivery</h1><p style=\"margin:0 0 16px\">Your parcel is on the van. We’ll update the tracking page if the route changes.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Tracking number</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">CF{tracking}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Delivery date</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{date}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Estimate</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">Within {minutes} minutes</td></tr></table><p style=\"margin:0 0 16px\">If the sender permits it, use tracking to choose a safe place or a different day.</p><p style=\"margin:0\"><a style=\"color:#275b63;text-decoration:underline\" href=\"https://cratefinch.example/track/CF{tracking}\">Track or change delivery</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">Crate Finch sent this service email because the sender shared your address for these delivery updates.<br>Crate Finch Delivery Ltd, Unit 5, Meridian Goods Yard, Dartford DA1 1RT. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "tracking": {
+            "int": [
+              1000000000,
+              9999999999
+            ]
+          },
+          "minutes": {
+            "int": [
+              30,
+              150
+            ]
+          }
+        }
+      },
+      {
+        "weight": 9,
+        "subject": "We missed you · Crate Finch delivery CF{tracking}",
+        "text": "We couldn’t deliver your parcel\n\nOur driver attempted delivery but couldn’t hand over the parcel or leave it securely.\n\nTracking number: CF{tracking}\nAttempted at: {time} on {date}\n\nWe’ll try again on the next delivery day. To change the delivery, check the options on the tracking page.\n\nSee redelivery options: https://cratefinch.example/track/CF{tracking}\n\nCrate Finch sent this service email because the sender shared your address for these delivery updates.\n\nCrate Finch Delivery Ltd, Unit 5, Meridian Goods Yard, Dartford DA1 1RT. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#f7f8fa;color:#275b63;border-left:5px solid #275b63;font-size:19px;font-weight:bold\">Crate Finch</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">We couldn’t deliver your parcel</h1><p style=\"margin:0 0 16px\">Our driver attempted delivery but couldn’t hand over the parcel or leave it securely.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Tracking number</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">CF{tracking}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Attempted at</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{time} on {date}</td></tr></table><p style=\"margin:0 0 16px\">We’ll try again on the next delivery day. To change the delivery, check the options on the tracking page.</p><p style=\"margin:0\"><a style=\"color:#275b63;text-decoration:underline\" href=\"https://cratefinch.example/track/CF{tracking}\">See redelivery options</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">Crate Finch sent this service email because the sender shared your address for these delivery updates.<br>Crate Finch Delivery Ltd, Unit 5, Meridian Goods Yard, Dartford DA1 1RT. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "tracking": {
+            "int": [
+              1000000000,
+              9999999999
+            ]
+          }
+        }
+      },
+      {
+        "weight": 12,
+        "subject": "We left your parcel with a neighbour",
+        "text": "Delivered to a neighbour\n\nYour driver left the parcel with a neighbour. The delivery record shows the house or flat number.\n\nTracking number: CF{tracking}\nDelivered at: {time} on {date}\n\nIf you can’t find it, select Get help on the tracking page.\n\nSee delivery details: https://cratefinch.example/track/CF{tracking}/proof\n\nCrate Finch sent this service email because the sender shared your address for these delivery updates.\n\nCrate Finch Delivery Ltd, Unit 5, Meridian Goods Yard, Dartford DA1 1RT. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#f7f8fa;color:#275b63;border-left:5px solid #275b63;font-size:19px;font-weight:bold\">Crate Finch</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Delivered to a neighbour</h1><p style=\"margin:0 0 16px\">Your driver left the parcel with a neighbour. The delivery record shows the house or flat number.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Tracking number</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">CF{tracking}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Delivered at</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{time} on {date}</td></tr></table><p style=\"margin:0 0 16px\">If you can’t find it, select Get help on the tracking page.</p><p style=\"margin:0\"><a style=\"color:#275b63;text-decoration:underline\" href=\"https://cratefinch.example/track/CF{tracking}/proof\">See delivery details</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">Crate Finch sent this service email because the sender shared your address for these delivery updates.<br>Crate Finch Delivery Ltd, Unit 5, Meridian Goods Yard, Dartford DA1 1RT. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "tracking": {
+            "int": [
+              1000000000,
+              9999999999
+            ]
+          }
+        }
+      },
+      {
+        "weight": 18,
+        "subject": "Crate Finch delivered parcel CF{tracking}",
+        "text": "Your parcel has been delivered\n\nThe delivery scan is complete. You can find proof of delivery in the tracking record.\n\nTracking number: CF{tracking}\nDelivered at: {time} on {date}\n\nSee delivery record: https://cratefinch.example/track/CF{tracking}/proof\n\nCrate Finch sent this service email because the sender shared your address for these delivery updates.\n\nCrate Finch Delivery Ltd, Unit 5, Meridian Goods Yard, Dartford DA1 1RT. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#f7f8fa;color:#275b63;border-left:5px solid #275b63;font-size:19px;font-weight:bold\">Crate Finch</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Your parcel has been delivered</h1><p style=\"margin:0 0 16px\">The delivery scan is complete. You can find proof of delivery in the tracking record.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Tracking number</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">CF{tracking}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Delivered at</th><td style=\"padding:9px 0;text-align:right;border-bottom:1px solid #e2e5e9\">{time} on {date}</td></tr></table><p style=\"margin:0\"><a style=\"color:#275b63;text-decoration:underline\" href=\"https://cratefinch.example/track/CF{tracking}/proof\">See delivery record</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">Crate Finch sent this service email because the sender shared your address for these delivery updates.<br>Crate Finch Delivery Ltd, Unit 5, Meridian Goods Yard, Dartford DA1 1RT. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "tracking": {
+            "int": [
+              1000000000,
+              9999999999
+            ]
+          }
+        }
+      }
+    ]
+  }
+]

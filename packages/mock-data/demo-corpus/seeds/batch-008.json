@@ -1,0 +1,819 @@
+[
+ {
+  "id": "s0208",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: council tax",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-03-07",
+   "2025-03-07"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0209",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: an expense claim",
+  "people": [
+   "gabriel-santos"
+  ],
+  "shape": "ask-answer",
+  "outcome": "decided",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-03-11",
+   "2025-03-13"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0210",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a contractor's invoice",
+  "people": [
+   "jake-pemberton"
+  ],
+  "shape": "luis-starts",
+  "outcome": "declined politely",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-04-30",
+   "2025-05-02"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0211",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a charity's fundraiser asking him personally",
+  "people": [],
+  "shape": "ask-answer",
+  "outcome": "resolved",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-11-04",
+   "2025-11-05"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0212",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: the rate card",
+  "people": [
+   "steve-barlow"
+  ],
+  "shape": "forward",
+  "outcome": "cancelled",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2026-02-01",
+   "2026-02-03"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0213",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a discussion on Albion Court residents (his building's residents: bins, the lift, parcels, a noisy party, the managing agent)",
+  "people": [
+   "rita-valente"
+  ],
+  "shape": "list",
+  "outcome": "declined politely",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-04-09",
+   "2026-04-13"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list residents@albioncourt.example (listId residents.albioncourt.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "building"
+ },
+ {
+  "id": "s0214",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a charity's fundraiser asking him personally",
+  "people": [],
+  "shape": "ask-answer",
+  "outcome": "decided",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-04-25",
+   "2026-04-25"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0215",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: scope creep",
+  "people": [
+   "gabriel-santos"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on them",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-05-13",
+   "2026-05-13"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0216",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a gym membership freeze",
+  "people": [
+   "tom-ashworth",
+   "harriet-lowe"
+  ],
+  "shape": "forward",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2026-07-25",
+   "2026-07-25"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0217",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "un proveedor de impresión que ofrece servicios",
+  "people": [],
+  "shape": "ask-answer",
+  "outcome": "declined politely",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-08-27",
+   "2026-08-27"
+  ],
+  "length": "short",
+  "attachments": "forgotten",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0218",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: returning a book",
+  "people": [
+   "ben-hartley"
+  ],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-08-31",
+   "2026-08-31"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0219",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "a discussion on Comunidad de diseño independiente (una lista de diseñadores independientes en México: tarifas, clientes que no pagan, herramientas, chambas)",
+  "people": [
+   "mariana-gomez",
+   "brenda-salas",
+   "ernesto-villasenor"
+  ],
+  "shape": "list",
+  "outcome": "waiting on Luis",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-09-08",
+   "2026-09-14"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": true,
+  "must": [
+   "On the list comunidad@disenoindependiente.example (listId comunidad.disenoindependiente.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "disenio"
+ },
+ {
+  "id": "s0220",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a client's legal review",
+  "people": [
+   "margaret-okafor",
+   "jae-cho"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "rescheduled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-09-17",
+   "2026-09-20"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0221",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a design system component",
+  "people": [
+   "rupert-ashdown"
+  ],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-09-23",
+   "2026-09-23"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0222",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a recipe",
+  "people": [
+   "kerry-simmonds",
+   "hamish-fairweather"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "decided",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-09-17",
+   "2026-09-24"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0223",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "una agencia que busca colaborar",
+  "people": [],
+  "shape": "unanswered",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-09-25",
+   "2026-09-25"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0224",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a discussion on Marshgate Runners members (the running club's members list: race entries, kit, lost property, socials)",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "list",
+  "outcome": "declined politely",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-09-27",
+   "2026-10-01"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list members@marshgaterunners.example (listId members.marshgaterunners.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "harriers"
+ },
+ {
+  "id": "s0225",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "free: el menú del restaurante",
+  "people": [
+   "hector-garza"
+  ],
+  "shape": "ask-answer",
+  "outcome": "rescheduled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-04",
+   "2026-10-04"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0226",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: the deposit from a previous flat",
+  "people": [
+   "joana-ferreira"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "declined politely",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-03",
+   "2026-10-07"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0227",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a surprise party",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on them",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-04",
+   "2026-10-07"
+  ],
+  "length": "long",
+  "attachments": "forgotten",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0228",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a lost key",
+  "people": [
+   "harriet-lowe",
+   "hamish-fairweather"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-09-30",
+   "2026-10-09"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0229",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a job referral",
+  "people": [
+   "ben-hartley"
+  ],
+  "shape": "ask-answer",
+  "outcome": "declined politely",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-10",
+   "2026-10-11"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0230",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: a reunion",
+  "people": [
+   "hayley-brooks"
+  ],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-10-11",
+   "2026-10-11"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0231",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a press request",
+  "people": [
+   "kasia-zielinska",
+   "terry-nolan",
+   "anil-joshi"
+  ],
+  "shape": "group",
+  "outcome": "waiting on them",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-10-07",
+   "2026-10-12"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0232",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "free: una factura pendiente",
+  "people": [
+   "mariana-gomez"
+  ],
+  "shape": "luis-starts",
+  "outcome": "resolved",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-10-12",
+   "2026-10-14"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": true,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0233",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a wedding speech draft",
+  "people": [
+   "harriet-lowe",
+   "olivia-marsh"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "rescheduled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-14",
+   "2026-10-15"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0234",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a lost key",
+  "people": [
+   "hamish-fairweather"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on Luis",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-06",
+   "2026-10-16"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0235",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "planted: awaiting",
+  "people": [
+   "mariana-gomez"
+  ],
+  "shape": "luis-starts",
+  "outcome": "no answer yet",
+  "messages": [
+   1,
+   3
+  ],
+  "window": [
+   "2026-10-09",
+   "2026-10-16"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Luis, in his own message sent 6 to 13 days before the anchor, asked someone outside his own addresses a clear question or for something; nobody has answered."
+  ],
+  "plant": "awaiting",
+  "lastFrom": "me"
+ },
+ {
+  "id": "s0236",
+  "account": "acme",
+  "lang": "en",
+  "kind": "a recruiter's cold message",
+  "people": [],
+  "shape": "unanswered",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-10-19",
+   "2026-10-19"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0237",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "planted: owner-promise",
+  "people": [
+   "lorraine-whitby"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "Luis owes what he promised",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-22"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "in the 14 days before the anchor Luis promised something with a time (I'll send it Friday, I'll call you tomorrow), in his own message; due between 7 days before the anchor and 10 days after; nothing in the thread shows it done."
+  ],
+  "plant": "owner-promise",
+  "lastFrom": "me"
+ }
+]

@@ -1,0 +1,843 @@
+[
+ {
+  "id": "s0388",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "free: un video de lanzamiento",
+  "people": [
+   "mariana-gomez"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-06-27",
+   "2025-06-27"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0389",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: photos from a trip",
+  "people": [
+   "andrei-popescu"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-07-18",
+   "2025-07-25"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0390",
+  "account": "acme",
+  "lang": "en",
+  "kind": "someone asking for a reference for an ex-colleague",
+  "people": [],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-08-24",
+   "2025-08-24"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0391",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a parcel delivered to the wrong flat",
+  "people": [
+   "kerry-simmonds"
+  ],
+  "shape": "ask-answer",
+  "outcome": "rescheduled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-10-09",
+   "2025-10-09"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0392",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "a discussion on Comunidad de diseño independiente (una lista de diseñadores independientes en México: tarifas, clientes que no pagan, herramientas, chambas)",
+  "people": [
+   "mariana-gomez",
+   "renata-aguilar",
+   "paola-trevino"
+  ],
+  "shape": "list",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2025-12-16",
+   "2025-12-22"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list comunidad@disenoindependiente.example (listId comunidad.disenoindependiente.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "disenio"
+ },
+ {
+  "id": "s0393",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a laptop replacement",
+  "people": [
+   "callie-fraser"
+  ],
+  "shape": "ask-answer",
+  "outcome": "ongoing",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-02-27",
+   "2026-02-27"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0394",
+  "account": "acme",
+  "lang": "en",
+  "kind": "a podcast invitation",
+  "people": [],
+  "shape": "ask-answer",
+  "outcome": "waiting on them",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-04-04",
+   "2026-04-04"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0395",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Moving to Mallory Road",
+  "people": [
+   "tariq-hussain"
+  ],
+  "shape": "ask-answer",
+  "outcome": "rescheduled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-05-22",
+   "2026-05-25"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 5 of the storyline \"Moving to Mallory Road\": write what happens in this stretch (2026-05-22 to 2026-05-25), consistent with its summary."
+  ],
+  "storyline": "flat-move-2026"
+ },
+ {
+  "id": "s0396",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "storyline: Bec visits from Sydney",
+  "people": [
+   "bec-thornton"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "cancelled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-05-24",
+   "2026-06-03"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 4 of the storyline \"Bec visits from Sydney\": write what happens in this stretch (2026-05-24 to 2026-06-03), consistent with its summary."
+  ],
+  "storyline": "bec-in-london"
+ },
+ {
+  "id": "s0397",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Moving to Mallory Road",
+  "people": [
+   "agnieszka-nowak"
+  ],
+  "shape": "ask-answer",
+  "outcome": "rescheduled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-06-05",
+   "2026-06-08"
+  ],
+  "length": "medium",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 5 of the storyline \"Moving to Mallory Road\": write what happens in this stretch (2026-06-05 to 2026-06-08), consistent with its summary."
+  ],
+  "storyline": "flat-move-2026"
+ },
+ {
+  "id": "s0398",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "storyline: Bec visits from Sydney",
+  "people": [
+   "bec-thornton"
+  ],
+  "shape": "ask-answer",
+  "outcome": "rescheduled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-06-16",
+   "2026-06-19"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 4 of the storyline \"Bec visits from Sydney\": write what happens in this stretch (2026-06-16 to 2026-06-19), consistent with its summary."
+  ],
+  "storyline": "bec-in-london"
+ },
+ {
+  "id": "s0399",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Moving to Mallory Road",
+  "people": [
+   "agnieszka-nowak"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on Luis",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-06-19",
+   "2026-06-22"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 5 of the storyline \"Moving to Mallory Road\": write what happens in this stretch (2026-06-19 to 2026-06-22), consistent with its summary."
+  ],
+  "storyline": "flat-move-2026"
+ },
+ {
+  "id": "s0400",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a design critique",
+  "people": [
+   "ellie-ngata"
+  ],
+  "shape": "ask-answer",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-06-22",
+   "2026-06-24"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0401",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Moving to Mallory Road",
+  "people": [
+   "niamh-gallagher",
+   "marta-silva"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on them",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-06-26",
+   "2026-07-06"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "Part 4 of 5 of the storyline \"Moving to Mallory Road\": write what happens in this stretch (2026-06-26 to 2026-07-06), consistent with its summary."
+  ],
+  "storyline": "flat-move-2026"
+ },
+ {
+  "id": "s0402",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "storyline: Bec visits from Sydney",
+  "people": [
+   "bec-thornton"
+  ],
+  "shape": "group",
+  "outcome": "resolved",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-06-29",
+   "2026-07-06"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 4 of the storyline \"Bec visits from Sydney\": write what happens in this stretch (2026-06-29 to 2026-07-06), consistent with its summary."
+  ],
+  "storyline": "bec-in-london"
+ },
+ {
+  "id": "s0403",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a sick pet",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-07-15",
+   "2026-07-16"
+  ],
+  "length": "medium",
+  "attachments": "forgotten",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0404",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Moving to Mallory Road",
+  "people": [
+   "olivia-marsh"
+  ],
+  "shape": "ask-answer",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-07-17",
+   "2026-07-20"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 5 of 5 of the storyline \"Moving to Mallory Road\": write what happens in this stretch (2026-07-17 to 2026-07-20), consistent with its summary."
+  ],
+  "storyline": "flat-move-2026"
+ },
+ {
+  "id": "s0405",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "storyline: Bec visits from Sydney",
+  "people": [
+   "bec-thornton"
+  ],
+  "shape": "ask-answer",
+  "outcome": "resolved",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-07-19",
+   "2026-07-22"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 4 of 4 of the storyline \"Bec visits from Sydney\": write what happens in this stretch (2026-07-19 to 2026-07-22), consistent with its summary."
+  ],
+  "storyline": "bec-in-london"
+ },
+ {
+  "id": "s0406",
+  "account": "acme",
+  "lang": "en",
+  "kind": "a recruiter's cold message",
+  "people": [],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-08-24",
+   "2026-08-24"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0407",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a font licence",
+  "people": [
+   "dan-whelan",
+   "jae-cho"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-08-22",
+   "2026-08-31"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0408",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a training plan",
+  "people": [
+   "marc-tremblay"
+  ],
+  "shape": "ask-answer",
+  "outcome": "resolved",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-09-14",
+   "2026-09-16"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0409",
+  "account": "acme",
+  "lang": "en",
+  "kind": "a discussion on Acme everyone (the whole studio: announcements, leaving drinks, office notices, the odd reply-all)",
+  "people": [
+   "jake-pemberton"
+  ],
+  "shape": "list",
+  "outcome": "waiting on Luis",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-09-30",
+   "2026-10-01"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list everyone@acme.example (listId everyone.acme.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "allstudio"
+ },
+ {
+  "id": "s0410",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "free: una encuesta a clientes",
+  "people": [
+   "mariana-gomez"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-02",
+   "2026-10-03"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0411",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: an awards submission",
+  "people": [
+   "rhys-morgan",
+   "anil-joshi",
+   "lena-hofmann",
+   "jake-pemberton"
+  ],
+  "shape": "group",
+  "outcome": "resolved",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-09-29",
+   "2026-10-05"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0412",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: photos from a trip",
+  "people": [
+   "andrei-popescu"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-10-09",
+   "2026-10-09"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0413",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a stag do budget",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "forward",
+  "outcome": "waiting on them",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2026-10-11",
+   "2026-10-13"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0414",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: a car hire excess",
+  "people": [
+   "andrei-popescu",
+   "bec-thornton",
+   "clara-moreau",
+   "felix-brandt"
+  ],
+  "shape": "group",
+  "outcome": "decided",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-10-12",
+   "2026-10-15"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0415",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "planted: awaiting",
+  "people": [
+   "andrei-popescu"
+  ],
+  "shape": "luis-starts",
+  "outcome": "no answer yet",
+  "messages": [
+   1,
+   3
+  ],
+  "window": [
+   "2026-10-09",
+   "2026-10-16"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Luis, in his own message sent 6 to 13 days before the anchor, asked someone outside his own addresses a clear question or for something; nobody has answered."
+  ],
+  "plant": "awaiting",
+  "lastFrom": "me"
+ },
+ {
+  "id": "s0416",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: a museum membership",
+  "people": [
+   "clara-moreau",
+   "joana-ferreira"
+  ],
+  "shape": "luis-starts",
+  "outcome": "resolved",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-10-12",
+   "2026-10-16"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0417",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "planted: deadline",
+  "people": [
+   "andrei-popescu"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on Luis, before the date",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-22"
+  ],
+  "length": "short",
+  "attachments": "forgotten",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "in the 14 days before the anchor someone asked Luis to do something by a stated date within the 10 days after the anchor; he hasn't done it.",
+   "The date he must act by falls between 2026-10-23 and 2026-11-01."
+  ],
+  "plant": "deadline",
+  "lastFrom": "them"
+ }
+]

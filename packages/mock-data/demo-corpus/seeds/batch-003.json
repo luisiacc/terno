@@ -1,0 +1,851 @@
+[
+ {
+  "id": "s0058",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a parcel delivered to the wrong flat",
+  "people": [
+   "mateo-cordero"
+  ],
+  "shape": "ask-answer",
+  "outcome": "decided",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-02-17",
+   "2025-02-20"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0059",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a broken washing machine",
+  "people": [
+   "ifeoma-nwosu"
+  ],
+  "shape": "ask-answer",
+  "outcome": "ongoing",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-02-23",
+   "2025-02-25"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0060",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "storyline: Felix in London",
+  "people": [
+   "felix-brandt"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-04-05",
+   "2025-04-15"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 4 of the storyline \"Felix in London\": write what happens in this stretch (2025-04-05 to 2025-04-15), consistent with its summary."
+  ],
+  "storyline": "felix-visit"
+ },
+ {
+  "id": "s0061",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "storyline: Felix in London",
+  "people": [
+   "felix-brandt"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "cancelled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-04-19",
+   "2025-04-29"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 4 of the storyline \"Felix in London\": write what happens in this stretch (2025-04-19 to 2025-04-29), consistent with its summary."
+  ],
+  "storyline": "felix-visit"
+ },
+ {
+  "id": "s0062",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "storyline: Felix in London",
+  "people": [
+   "felix-brandt"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "ongoing",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-05-03",
+   "2025-05-13"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 4 of the storyline \"Felix in London\": write what happens in this stretch (2025-05-03 to 2025-05-13), consistent with its summary."
+  ],
+  "trash": true,
+  "storyline": "felix-visit"
+ },
+ {
+  "id": "s0063",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "storyline: Felix in London",
+  "people": [
+   "felix-brandt"
+  ],
+  "shape": "ask-answer",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-05-23",
+   "2025-05-26"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 4 of 4 of the storyline \"Felix in London\": write what happens in this stretch (2025-05-23 to 2025-05-26), consistent with its summary."
+  ],
+  "storyline": "felix-visit"
+ },
+ {
+  "id": "s0064",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a camera lens for sale",
+  "people": [
+   "hamish-fairweather"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-12-12",
+   "2025-12-22"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0065",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "a discussion on Comunidad de diseño independiente (una lista de diseñadores independientes en México: tarifas, clientes que no pagan, herramientas, chambas)",
+  "people": [
+   "mariana-gomez",
+   "fernanda-rios",
+   "emilio-cardenas"
+  ],
+  "shape": "list",
+  "outcome": "rescheduled",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-03-01",
+   "2026-03-08"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list comunidad@disenoindependiente.example (listId comunidad.disenoindependiente.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "disenio"
+ },
+ {
+  "id": "s0066",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: dog-sitting",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "rescheduled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-03-17",
+   "2026-03-26"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0067",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a mentoring session",
+  "people": [
+   "margaret-okafor",
+   "jae-cho"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on Luis",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-06-16",
+   "2026-06-22"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0068",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a design system component",
+  "people": [
+   "jae-cho"
+  ],
+  "shape": "ask-answer",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-07-02",
+   "2026-07-03"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0069",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a discussion on Albion Court residents (his building's residents: bins, the lift, parcels, a noisy party, the managing agent)",
+  "people": [
+   "hamish-fairweather",
+   "harriet-lowe",
+   "tom-ashworth"
+  ],
+  "shape": "list",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-07-15",
+   "2026-07-16"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list residents@albioncourt.example (listId residents.albioncourt.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "building"
+ },
+ {
+  "id": "s0070",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a print proof",
+  "people": [
+   "dan-whelan",
+   "rupert-ashdown"
+  ],
+  "shape": "luis-starts",
+  "outcome": "resolved",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-07-18",
+   "2026-07-23"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0071",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a contractor's invoice",
+  "people": [
+   "margaret-okafor",
+   "gabriel-santos"
+  ],
+  "shape": "luis-starts",
+  "outcome": "declined politely",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-07-31",
+   "2026-08-04"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0072",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: an RSVP and dietary needs",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "ask-answer",
+  "outcome": "resolved",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-08-09",
+   "2026-08-12"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0073",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: A recruiter who won't take no",
+  "people": [
+   "duncan-shaw"
+  ],
+  "shape": "ask-answer",
+  "outcome": "ongoing",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-08-24",
+   "2026-08-27"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 3 of the storyline \"A recruiter who won't take no\": write what happens in this stretch (2026-08-24 to 2026-08-27), consistent with its summary."
+  ],
+  "storyline": "duncan-recruiter"
+ },
+ {
+  "id": "s0074",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: A recruiter who won't take no",
+  "people": [
+   "duncan-shaw"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-09-03",
+   "2026-09-13"
+  ],
+  "length": "medium",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 3 of the storyline \"A recruiter who won't take no\": write what happens in this stretch (2026-09-03 to 2026-09-13), consistent with its summary."
+  ],
+  "storyline": "duncan-recruiter"
+ },
+ {
+  "id": "s0075",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a lost key",
+  "people": [
+   "ben-hartley"
+  ],
+  "shape": "ask-answer",
+  "outcome": "decided",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-09-24",
+   "2026-09-25"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0076",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a change to the statement of work",
+  "people": [
+   "duncan-shaw"
+  ],
+  "shape": "ask-answer",
+  "outcome": "resolved",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-09-25",
+   "2026-09-27"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0077",
+  "account": "acme",
+  "lang": "en",
+  "kind": "a discussion on Acme everyone (the whole studio: announcements, leaving drinks, office notices, the odd reply-all)",
+  "people": [
+   "gabriel-santos"
+  ],
+  "shape": "list",
+  "outcome": "rescheduled",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-09-24",
+   "2026-09-27"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list everyone@acme.example (listId everyone.acme.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "allstudio"
+ },
+ {
+  "id": "s0078",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: A recruiter who won't take no",
+  "people": [
+   "duncan-shaw"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-09-29",
+   "2026-09-29"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "Part 3 of 3 of the storyline \"A recruiter who won't take no\": write what happens in this stretch (2026-09-29 to 2026-09-29), consistent with its summary."
+  ],
+  "storyline": "duncan-recruiter"
+ },
+ {
+  "id": "s0079",
+  "account": "acme",
+  "lang": "en",
+  "kind": "a discussion on Acme everyone (the whole studio: announcements, leaving drinks, office notices, the odd reply-all)",
+  "people": [
+   "terry-nolan"
+  ],
+  "shape": "list",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2026-09-26",
+   "2026-10-02"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list everyone@acme.example (listId everyone.acme.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "allstudio"
+ },
+ {
+  "id": "s0080",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: hiring a van",
+  "people": [
+   "bea-collins"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-09-24",
+   "2026-10-02"
+  ],
+  "length": "long",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0081",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: splitting a bill",
+  "people": [
+   "hamish-fairweather"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on Luis",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-03",
+   "2026-10-10"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0082",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a wedding speech draft",
+  "people": [
+   "hamish-fairweather"
+  ],
+  "shape": "ask-answer",
+  "outcome": "rescheduled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-10",
+   "2026-10-12"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0083",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a wedding speech draft",
+  "people": [
+   "harriet-lowe",
+   "joanna-kowalczyk",
+   "hamish-fairweather",
+   "imogen-barnes"
+  ],
+  "shape": "group",
+  "outcome": "decided",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-10-19",
+   "2026-10-20"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [],
+  "unreadFrom": "2026-10-19T15:30:00Z"
+ },
+ {
+  "id": "s0084",
+  "account": "acme",
+  "lang": "en",
+  "kind": "planted: promise-to-owner",
+  "people": [
+   "lena-hofmann"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "they owe what they promised",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-21"
+  ],
+  "length": "medium",
+  "attachments": "forgotten",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": true,
+  "must": [
+   "in the 14 days before the anchor someone promised Luis something with a time (I'll send the deck Monday); about half are already due and nothing came."
+  ],
+  "plant": "promise-to-owner",
+  "lastFrom": "them"
+ },
+ {
+  "id": "s0085",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "free: empaque nuevo",
+  "people": [
+   "mariana-gomez"
+  ],
+  "shape": "ask-answer",
+  "outcome": "rescheduled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-19",
+   "2026-10-21"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [],
+  "unreadFrom": "2026-10-20T08:19:40Z"
+ },
+ {
+  "id": "s0086",
+  "account": "personal",
+  "lang": "en",
+  "kind": "planted: since",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "the unread tail changes something (or, for one, nothing)",
+  "messages": [
+   3,
+   6
+  ],
+  "window": [
+   "2026-10-14",
+   "2026-10-22"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "plan 279: earlier mail from others that he has read, then a contiguous tail of new mail from others, unread, all within the two hours before the anchor, that changes something (a plan, a date, an amount). One of the four changes nothing (a short thanks). Nothing from Luis after the unread tail.",
+   "The unread tail changes something specific the read mail had settled."
+  ],
+  "plant": "since",
+  "unreadFrom": "2026-10-22T13:30:00Z",
+  "lastFrom": "them"
+ },
+ {
+  "id": "s0087",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "planted: since",
+  "people": [
+   "emilio-cardenas"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "the unread tail changes something (or, for one, nothing)",
+  "messages": [
+   3,
+   6
+  ],
+  "window": [
+   "2026-10-14",
+   "2026-10-22"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "client"
+  ],
+  "inbox": true,
+  "must": [
+   "plan 279: earlier mail from others that he has read, then a contiguous tail of new mail from others, unread, all within the two hours before the anchor, that changes something (a plan, a date, an amount). One of the four changes nothing (a short thanks). Nothing from Luis after the unread tail.",
+   "The unread tail changes something specific the read mail had settled."
+  ],
+  "unreadFrom": "2026-10-22T13:30:00Z",
+  "plant": "since",
+  "lastFrom": "them"
+ }
+]

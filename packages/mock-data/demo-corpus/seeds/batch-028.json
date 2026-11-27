@@ -1,0 +1,836 @@
+[
+ {
+  "id": "s0801",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a discussion on Albion Court residents (his building's residents: bins, the lift, parcels, a noisy party, the managing agent)",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "list",
+  "outcome": "cancelled",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2025-04-05",
+   "2025-04-11"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list residents@albioncourt.example (listId residents.albioncourt.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "building"
+ },
+ {
+  "id": "s0802",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: an old photo found",
+  "people": [
+   "bernadette-gallagher"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-05-22",
+   "2025-05-22"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [],
+  "trash": true
+ },
+ {
+  "id": "s0803",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: an alumni event",
+  "people": [
+   "andrei-popescu"
+  ],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-07-10",
+   "2025-07-10"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0804",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a spare concert ticket",
+  "people": [
+   "tariq-hussain",
+   "harriet-lowe"
+  ],
+  "shape": "luis-starts",
+  "outcome": "cancelled",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-08-08",
+   "2025-08-12"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0805",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: a museum membership",
+  "people": [
+   "clara-moreau"
+  ],
+  "shape": "unanswered",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-08-30",
+   "2025-08-30"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0806",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a gift idea",
+  "people": [
+   "martin-hale"
+  ],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-10-18",
+   "2025-10-18"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0807",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: an expense claim",
+  "people": [
+   "gabriel-santos",
+   "jade-morris"
+  ],
+  "shape": "luis-starts",
+  "outcome": "decided",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-10-17",
+   "2025-10-19"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0808",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a weekend away",
+  "people": [
+   "hamish-fairweather"
+  ],
+  "shape": "ask-answer",
+  "outcome": "declined politely",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-10-24",
+   "2025-10-24"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0809",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a weekend away",
+  "people": [
+   "tariq-hussain",
+   "ben-hartley"
+  ],
+  "shape": "luis-starts",
+  "outcome": "waiting on them",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-10-30",
+   "2025-11-03"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0810",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a discussion on Albion Court residents (his building's residents: bins, the lift, parcels, a noisy party, the managing agent)",
+  "people": [
+   "ifeoma-nwosu",
+   "harriet-lowe",
+   "hamish-fairweather"
+  ],
+  "shape": "list",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2025-11-06",
+   "2025-11-10"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list residents@albioncourt.example (listId residents.albioncourt.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "building"
+ },
+ {
+  "id": "s0811",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a film night",
+  "people": [
+   "daniela-cordero"
+  ],
+  "shape": "luis-starts",
+  "outcome": "waiting on them",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-03-02",
+   "2026-03-05"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0812",
+  "account": "acme",
+  "lang": "en",
+  "kind": "a conference inviting him to speak",
+  "people": [],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-03-29",
+   "2026-03-29"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0813",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a candidate's portfolio",
+  "people": [
+   "dev-malhotra"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-06-21",
+   "2026-06-29"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0814",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a holiday request",
+  "people": [
+   "anil-joshi"
+  ],
+  "shape": "ask-answer",
+  "outcome": "decided",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-07-12",
+   "2026-07-13"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0815",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: a lost luggage claim",
+  "people": [
+   "felix-brandt"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-07-22",
+   "2026-07-22"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0816",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a neighbour he hasn't met",
+  "people": [],
+  "shape": "ask-answer",
+  "outcome": "declined politely",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-07-23",
+   "2026-07-23"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0817",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: an old flatmate getting in touch",
+  "people": [
+   "rita-valente"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on them",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-08-13",
+   "2026-08-18"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0818",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a charity's fundraiser asking him personally",
+  "people": [],
+  "shape": "unanswered",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-09-23",
+   "2026-09-23"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0819",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: selling a bike",
+  "people": [
+   "hamish-fairweather",
+   "harriet-lowe",
+   "olivia-marsh",
+   "kerry-simmonds",
+   "josh-whitaker"
+  ],
+  "shape": "group",
+  "outcome": "resolved",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-09-19",
+   "2026-09-23"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0820",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: hiring a van",
+  "people": [
+   "hamish-fairweather",
+   "ifeoma-nwosu",
+   "daniela-cordero",
+   "chloe-bennett"
+  ],
+  "shape": "group",
+  "outcome": "declined politely",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-09-16",
+   "2026-09-23"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0821",
+  "account": "acme",
+  "lang": "en",
+  "kind": "an agency proposing a partnership",
+  "people": [],
+  "shape": "unanswered",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-09-24",
+   "2026-09-24"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0822",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a stag do budget",
+  "people": [
+   "ifeoma-nwosu"
+  ],
+  "shape": "ask-answer",
+  "outcome": "cancelled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-09-24",
+   "2026-09-26"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0823",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: IT's security training",
+  "people": [
+   "steve-barlow"
+  ],
+  "shape": "luis-starts",
+  "outcome": "resolved",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-09-29",
+   "2026-10-03"
+  ],
+  "length": "medium",
+  "attachments": "some",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0824",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a letter from the GP",
+  "people": [
+   "sunita-varma"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on them",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-09",
+   "2026-10-12"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0825",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Christmas 2026 in Cork",
+  "people": [
+   "bernadette-gallagher"
+  ],
+  "shape": "ask-answer",
+  "outcome": "cancelled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-10",
+   "2026-10-13"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "Part 1 of 2 of the storyline \"Christmas 2026 in Cork\": write what happens in this stretch (2026-10-10 to 2026-10-13), consistent with its summary."
+  ],
+  "storyline": "christmas-cork-2026"
+ },
+ {
+  "id": "s0826",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: photos from a trip",
+  "people": [
+   "clara-moreau",
+   "felix-brandt"
+  ],
+  "shape": "forward",
+  "outcome": "waiting on them",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2026-10-10",
+   "2026-10-13"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0827",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "planted: promise-to-owner",
+  "people": [
+   "mariana-gomez"
+  ],
+  "shape": "ask-answer",
+  "outcome": "they owe what they promised",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-21"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "client"
+  ],
+  "inbox": true,
+  "must": [
+   "in the 14 days before the anchor someone promised Luis something with a time (I'll send the deck Monday); about half are already due and nothing came."
+  ],
+  "plant": "promise-to-owner",
+  "lastFrom": "them"
+ },
+ {
+  "id": "s0828",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Christmas 2026 in Cork",
+  "people": [
+   "bernadette-gallagher"
+  ],
+  "shape": "forward",
+  "outcome": "waiting on Luis",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2026-10-19",
+   "2026-10-22"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "Part 2 of 2 of the storyline \"Christmas 2026 in Cork\": write what happens in this stretch (2026-10-19 to 2026-10-22), consistent with its summary."
+  ],
+  "storyline": "christmas-cork-2026"
+ },
+ {
+  "id": "s0829",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "planted: owner-promise",
+  "people": [
+   "mariana-gomez"
+  ],
+  "shape": "luis-starts",
+  "outcome": "Luis owes what he promised",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-22"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "in the 14 days before the anchor Luis promised something with a time (I'll send it Friday, I'll call you tomorrow), in his own message; due between 7 days before the anchor and 10 days after; nothing in the thread shows it done."
+  ],
+  "plant": "owner-promise",
+  "lastFrom": "me"
+ },
+ {
+  "id": "s0830",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "planted: owner-promise",
+  "people": [
+   "guadalupe-ibarra"
+  ],
+  "shape": "luis-starts",
+  "outcome": "Luis owes what he promised",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-22"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "in the 14 days before the anchor Luis promised something with a time (I'll send it Friday, I'll call you tomorrow), in his own message; due between 7 days before the anchor and 10 days after; nothing in the thread shows it done."
+  ],
+  "plant": "owner-promise",
+  "lastFrom": "me"
+ }
+]

@@ -1,0 +1,18 @@
+{
+  "rule": { "name": "Branch Ferries → Dev", "from": "notifications@branchferries.example", "category": "Dev" },
+  "learningSender": "hello@gridandgutter.example",
+  "prepare": {
+    "since": ["Left shin / Marshgate", "Alta de proveedor en nuevo sistema", "collection page filter bar"],
+    "sinceWhole": "Holloway import + DNS",
+    "summaries": ["offsite demo: Tandem or Pennywort?", "Link for the November open evening", "deposit", "Have you still got the little phone stand?"],
+    "spanishReply": ["Orden de compra fajilla diciembre", "Etiqueta trasera para el lote de Chiapas"],
+    "ask": [
+      { "q": "What was the booking reference for my emergency dentist appointment, and how much did I pay?", "followUp": "Did Jo pay me back?", "cites": ["Cracked tooth, any emergency appointments this week?"], "facts": ["WCD-48213", "68"] },
+      { "q": "How much did Margins pay up front for the programme print job?", "cites": ["Printer for the Margins programme?"], "facts": ["410.40"] },
+      { "q": "What's the booking reference for Daniela's physio call with Harriet?", "cites": ["your physio?? (calf)"], "facts": ["DSC-1043"] },
+      { "q": "Which newsletters came in this week, and what were they about?", "cites": [], "facts": [] }
+    ],
+    "ruleRequest": "archive ride receipts from sidestreetrides.example",
+    "followup": { "to": "Tom Ashworth", "subject": "Thursday shirts", "body": "Tom,\n\nhave you still got the spare bibs from last season? Need two for Thursday.\n\nL" }
+  }
+}

@@ -1,0 +1,876 @@
+[
+ {
+  "id": "s0118",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "storyline: Lisbon with Niamh",
+  "people": [
+   "rita-valente"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "ongoing",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-07-08",
+   "2025-07-18"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 5 of the storyline \"Lisbon with Niamh\": write what happens in this stretch (2025-07-08 to 2025-07-18), consistent with its summary."
+  ],
+  "storyline": "lisbon-2025"
+ },
+ {
+  "id": "s0119",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "storyline: Lisbon with Niamh",
+  "people": [
+   "rita-valente"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-08-04",
+   "2025-08-04"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "Part 2 of 5 of the storyline \"Lisbon with Niamh\": write what happens in this stretch (2025-08-04 to 2025-08-04), consistent with its summary."
+  ],
+  "storyline": "lisbon-2025"
+ },
+ {
+  "id": "s0120",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "storyline: Lisbon with Niamh",
+  "people": [
+   "rita-valente",
+   "joana-ferreira"
+  ],
+  "shape": "luis-starts",
+  "outcome": "waiting on them",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-08-17",
+   "2025-08-22"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 3 of 5 of the storyline \"Lisbon with Niamh\": write what happens in this stretch (2025-08-17 to 2025-08-22), consistent with its summary."
+  ],
+  "storyline": "lisbon-2025"
+ },
+ {
+  "id": "s0121",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a contractor's invoice",
+  "people": [
+   "jake-pemberton"
+  ],
+  "shape": "ask-answer",
+  "outcome": "decided",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-09-03",
+   "2025-09-03"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0122",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "storyline: Lisbon with Niamh",
+  "people": [
+   "rita-valente"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-08-29",
+   "2025-09-08"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 4 of 5 of the storyline \"Lisbon with Niamh\": write what happens in this stretch (2025-08-29 to 2025-09-08), consistent with its summary."
+  ],
+  "storyline": "lisbon-2025"
+ },
+ {
+  "id": "s0123",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "storyline: Lisbon with Niamh",
+  "people": [
+   "joana-ferreira"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-09-25",
+   "2025-09-25"
+  ],
+  "length": "long",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "Part 5 of 5 of the storyline \"Lisbon with Niamh\": write what happens in this stretch (2025-09-25 to 2025-09-25), consistent with its summary."
+  ],
+  "storyline": "lisbon-2025"
+ },
+ {
+  "id": "s0124",
+  "account": "personal",
+  "lang": "en",
+  "kind": "a wrong-recipient email meant for another Luis",
+  "people": [],
+  "shape": "ask-answer",
+  "outcome": "waiting on them",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-10-06",
+   "2025-10-09"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0125",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Daniela's wedding in Guadalajara",
+  "people": [
+   "niamh-gallagher"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "cancelled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-10-08",
+   "2025-10-18"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 6 of the storyline \"Daniela's wedding in Guadalajara\": write what happens in this stretch (2025-10-08 to 2025-10-18), consistent with its summary."
+  ],
+  "storyline": "daniela-wedding"
+ },
+ {
+  "id": "s0126",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Daniela's wedding in Guadalajara",
+  "people": [
+   "daniela-cordero"
+  ],
+  "shape": "ask-answer",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-11-25",
+   "2025-11-28"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 6 of the storyline \"Daniela's wedding in Guadalajara\": write what happens in this stretch (2025-11-25 to 2025-11-28), consistent with its summary."
+  ],
+  "storyline": "daniela-wedding"
+ },
+ {
+  "id": "s0127",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Daniela's wedding in Guadalajara",
+  "people": [
+   "daniela-cordero",
+   "niamh-gallagher",
+   "marc-tremblay"
+  ],
+  "shape": "group",
+  "outcome": "waiting on Luis",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-01-01",
+   "2026-01-08"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 6 of the storyline \"Daniela's wedding in Guadalajara\": write what happens in this stretch (2026-01-01 to 2026-01-08), consistent with its summary."
+  ],
+  "storyline": "daniela-wedding"
+ },
+ {
+  "id": "s0128",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Daniela's wedding in Guadalajara",
+  "people": [
+   "niamh-gallagher",
+   "marc-tremblay",
+   "daniela-cordero"
+  ],
+  "shape": "group",
+  "outcome": "resolved",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-02-11",
+   "2026-02-18"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 4 of 6 of the storyline \"Daniela's wedding in Guadalajara\": write what happens in this stretch (2026-02-11 to 2026-02-18), consistent with its summary."
+  ],
+  "trash": true,
+  "storyline": "daniela-wedding"
+ },
+ {
+  "id": "s0129",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Daniela's wedding in Guadalajara",
+  "people": [
+   "daniela-cordero"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on them",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-03-28",
+   "2026-03-31"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 5 of 6 of the storyline \"Daniela's wedding in Guadalajara\": write what happens in this stretch (2026-03-28 to 2026-03-31), consistent with its summary."
+  ],
+  "storyline": "daniela-wedding"
+ },
+ {
+  "id": "s0130",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Daniela's wedding in Guadalajara",
+  "people": [
+   "marc-tremblay",
+   "niamh-gallagher"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-04-30",
+   "2026-05-10"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 6 of 6 of the storyline \"Daniela's wedding in Guadalajara\": write what happens in this stretch (2026-04-30 to 2026-05-10), consistent with its summary."
+  ],
+  "storyline": "daniela-wedding"
+ },
+ {
+  "id": "s0131",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: an old flatmate getting in touch",
+  "people": [
+   "rita-valente",
+   "bec-thornton",
+   "felix-brandt",
+   "andrei-popescu",
+   "graham-petts"
+  ],
+  "shape": "group",
+  "outcome": "waiting on them",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-06-08",
+   "2026-06-11"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0132",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Selling things before the move",
+  "people": [
+   "niamh-gallagher"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "decided",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-06-05",
+   "2026-06-15"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 2 of the storyline \"Selling things before the move\": write what happens in this stretch (2026-06-05 to 2026-06-15), consistent with its summary."
+  ],
+  "storyline": "selling-before-move"
+ },
+ {
+  "id": "s0133",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Selling things before the move",
+  "people": [
+   "niamh-gallagher"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-06-25",
+   "2026-06-25"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "Part 2 of 2 of the storyline \"Selling things before the move\": write what happens in this stretch (2026-06-25 to 2026-06-25), consistent with its summary."
+  ],
+  "storyline": "selling-before-move"
+ },
+ {
+  "id": "s0134",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Albion Road deposit",
+  "people": [
+   "peter-stavros"
+  ],
+  "shape": "luis-starts",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-07-13",
+   "2026-07-18"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "firstFrom": "me",
+  "must": [
+   "Part 1 of 6 of the storyline \"Albion Road deposit\": write what happens in this stretch (2026-07-13 to 2026-07-18), consistent with its summary."
+  ],
+  "storyline": "albion-deposit-dispute"
+ },
+ {
+  "id": "s0135",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: recruiting for a usability test",
+  "people": [
+   "rhys-morgan",
+   "ian-ferris"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on Luis",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-07-24",
+   "2026-07-30"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0136",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Albion Road deposit",
+  "people": [
+   "niamh-gallagher",
+   "olivia-marsh"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-07-27",
+   "2026-08-06"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 6 of the storyline \"Albion Road deposit\": write what happens in this stretch (2026-07-27 to 2026-08-06), consistent with its summary."
+  ],
+  "storyline": "albion-deposit-dispute"
+ },
+ {
+  "id": "s0137",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Albion Road deposit",
+  "people": [
+   "peter-stavros",
+   "niamh-gallagher",
+   "olivia-marsh"
+  ],
+  "shape": "group",
+  "outcome": "resolved",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2026-08-18",
+   "2026-08-25"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 6 of the storyline \"Albion Road deposit\": write what happens in this stretch (2026-08-18 to 2026-08-25), consistent with its summary."
+  ],
+  "storyline": "albion-deposit-dispute"
+ },
+ {
+  "id": "s0138",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: parental leave cover",
+  "people": [
+   "marcus-adeyemi"
+  ],
+  "shape": "forward",
+  "outcome": "resolved",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2026-08-27",
+   "2026-08-29"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0139",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a performance review",
+  "people": [
+   "philippa-dunn"
+  ],
+  "shape": "ask-answer",
+  "outcome": "cancelled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-09-05",
+   "2026-09-07"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0140",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: an insurance renewal",
+  "people": [
+   "felix-brandt",
+   "nikhil-mehta"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "rescheduled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-09-03",
+   "2026-09-08"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0141",
+  "account": "acme",
+  "lang": "en",
+  "kind": "an agency proposing a partnership",
+  "people": [],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-09-09",
+   "2026-09-09"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0142",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Albion Road deposit",
+  "people": [
+   "niamh-gallagher"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-09-14",
+   "2026-09-14"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "Part 4 of 6 of the storyline \"Albion Road deposit\": write what happens in this stretch (2026-09-14 to 2026-09-14), consistent with its summary."
+  ],
+  "storyline": "albion-deposit-dispute"
+ },
+ {
+  "id": "s0143",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Albion Road deposit",
+  "people": [
+   "niamh-gallagher"
+  ],
+  "shape": "ask-answer",
+  "outcome": "cancelled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-09-30",
+   "2026-10-03"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "Part 5 of 6 of the storyline \"Albion Road deposit\": write what happens in this stretch (2026-09-30 to 2026-10-03), consistent with its summary."
+  ],
+  "storyline": "albion-deposit-dispute"
+ },
+ {
+  "id": "s0144",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "planted: awaiting",
+  "people": [
+   "andrei-popescu"
+  ],
+  "shape": "luis-starts",
+  "outcome": "no answer yet",
+  "messages": [
+   1,
+   3
+  ],
+  "window": [
+   "2026-10-09",
+   "2026-10-16"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Luis, in his own message sent 6 to 13 days before the anchor, asked someone outside his own addresses a clear question or for something; nobody has answered."
+  ],
+  "plant": "awaiting",
+  "lastFrom": "me"
+ },
+ {
+  "id": "s0145",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "un proveedor de impresión que ofrece servicios",
+  "people": [],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-10-21",
+   "2026-10-21"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0146",
+  "account": "personal",
+  "lang": "en",
+  "kind": "planted: waiting-on-you",
+  "people": [
+   "chloe-bennett"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on Luis",
+  "messages": [
+   3,
+   6
+  ],
+  "window": [
+   "2026-10-12",
+   "2026-10-22"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "a recent Inbox thread: Luis wrote earlier in it, and the latest message, from a person, asks him something he hasn't answered.",
+   "This person has nothing else open with Luis anywhere in the mailbox: their only item is this question."
+  ],
+  "plant": "waiting-on-you",
+  "firstFrom": "me",
+  "lastFrom": "them"
+ },
+ {
+  "id": "s0147",
+  "account": "personal",
+  "lang": "en",
+  "kind": "storyline: Albion Road deposit",
+  "people": [
+   "olivia-marsh"
+  ],
+  "shape": "ask-answer",
+  "outcome": "rescheduled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-19",
+   "2026-10-22"
+  ],
+  "length": "medium",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [
+   "Part 6 of 6 of the storyline \"Albion Road deposit\": write what happens in this stretch (2026-10-19 to 2026-10-22), consistent with its summary."
+  ],
+  "unreadFrom": "2026-10-21T10:30:00Z",
+  "storyline": "albion-deposit-dispute"
+ }
+]

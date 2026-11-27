@@ -1,0 +1,6 @@
+[
+  { "id": "harriers", "account": "personal", "name": "Marshgate Runners members", "address": "members@marshgaterunners.example", "listId": "members.marshgaterunners.example", "about": "the running club's members list: race entries, kit, lost property, socials" },
+  { "id": "allstudio", "account": "acme", "name": "Acme everyone", "address": "everyone@acme.example", "listId": "everyone.acme.example", "about": "the whole studio: announcements, leaving drinks, office notices, the odd reply-all" },
+  { "id": "building", "account": "personal", "name": "Albion Court residents", "address": "residents@albioncourt.example", "listId": "residents.albioncourt.example", "about": "his building's residents: bins, the lift, parcels, a noisy party, the managing agent" },
+  { "id": "disenio", "account": "freelance", "name": "Comunidad de diseño independiente", "address": "comunidad@disenoindependiente.example", "listId": "comunidad.disenoindependiente.example", "about": "una lista de diseñadores independientes en México: tarifas, clientes que no pagan, herramientas, chambas" }
+]

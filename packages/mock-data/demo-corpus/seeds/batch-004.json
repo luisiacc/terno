@@ -1,0 +1,855 @@
+[
+ {
+  "id": "s0088",
+  "account": "acme",
+  "lang": "en",
+  "kind": "a recruiter's cold message",
+  "people": [],
+  "shape": "ask-answer",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2024-12-30",
+   "2025-01-01"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "The sender is a one-off person: define them in the thread's people."
+  ]
+ },
+ {
+  "id": "s0089",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "free: a travel plan with old friends",
+  "people": [
+   "nikhil-mehta"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-02-20",
+   "2025-02-20"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0090",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Declaración anual 2024",
+  "people": [
+   "guadalupe-ibarra"
+  ],
+  "shape": "ask-answer",
+  "outcome": "cancelled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-02-28",
+   "2025-03-03"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 5 of the storyline \"Declaración anual 2024\": write what happens in this stretch (2025-02-28 to 2025-03-03), consistent with its summary."
+  ],
+  "storyline": "declaracion-anual-2025"
+ },
+ {
+  "id": "s0091",
+  "account": "acme",
+  "lang": "en",
+  "kind": "a discussion on Acme everyone (the whole studio: announcements, leaving drinks, office notices, the odd reply-all)",
+  "people": [
+   "jake-pemberton",
+   "jae-cho"
+  ],
+  "shape": "list",
+  "outcome": "ongoing",
+  "messages": [
+   3,
+   10
+  ],
+  "window": [
+   "2025-03-09",
+   "2025-03-16"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "On the list everyone@acme.example (listId everyone.acme.example): messages go to the list, not to Luis by name; Luis may or may not take part."
+  ],
+  "list": "allstudio"
+ },
+ {
+  "id": "s0092",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Declaración anual 2024",
+  "people": [
+   "guadalupe-ibarra"
+  ],
+  "shape": "ask-answer",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-03-14",
+   "2025-03-17"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 5 of the storyline \"Declaración anual 2024\": write what happens in this stretch (2025-03-14 to 2025-03-17), consistent with its summary."
+  ],
+  "storyline": "declaracion-anual-2025"
+ },
+ {
+  "id": "s0093",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a gift idea",
+  "people": [
+   "harriet-lowe",
+   "sunita-varma"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "a misunderstanding cleared up",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-03-14",
+   "2025-03-18"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0094",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Declaración anual 2024",
+  "people": [
+   "brenda-salas"
+  ],
+  "shape": "ask-answer",
+  "outcome": "cancelled",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-03-28",
+   "2025-03-31"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 5 of the storyline \"Declaración anual 2024\": write what happens in this stretch (2025-03-28 to 2025-03-31), consistent with its summary."
+  ],
+  "storyline": "declaracion-anual-2025"
+ },
+ {
+  "id": "s0095",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Declaración anual 2024",
+  "people": [
+   "guadalupe-ibarra",
+   "brenda-salas"
+  ],
+  "shape": "forward",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2025-04-11",
+   "2025-04-14"
+  ],
+  "length": "short",
+  "attachments": "some",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 4 of 5 of the storyline \"Declaración anual 2024\": write what happens in this stretch (2025-04-11 to 2025-04-14), consistent with its summary."
+  ],
+  "storyline": "declaracion-anual-2025"
+ },
+ {
+  "id": "s0096",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: hiring a van",
+  "people": [
+   "kerry-simmonds"
+  ],
+  "shape": "ask-answer",
+  "outcome": "waiting on them",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2025-04-17",
+   "2025-04-20"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0097",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "storyline: Declaración anual 2024",
+  "people": [
+   "brenda-salas"
+  ],
+  "shape": "luis-starts",
+  "outcome": "cancelled",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-04-23",
+   "2025-04-28"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 5 of 5 of the storyline \"Declaración anual 2024\": write what happens in this stretch (2025-04-23 to 2025-04-28), consistent with its summary."
+  ],
+  "storyline": "declaracion-anual-2025"
+ },
+ {
+  "id": "s0098",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Pitching Tandem City",
+  "people": [
+   "chiara-russo",
+   "dan-whelan"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "resolved",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-06-20",
+   "2025-06-30"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 1 of 5 of the storyline \"Pitching Tandem City\": write what happens in this stretch (2025-06-20 to 2025-06-30), consistent with its summary."
+  ],
+  "storyline": "tandem-city-pitch"
+ },
+ {
+  "id": "s0099",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Pitching Tandem City",
+  "people": [
+   "gabriel-santos"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "rescheduled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2025-07-04",
+   "2025-07-14"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 2 of 5 of the storyline \"Pitching Tandem City\": write what happens in this stretch (2025-07-04 to 2025-07-14), consistent with its summary."
+  ],
+  "storyline": "tandem-city-pitch"
+ },
+ {
+  "id": "s0100",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Pitching Tandem City",
+  "people": [
+   "gabriel-santos",
+   "chiara-russo",
+   "dan-whelan",
+   "fiona-achterberg"
+  ],
+  "shape": "group",
+  "outcome": "ongoing",
+  "messages": [
+   5,
+   14
+  ],
+  "window": [
+   "2025-07-22",
+   "2025-07-29"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "must": [
+   "Part 3 of 5 of the storyline \"Pitching Tandem City\": write what happens in this stretch (2025-07-22 to 2025-07-29), consistent with its summary."
+  ],
+  "storyline": "tandem-city-pitch"
+ },
+ {
+  "id": "s0101",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Pitching Tandem City",
+  "people": [
+   "fiona-achterberg"
+  ],
+  "shape": "luis-starts",
+  "outcome": "waiting on them",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2025-08-07",
+   "2025-08-12"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Part 4 of 5 of the storyline \"Pitching Tandem City\": write what happens in this stretch (2025-08-07 to 2025-08-12), consistent with its summary."
+  ],
+  "storyline": "tandem-city-pitch"
+ },
+ {
+  "id": "s0102",
+  "account": "acme",
+  "lang": "en",
+  "kind": "storyline: Pitching Tandem City",
+  "people": [
+   "chiara-russo"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-08-26",
+   "2025-08-26"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": [
+   "Part 5 of 5 of the storyline \"Pitching Tandem City\": write what happens in this stretch (2025-08-26 to 2025-08-26), consistent with its summary."
+  ],
+  "storyline": "tandem-city-pitch"
+ },
+ {
+  "id": "s0103",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: a press request",
+  "people": [
+   "kate-sutherland"
+  ],
+  "shape": "unanswered",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2025-12-07",
+   "2025-12-07"
+  ],
+  "length": "mixed",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0104",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: recruiting for a usability test",
+  "people": [
+   "lauren-gage",
+   "chiara-russo"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "cancelled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-06-01",
+   "2026-06-07"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "client",
+   "work"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0105",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: moving a dentist appointment",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-07-19",
+   "2026-07-19"
+  ],
+  "length": "medium",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0106",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: IT's security training",
+  "people": [
+   "philippa-dunn"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "waiting on Luis",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-07-21",
+   "2026-07-23"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0107",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: retro notes",
+  "people": [
+   "rupert-ashdown"
+  ],
+  "shape": "luis-starts",
+  "outcome": "waiting on Luis",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-07-25",
+   "2026-07-26"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": []
+ },
+ {
+  "id": "s0108",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: hiring a van",
+  "people": [
+   "rita-valente"
+  ],
+  "shape": "ask-answer",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-08-08",
+   "2026-08-09"
+  ],
+  "length": "short",
+  "attachments": "forgotten",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0109",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a spare concert ticket",
+  "people": [
+   "harriet-lowe"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-09-30",
+   "2026-09-30"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0110",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a parking fine",
+  "people": [
+   "martin-hale"
+  ],
+  "shape": "fyi",
+  "outcome": "no reply needed",
+  "messages": [
+   1,
+   1
+  ],
+  "window": [
+   "2026-09-30",
+   "2026-09-30"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "lastFrom": "them",
+  "must": []
+ },
+ {
+  "id": "s0111",
+  "account": "freelance",
+  "lang": "es",
+  "kind": "free: una recomendación de un cliente",
+  "people": [
+   "mariana-gomez"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "cancelled",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-07",
+   "2026-10-13"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "client"
+  ],
+  "inbox": false,
+  "must": []
+ },
+ {
+  "id": "s0112",
+  "account": "acme",
+  "lang": "en",
+  "kind": "free: parental leave cover",
+  "people": [
+   "yasmin-farouk",
+   "sam-whitfield"
+  ],
+  "shape": "forward",
+  "outcome": "waiting on them",
+  "messages": [
+   2,
+   4
+  ],
+  "window": [
+   "2026-10-13",
+   "2026-10-15"
+  ],
+  "length": "medium",
+  "attachments": "some",
+  "tags": [
+   "work"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0113",
+  "account": "icloud",
+  "lang": "en",
+  "kind": "planted: awaiting",
+  "people": [
+   "joana-ferreira"
+  ],
+  "shape": "luis-starts",
+  "outcome": "no answer yet",
+  "messages": [
+   1,
+   3
+  ],
+  "window": [
+   "2026-10-09",
+   "2026-10-16"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Luis, in his own message sent 6 to 13 days before the anchor, asked someone outside his own addresses a clear question or for something; nobody has answered."
+  ],
+  "plant": "awaiting",
+  "lastFrom": "me"
+ },
+ {
+  "id": "s0114",
+  "account": "acme",
+  "lang": "en",
+  "kind": "planted: awaiting",
+  "people": [
+   "yasmin-farouk"
+  ],
+  "shape": "luis-starts",
+  "outcome": "no answer yet",
+  "messages": [
+   1,
+   3
+  ],
+  "window": [
+   "2026-10-09",
+   "2026-10-16"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "work"
+  ],
+  "inbox": false,
+  "firstFrom": "me",
+  "must": [
+   "Luis, in his own message sent 6 to 13 days before the anchor, asked someone outside his own addresses a clear question or for something; nobody has answered."
+  ],
+  "plant": "awaiting",
+  "lastFrom": "me"
+ },
+ {
+  "id": "s0115",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a wedding speech draft",
+  "people": [
+   "kerry-simmonds",
+   "josh-whitaker"
+  ],
+  "shape": "back-and-forth",
+  "outcome": "ongoing",
+  "messages": [
+   3,
+   8
+  ],
+  "window": [
+   "2026-10-20",
+   "2026-10-21"
+  ],
+  "length": "long",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": []
+ },
+ {
+  "id": "s0116",
+  "account": "personal",
+  "lang": "en",
+  "kind": "free: a sponsorship for a charity run",
+  "people": [
+   "hamish-fairweather"
+  ],
+  "shape": "ask-answer",
+  "outcome": "dropped (nobody followed up)",
+  "messages": [
+   2,
+   3
+  ],
+  "window": [
+   "2026-10-21",
+   "2026-10-21"
+  ],
+  "length": "mixed",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "must": [],
+  "unreadFrom": "2026-10-21T04:26:59Z"
+ },
+ {
+  "id": "s0117",
+  "account": "personal",
+  "lang": "en",
+  "kind": "planted: owner-promise",
+  "people": [
+   "hamish-fairweather"
+  ],
+  "shape": "luis-starts",
+  "outcome": "Luis owes what he promised",
+  "messages": [
+   1,
+   4
+  ],
+  "window": [
+   "2026-10-08",
+   "2026-10-22"
+  ],
+  "length": "short",
+  "attachments": "none",
+  "tags": [
+   "personal"
+  ],
+  "inbox": true,
+  "firstFrom": "me",
+  "must": [
+   "in the 14 days before the anchor Luis promised something with a time (I'll send it Friday, I'll call you tomorrow), in his own message; due between 7 days before the anchor and 10 days after; nothing in the thread shows it done."
+  ],
+  "plant": "owner-promise",
+  "lastFrom": "me"
+ }
+]

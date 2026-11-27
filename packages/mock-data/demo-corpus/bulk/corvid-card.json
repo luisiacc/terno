@@ -1,0 +1,49 @@
+[
+  {
+    "brand": "corvid-card",
+    "currency": "£",
+    "account": "personal",
+    "schedule": {
+      "every": "monthly",
+      "zone": "Europe/London",
+      "day": 18,
+      "at": "02:15"
+    },
+    "templates": [
+      {
+        "weight": 7,
+        "subject": "Your {month} Corvid Card statement",
+        "text": "New credit card statement\n\nWe’ve added your latest statement to the Corvid app.\n\nCard: Corvid credit card ending 0938\nStatement date: {date}\nStatement balance: {balance}\n\nOpen Statements to check your transactions, minimum payment and payment due date. If you pay by Direct Debit, leave it active and we'll collect the amount shown in the app.\n\nView your statement: https://corvidcard.example/account/statements\n\nYou're receiving this service email because you hold a Corvid credit card. Replies to this address are not monitored.\n\nCorvid Card Services Ltd, 6 Rook Place, Leeds LS1 4DL. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#fff;color:#412767;border-top:4px solid #412767;border-bottom:1px solid #e2e5e9;font-size:19px;font-weight:bold\">Corvid Card</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">New credit card statement</h1><p style=\"margin:0 0 16px\">We’ve added your latest statement to the Corvid app.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Card</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">Corvid credit card ending 0938</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Statement date</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{date}</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Statement balance</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{balance}</td></tr></table><p style=\"margin:0 0 16px\">Open Statements to check your transactions, minimum payment and payment due date. If you pay by Direct Debit, leave it active and we'll collect the amount shown in the app.</p><p style=\"margin:0\"><a style=\"color:#412767;text-decoration:underline\" href=\"https://corvidcard.example/account/statements\">View your statement</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">You're receiving this service email because you hold a Corvid credit card. Replies to this address are not monitored.<br>Corvid Card Services Ltd, 6 Rook Place, Leeds LS1 4DL. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "balance": {
+            "money": [
+              104,
+              1420
+            ]
+          }
+        }
+      },
+      {
+        "weight": 2,
+        "subject": "Your {month} statement and a payment reminder",
+        "text": "Your payment is due in five days\n\nYour latest statement is ready. There’s also a payment due on the 23rd for your previous statement.\n\nCard: Corvid credit card ending 0938\nNew statement date: {date}\n\nCheck Payments in the app for the amount still due on the previous statement. If you've recently scheduled a payment, it may take up to two working days to show.\n\nOpen card account: https://corvidcard.example/account/payments\n\nYou're receiving this service email because you hold a Corvid credit card. Replies to this address are not monitored.\n\nCorvid Card Services Ltd, 6 Rook Place, Leeds LS1 4DL. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#fff;color:#412767;border-top:4px solid #412767;border-bottom:1px solid #e2e5e9;font-size:19px;font-weight:bold\">Corvid Card</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Your payment is due in five days</h1><p style=\"margin:0 0 16px\">Your latest statement is ready. There’s also a payment due on the 23rd for your previous statement.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Card</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">Corvid credit card ending 0938</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">New statement date</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">{date}</td></tr></table><p style=\"margin:0 0 16px\">Check Payments in the app for the amount still due on the previous statement. If you've recently scheduled a payment, it may take up to two working days to show.</p><p style=\"margin:0\"><a style=\"color:#412767;text-decoration:underline\" href=\"https://corvidcard.example/account/payments\">Open card account</a></p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">You're receiving this service email because you hold a Corvid credit card. Replies to this address are not monitored.<br>Corvid Card Services Ltd, 6 Rook Place, Leeds LS1 4DL. Registered in England and Wales.</td></tr></table>"
+      },
+      {
+        "weight": 1,
+        "subject": "Review recent activity on your Corvid Card",
+        "text": "Please check your recent transactions\n\nWe've flagged a transaction for review. Open the Corvid app to tell us whether you recognise it.\n\nCard: Corvid credit card ending 0938\nAlert reference: CV-{ref}\n\nYou’ll see the review at the top of your card activity. Your latest statement is also available under Statements.\n\nYou're receiving this service email because you hold a Corvid credit card. Replies to this address are not monitored.\n\nCorvid Card Services Ltd, 6 Rook Place, Leeds LS1 4DL. Registered in England and Wales.",
+        "html": "<table role=\"presentation\" lang=\"en\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px;margin:auto;background:#fff;color:#1f242a;font:15px/1.5 Arial,sans-serif\"><tr><td style=\"padding:18px 24px;background:#fff;color:#412767;border-top:4px solid #412767;border-bottom:1px solid #e2e5e9;font-size:19px;font-weight:bold\">Corvid Card</td></tr><tr><td style=\"padding:24px\"><h1 style=\"margin:0 0 16px;font-size:23px;line-height:1.2\">Please check your recent transactions</h1><p style=\"margin:0 0 16px\">We've flagged a transaction for review. Open the Corvid app to tell us whether you recognise it.</p><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin:0 0 18px;border-collapse:collapse;font:inherit\"><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Card</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">Corvid credit card ending 0938</td></tr><tr><th scope=\"row\" style=\"text-align:left;font-weight:normal;color:#4c5561;padding:9px 14px 9px 0;border-bottom:1px solid #e2e5e9\">Alert reference</th><td style=\"padding:9px 0;border-bottom:1px solid #e2e5e9\">CV-{ref}</td></tr></table><p style=\"margin:0 0 16px\">You’ll see the review at the top of your card activity. Your latest statement is also available under Statements.</p></td></tr><tr><td style=\"padding:16px 24px;border-top:1px solid #e2e5e9;background:#f7f8fa;font-size:12px;color:#4c5561\">You're receiving this service email because you hold a Corvid credit card. Replies to this address are not monitored.<br>Corvid Card Services Ltd, 6 Rook Place, Leeds LS1 4DL. Registered in England and Wales.</td></tr></table>",
+        "slots": {
+          "ref": {
+            "int": [
+              10000000,
+              99999999
+            ]
+          }
+        }
+      }
+    ]
+  }
+]
