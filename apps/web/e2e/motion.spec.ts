@@ -680,19 +680,24 @@ test.describe("plan 281: People's Done morphs the page and the list together", (
     await expect(items).toHaveCount(3);
     // her row in Open, in view: the page's change and the row's are one transition
     await page.getByTestId("people-search").fill("");
-    await expect(page.getByTestId("person-row").filter({ hasText: "Ana Ruiz" }).first()).toBeVisible();
+    const anaRow = page.getByTestId("person-row").filter({ hasText: "Ana Ruiz" }).first();
+    await anaRow.scrollIntoViewIfNeeded();
+    await expect(anaRow).toBeInViewport({ ratio: 1 });
+    const anaName = await anaRow.getAttribute("data-morph");
     const vt = `() => ({ vt: document.getAnimations().map((a) => a.effect?.pseudoElement ?? "").filter((p) => p.includes("view-transition")) })`;
     await scenario("Done: the page's items glide, in one transition of at most 100 ms", async () => {
       await startSampler(page);
       await recordFrames(page, vt);
+      const doneName = await items.first().getAttribute("data-morph");
       await items.first().hover();
       await items.first().getByTestId("person-item-done").click();
       await expect(items).toHaveCount(2);
       await frames(page);
       await frames(page);
       const seen = (await framesSeen<{ vt: string[] }>(page)).flatMap((f) => f.vt);
-      expect(seen.some((p) => p.includes("people-i")), seen.join(",")).toBe(true);
-      expect(seen.some((p) => p.includes("people-p")), seen.join(",")).toBe(true);
+      // the item finished and Ana's own row, by name (another's row gliding isn't hers)
+      expect(seen.some((p) => p.includes(`(${doneName})`)), seen.join(",")).toBe(true);
+      expect(seen.some((p) => p.includes(`(${anaName})`)), seen.join(",")).toBe(true);
       const r = await sampled(page);
       expect(r.max, r.names.join(",")).toBeLessThanOrEqual(100);
     });
