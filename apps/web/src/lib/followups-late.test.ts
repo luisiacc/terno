@@ -45,6 +45,8 @@ describe("plan 285: what the sidebar counts is what Follow-ups dots", () => {
   it("the list's own key says it's Follow-ups, never a search for the word", () => {
     expect(followupsOfKey(JSON.stringify(["all", null, null, null, null, "followups", ""]))).toBe(true);
     expect(followupsOfKey(JSON.stringify(["inbox", null, null, null, null, "followups"]))).toBe(false);
+    // (the Codex code review: an IMAP folder named so, in the flag's place)
+    expect(followupsOfKey(JSON.stringify(["all", 3, null, null, null, "followups", ""]))).toBe(false);
     expect(followupsOfKey(JSON.stringify(["inbox", null, null, null, null, ""]))).toBe(false);
     expect(followupsOfKey("")).toBe(false);
   });

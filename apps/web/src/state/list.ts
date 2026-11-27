@@ -140,8 +140,10 @@ export function searchOfKey(key: string): string {
 /** Plan 285: whether a list's key is the Follow-ups list (what the rows on screen are, not where the app is going). */
 export function followupsOfKey(key: string): boolean {
   if (!key) return false;
-  // (the query is the key's last element: a search for "followups" isn't the list)
-  return (JSON.parse(key) as unknown[]).slice(0, -1).includes("followups");
+  const parts = JSON.parse(key) as unknown[];
+  // (the query is the key's last element: a search for "followups" isn't the list; nor is a folder of that name, in its
+  // flag's place: a folder is an account's, Follow-ups never is, navigate)
+  return parts[1] === null && parts.slice(0, -1).includes("followups");
 }
 
 /** plan 108: a search while focused on an account: only that account's mail */

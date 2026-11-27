@@ -65,3 +65,10 @@ query, no backend change.
    agree at rest, as the Inbox's do. The number updates from the snapshot and the rows from their reload, so they agree
    once the list settles.
 6. With no preview line (the owner's design) unread shows by the sender's weight and the date's ink, not the subject's.
+
+## What the Codex code review changed
+
+- An IMAP folder named `followups` sits in the key where the Follow-ups flag does: `followupsOfKey` also asks for no
+  account (a folder is always an account's; Follow-ups never is, `navigate`). Unit test for the folder's key.
+- Not taken: an e2e that holds the Inbox's answer to see the outgoing Follow-ups rows keep their dots. The gate reads the
+  rows' own key (`itemsKey`), as sender icons do, and the e2e fixtures have no way to hold one RPC's answer.
