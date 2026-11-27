@@ -264,8 +264,6 @@ test("unsaved recovery holds a packaged update restart and a deliberate copy kee
   expect((await updates<{ status: string }>("check")).status).toBe("available");
   await updates("download");
   await expect.poll(async () => (await state()).status, { timeout: 180_000 }).toBe("ready");
-  // plan 207: the demo has AI, so the first-screen question is up: Esc keeps the Inbox
-  await page.getByTestId("first-screen-question").waitFor({ timeout: 10_000 }).then(() => page.keyboard.press("Escape"), () => {});
   await page.getByRole("button", { name: "Compose", exact: true }).click();
   const body = page.getByTestId("compose-body"); await body.fill("packaged exact work");
   const db = new DatabaseSync(join(profile(), "terno.db"));
@@ -303,8 +301,6 @@ test("saved renderer ACK holds editing throughout a real active-send drain, then
     await holdShutdownRequest();
     await updates("check"); await updates("download");
     await expect.poll(async () => (await state()).status, { timeout: 180_000 }).toBe("ready");
-    // plan 207: the demo has AI, so the first-screen question is up: Esc keeps the Inbox
-    await page.getByTestId("first-screen-question").waitFor({ timeout: 10_000 }).then(() => page.keyboard.press("Escape"), () => {});
     await page.getByTestId("thread-row").first().click(); await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); await page.keyboard.press("r");
     const body = page.getByTestId("compose-body"); await body.fill("synthetic active send"); await body.press("Meta+Enter");
     await expect.poll(() => received, { timeout: 20_000 }).toBe(true);
@@ -337,8 +333,6 @@ test("unexpected backend exit after a saved ACK restores editing without install
     stage({ tamper: false });
     await launch({ TERNO_DEMO: "1", TERNO_TEST_LANGUAGES: "en-US", TERNO_TEST_SMTP_PORT: String((smtp.server.address() as AddressInfo).port) });
     await updates("check"); await updates("download"); await expect.poll(async () => (await state()).status, { timeout: 180_000 }).toBe("ready");
-    // plan 207: the demo has AI, so the first-screen question is up: Esc keeps the Inbox
-    await page.getByTestId("first-screen-question").waitFor({ timeout: 10_000 }).then(() => page.keyboard.press("Escape"), () => {});
     await page.getByTestId("thread-row").first().click(); await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); await page.keyboard.press("r");
     const body = page.getByTestId("compose-body"); await body.fill("synthetic send awaiting ACK"); await body.press("Meta+Enter");
     await expect.poll(() => received, { timeout: 20_000 }).toBe(true);
@@ -372,8 +366,6 @@ test("an update downloads, Squirrel swaps the bundle and relaunches it, the prof
   const threads = await page.locator("[data-testid=thread-row]").count();
   expect(threads).toBeGreaterThan(5);
   expect((await updates<{ status: string }>("check")).status).toBe("available");
-  // plan 207: the demo has AI, so the first-screen question is up: Esc keeps the Inbox
-  await page.getByTestId("first-screen-question").waitFor({ timeout: 10_000 }).then(() => page.keyboard.press("Escape"), () => {});
   // manual mode: the pill offers it, and downloading is the user's step
   await expect(page.getByTestId("update-pill")).toHaveText("Update 0.1.1");
   await page.getByTestId("update-pill").click();
