@@ -419,6 +419,19 @@ describe("an Outlook account signs in again (plan 259)", () => {
     expect(ms.graphRequests.length).toBe(asked);
   });
 
+  it("plan 293 (CASA 2.2.1): Microsoft's invalid_grant deletes the refresh token and asks for sign-in; MFA or consent asks for sign-in and keeps it", async () => {
+    for (const [error, kept] of [["invalid_grant", false], ["interaction_required", true]] as const) {
+      const { ms, backend, client } = await setup();
+      const account = await client.call("accounts.connectMicrosoft", {});
+      const token = await backend.getSecret(`account:${account.id}:refreshToken`);
+      ms.tokenFailure = { status: 400, body: { error, error_description: "AADSTS70008: The refresh token has expired" } };
+      await backend.syncAccount(account.id);
+      const state = (await client.call("app.bootstrap", {})).accounts.find((a) => a.id === account.id)!.syncState;
+      expect(state, error).toMatchObject({ authRequired: true, lastErrorI18n: { key: "errors.microsoft.revoked" } });
+      expect(await backend.getSecret(`account:${account.id}:refreshToken`), error).toBe(kept ? token : null);
+    }
+  });
+
   it("removing it deletes its refresh token here; there is no grant at Microsoft to revoke", async () => {
     const { ms, backend, client } = await setup();
     const account = await client.call("accounts.connectMicrosoft", {});

@@ -417,14 +417,18 @@ describe("plan 125: Remove account withdraws Terno's Google grant", () => {
     const t = await setup(false, { revokeGoogle });
     t.answer({ ...identity, refreshToken: "synthetic-refresh" });
     const account = await t.client.call("accounts.connectGmail", {});
+    expect(await t.backend.getSecret(`account:${account.id}:refreshToken`)).toBe("synthetic-refresh");
     revokeGoogle.mockImplementation(async () => {
-      // the local removal comes first: by the time Google is asked, the account is already gone
+      // the local removal comes first: by the time Google is asked, the account and (plan 293) every stored
+      // credential of it are already gone
       expect((await t.client.call("app.bootstrap", {})).accounts).toEqual([]);
+      expect((await t.backend.store.secrets.names()).filter((n) => n.startsWith(`account:${account.id}:`))).toEqual([]);
       return "revoked";
     });
     expect(await t.client.call("accounts.remove", { id: account.id })).toEqual({ ok: true, google: "revoked" });
     expect(revokeGoogle).toHaveBeenCalledTimes(1);
     expect(revokeGoogle.mock.calls[0]![0]).toBe("synthetic-refresh");
+    expect(await t.backend.getSecret(`account:${account.id}:refreshToken`)).toBeNull();
   });
 
   it("a failed revoke still removes the account, and says so", async () => {

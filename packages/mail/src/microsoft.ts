@@ -189,7 +189,9 @@ export function exchangeMicrosoftRefresh(options: OAuthRefreshOptions): Promise<
   return exchangeOAuthRefresh(options, {
     request: { endpoint: "microsoft-token", purpose: "refresh" },
     params: { scope: MICROSOFT_SCOPES.join(" ") },
-    refused: (status, body, evidence) => status === 400 && REFUSED_GRANTS.has(body.error as string) ? new ProviderAuthError(L("errors.microsoft.revoked"), evidence) : null,
+    // plan 293: only invalid_grant says the refresh token itself is dead (expired or revoked); MFA or consent asks the
+    // user to act on a grant that may still be good, so that one is kept
+    refused: (status, body, evidence) => status === 400 && REFUSED_GRANTS.has(body.error as string) ? new ProviderAuthError(L("errors.microsoft.revoked"), evidence, { grantRejected: body.error === "invalid_grant" }) : null,
     scopes: (granted) => microsoftMailGranted(granted) ? null : new ProviderAuthError(L("errors.microsoft.permissionRequired")),
     invalid,
     failed: (status) => L("errors.microsoft.refreshFailed", { status }),

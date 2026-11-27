@@ -1375,14 +1375,20 @@ export class BackendCore {
    * `component`: who asks, for the access record (plan 293).
    */
   async getSecret(name: string, component: SecretComponent = "other"): Promise<string | null> {
-    const blob = await this.store.secrets.get(name);
-    if (!blob) {
+    return (await this.openStored(name, component))?.plain ?? null;
+  }
+
+  /** getSecret's read, with the exact blob it opened (plan 293: what a refused grant's delete compares against). */
+  private async openStored(name: string, component: SecretComponent): Promise<{ plain: string; blob: Uint8Array } | null> {
+    const stored = await this.store.secrets.get(name);
+    if (!stored) {
       this.secrets.missing(name, component);
       return null;
     }
+    const blob = Uint8Array.from(stored);
     if ((await readKeychainState(this.store))?.pending[name] === blobFingerprint(blob)) throw new SecretUnreadableError(name, true);
     try {
-      return await this.secrets.open(name, blob, component);
+      return { plain: await this.secrets.open(name, blob, component), blob };
     } catch {
       // the access record holds the failure's category; this line says only which operation
       this.log("warn", "saved secret couldn't be opened", { op: "decrypt" });
@@ -2033,6 +2039,19 @@ export class BackendCore {
     return pending;
   }
 
+  /**
+   * Plan 293 (CASA 2.2.1): the token endpoint said this account's grant is gone (`invalid_grant`: revoked, expired, a
+   * password change). The account already asks for sign-in (the refusal, reported first); now the refresh token that
+   * was refused is deleted, exactly those bytes (a sign-in that saved another meanwhile is never touched) and only while
+   * this provider is still the account's, and any access token cached for it goes. A failed delete changes nothing
+   * else: it's recorded, and the next sign-in replaces the token.
+   */
+  private async discardRefusedGrant(life: AccountLifetime, blob: Uint8Array | null): Promise<void> {
+    if (!blob || !this.current(life)) return;
+    await this.accountWrite(life, () => this.secrets.remove(`account:${life.id}:refreshToken`, blob, "refresh")).catch(() => {});
+    this.options.providers.gmailTokens?.forget?.(life.id);
+  }
+
   private async replaceProviderSecret(life: AccountLifetime, stamp: { id: number; email: string; createdAt: number }, key: string, expected: string, next: string): Promise<boolean> {
     const name = `account:${life.id}:${key}`;
     let unreadable: ProviderAuthError | undefined;
@@ -2150,11 +2169,15 @@ export class BackendCore {
       }) : undefined;
       if (!this.current(life)) { requests?.close(); return null; }
       if (requests) this.requests.set(accountId, requests);
+      // plan 293: the blob of the refresh token this provider last opened, the one an exchange used
+      let grantBlob: Uint8Array | null = null;
       const created = this.options.providers.create({
         yield: () => this.platform.yield(),
         requests,
-        tokenResult: (generation, error) => {
-          if (error instanceof ProviderAuthError) this.reportRefusal(error, status.refuse({ ...authority, generation }, error));
+        tokenResult: async (generation, error) => {
+          if (!(error instanceof ProviderAuthError)) return;
+          this.reportRefusal(error, status.refuse({ ...authority, generation }, error));
+          if (error.grantRejected) await this.discardRefusedGrant(life, grantBlob);
         },
         // plan 184: work no caller sees fail (push, a Sent copy): the credentials
         // now (a sign-in that replaced this provider's ended its lifetime; a renewal that kept it, they're its own)
@@ -2169,10 +2192,15 @@ export class BackendCore {
           retainCompleted: (bytes) => { this.assertCurrent(life); return this.incoming.retainCompleted(bytes); },
         },
         incomingProcessor: this.processing(life),
-        getSecret: (name) => this.accountRead(life, () =>
-          this.getSecret(`account:${accountId}:${name}`, name === "refreshToken" ? "refresh" : "mailLogin").catch((error: unknown) => {
+        getSecret: (name) => this.accountRead(life, async () => {
+          try {
+            const opened = await this.openStored(`account:${accountId}:${name}`, name === "refreshToken" ? "refresh" : "mailLogin");
+            if (name === "refreshToken") grantBlob = opened?.blob ?? null;
+            return opened?.plain ?? null;
+          } catch (error) {
             throw error instanceof SecretUnreadableError ? new ProviderAuthError(messageOf(error)) : error;
-          })),
+          }
+        }),
         setSecret: async (name, value) => {
           this.assertCurrent(life);
           const component = name === "refreshToken" ? "refresh" : "mailLogin";

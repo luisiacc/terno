@@ -131,9 +131,16 @@ export class ProviderIdentityError extends ProviderError {
  * swallows it reports it through `ProviderContext.refused`.
  */
 export class ProviderAuthError extends ProviderError {
-  constructor(message: string | Localized, httpResponse?: HttpResponseEvidence) {
+  /**
+   * Plan 293 (CASA 2.2.1): the token endpoint said the grant itself is gone (OAuth's `invalid_grant`: revoked, expired,
+   * a password change), so the refresh token that was refused is dead and goes. Never set for anything transient, nor
+   * for a refusal that asks the user to act on a grant that may still be good (Microsoft's interaction_required).
+   */
+  readonly grantRejected: boolean;
+  constructor(message: string | Localized, httpResponse?: HttpResponseEvidence, o: { grantRejected?: boolean } = {}) {
     super(message, false, false, false, httpResponse);
     this.name = "ProviderAuthError";
+    this.grantRejected = o.grantRejected === true;
   }
 
   override get expected(): boolean {

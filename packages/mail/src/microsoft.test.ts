@@ -217,6 +217,20 @@ describe("Microsoft's refresh session (plan 259)", () => {
       const error = await session.get().catch((e: unknown) => e);
       expect(error).toBeInstanceOf(ProviderAuthError);
       expect(key(error)).toBe("errors.microsoft.revoked");
+      // plan 293: invalid_grant says the refresh token is dead (it's deleted)
+      expect(error).toMatchObject({ grantRejected: true });
+    } finally { session.close(); }
+  });
+
+  it("plan 293: MFA or consent a tenant now asks for means signing in again, but the grant isn't called dead (its token is kept)", async () => {
+    const ms = await microsoft();
+    const { ctx } = context(ms, "refresh-1");
+    ms.tokenFailure = { status: 400, body: { error: "interaction_required", error_description: "AADSTS50076: multi-factor authentication required" } };
+    const session = createMicrosoftSession(ctx, { endpoints: ms.endpoints() });
+    try {
+      const error = await session.get().catch((e: unknown) => e);
+      expect(key(error)).toBe("errors.microsoft.revoked");
+      expect(error).toMatchObject({ grantRejected: false });
     } finally { session.close(); }
   });
 

@@ -108,6 +108,8 @@ export function createOAuthSession(ctx: ProviderContext, options: OAuthSessionOp
         return access.accessToken;
       } catch (error) {
         assertOpen();
+        // plan 293 (CASA 2.2.1): a dead grant leaves no access token behind; the context deletes the refresh token
+        if (error instanceof ProviderAuthError && error.grantRejected) access = null;
         if (error instanceof ProviderAuthError) await ctx.tokenResult?.(generation, error);
         if (error instanceof ProviderError || error instanceof RequestNotDispatchedError) throw error;
         if (error instanceof Error && error.name === "AbortError") {

@@ -8,6 +8,7 @@ import { createServer, type IncomingMessage as Req, type ServerResponse } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { encodeText } from "@terno/core";
+import { installDiag, setDiagSink, type DiagEntry } from "@terno/core/diag";
 import { createMemoryTransportPair, RpcClient } from "@terno/core/rpc";
 import { createGmailTokenBroker, createRegistry, gmailReconnect, type ProviderRegistry } from "@terno/mail";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -47,6 +48,8 @@ class FakeGoogle {
   historyId = 1000;
   challenges = new Map<string, string>(); // code → code_challenge
   refreshCalls = 0;
+  /** plan 293: while set, every refresh answers this status (with invalid_grant's body, which only a 400 means) */
+  refreshStatus: number | null = null;
   validTokens = new Set<string>();
   calls: { method: string; path: string; query: URLSearchParams; body: unknown }[] = [];
   rateLimitNext = 0;
@@ -135,6 +138,7 @@ class FakeGoogle {
       if (p.get("grant_type") === "refresh_token") {
         this.refreshCalls++;
         await new Promise((r) => setTimeout(r, 30)); // make concurrent refreshes overlap
+        if (this.refreshStatus !== null) return json(this.refreshStatus, { error: "invalid_grant" });
         if (!this.refreshTokens.has(p.get("refresh_token") ?? "")) return json(400, { error: "invalid_grant" });
         return json(200, { access_token: this.issue(), expires_in: 3600, token_type: "Bearer" });
       }
@@ -869,6 +873,67 @@ describe("Gmail on the web (Google's token model, no refresh token)", () => {
   });
 });
 
+describe("plan 293 (CASA 2.2.1): a grant Google says is gone deletes its refresh token", () => {
+  async function connected() {
+    const ctx = await setup();
+    seed(ctx.google);
+    const account = await ctx.client.call("accounts.connectGmail", {});
+    await ctx.backend.syncAccount(account.id);
+    const state = async () => (await ctx.client.call("app.bootstrap", {})).accounts[0]!.syncState;
+    const secret = () => ctx.backend.getSecret(`account:${account.id}:refreshToken`);
+    const entries: DiagEntry[] = [];
+    installDiag({ proc: "backend", version: "t", build: "t", channel: "dev" });
+    setDiagSink({ write: (e) => void entries.push(e), capture: () => {} });
+    return { ...ctx, account, state, secret, entries };
+  }
+
+  it("invalid_grant (revoked at Google, expired, a password change): the refused refresh token is deleted, the account asks for sign-in and its work waits; signing in again stores a new one", async () => {
+    const { google, backend, client, account, state, secret, entries } = await connected();
+    expect(await secret()).toBe("refresh-1");
+    // the user revokes Terno at myaccount.google.com (or the grant expires): Google refuses the token for good
+    google.refreshTokens.delete("refresh-1");
+    google.expireTokens();
+    await backend.syncAccount(account.id);
+    expect(await secret()).toBeNull();
+    expect(await backend.store.secrets.has(`account:${account.id}:refreshToken`)).toBe(false);
+    expect(await state()).toMatchObject({ status: "error", authRequired: true, lastErrorI18n: { key: "errors.gmail.revoked" } });
+    expect(entries.filter((e) => e.code === "secret.access" && e.fields?.secretOp === "delete").map((e) => e.fields)).toEqual([
+      { secretOp: "delete", secretKind: "refreshToken", accountId: account.id, component: "refresh", secretOutcome: "ok" },
+    ]);
+    // nothing is sent with it again: the account waits for a sign-in, its work is held
+    const calls = google.refreshCalls;
+    const thread = sqlDb(backend.store).get<{ thread_id: number }>("SELECT thread_id FROM messages WHERE subject = 'Viaje a Oaxaca'")!.thread_id;
+    await client.call("threads.act", { threadIds: [thread], action: "star" });
+    await backend.runWorker();
+    await backend.syncAccount(account.id);
+    expect(google.refreshCalls).toBe(calls);
+    expect(sqlDb(backend.store).get("SELECT state FROM ops WHERE kind = 'star'")).toEqual({ state: "queued" });
+    // signing in again stores the new grant and resumes the work
+    await client.call("accounts.reconnect", { id: account.id });
+    expect(google.refreshTokens.has((await secret())!)).toBe(true);
+    expect(await state()).toMatchObject({ authRequired: false });
+    await backend.runWorker();
+    expect(sqlDb(backend.store).get("SELECT state FROM ops WHERE kind = 'star'")).toEqual({ state: "succeeded" });
+  });
+
+  it.each([503, 500, 429, 401])("a transient or unproven answer (%i, even with invalid_grant's body) keeps the token", async (status) => {
+    const { google, backend, account, secret } = await connected();
+    google.refreshStatus = status;
+    google.expireTokens();
+    await backend.syncAccount(account.id);
+    expect(await secret()).toBe("refresh-1");
+    google.refreshStatus = null;
+  });
+
+  it("a network failure keeps the token", async () => {
+    const { google, backend, account, secret } = await connected();
+    google.expireTokens();
+    await google.stop();
+    await backend.syncAccount(account.id);
+    expect(await secret()).toBe("refresh-1");
+  });
+});
+
 describe("plan 25: signing a Gmail account in again (desktop)", () => {
   async function expired(behaviour?: Parameters<typeof browser>[1]) {
     const ctx = await setup(behaviour);
@@ -901,7 +966,8 @@ describe("plan 25: signing a Gmail account in again (desktop)", () => {
     await expect(client.call("accounts.reconnect", { id: account.id })).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringMatching(/someone-else@gmail.com, not luis@gmail.com/) });
     expect(google.loginHints.at(-1)).toBe("luis@gmail.com");
     expect(await state()).toMatchObject({ authRequired: true });
-    expect(await secret()).toBe("expired");
+    // plan 293: the refused token was deleted when Google refused it; a sign-in as someone else stores nothing
+    expect(await secret()).toBeNull();
 
     google.email = "luis@gmail.com";
     await client.call("accounts.reconnect", { id: account.id });
@@ -923,7 +989,7 @@ describe("plan 25: signing a Gmail account in again (desktop)", () => {
     await expect.poll(() => google.consents.length).toBe(1);
     // the user finishes the first page anyway: nobody listens there any more
     await stale.approve();
-    expect(await secret()).toBe("expired");
+    expect(await secret()).toBeNull();
     await google.consents.shift()!.approve();
     await second;
     expect(await secret()).toBe("refresh-2");

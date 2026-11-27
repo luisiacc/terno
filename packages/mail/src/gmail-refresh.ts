@@ -20,7 +20,8 @@ export async function exchangeGmailRefresh(options: {
   const { google, ...rest } = options;
   return exchangeOAuthRefresh({ ...rest, requests: google }, {
     request: { endpoint: "oauth-token", purpose: "refresh" },
-    refused: (status, body, evidence) => status === 400 && body.error === "invalid_grant" ? new ProviderAuthError(L("errors.gmail.revoked"), evidence) : null,
+    // plan 293: Google's "the refresh token has expired or been revoked" (RFC 6749 §5.2): that token is dead
+    refused: (status, body, evidence) => status === 400 && body.error === "invalid_grant" ? new ProviderAuthError(L("errors.gmail.revoked"), evidence, { grantRejected: true }) : null,
     // plan 184: a grant without mail (granular consent) is renewed by signing in again, not a bad response
     scopes: (granted) => !granted.includes("https://www.googleapis.com/auth/gmail.modify") && !granted.includes("https://mail.google.com/") ? new ProviderAuthError(L("errors.gmail.permissionRequired")) : null,
     invalid: () => new ProviderError(L("errors.gmail.invalidResponse"), false),

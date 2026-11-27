@@ -197,7 +197,8 @@ describe("durable Gmail refresh", () => {
   it.each([400, 401, 403, 404, 429, 503])("only actual 400 invalid_grant means auth refusal (%i)", async (status) => {
     const h = harness(() => json({ error: "invalid_grant", error_description: "SECRET_TOKEN synthetic@example.test PRIVATE_SUBJECT" }, status));
     const error = await h.provider.verify().catch((e: unknown) => e);
-    if (status === 400) expect(error).toBeInstanceOf(ProviderAuthError);
+    // plan 293: only that one says the grant itself is dead (its refresh token is deleted)
+    if (status === 400) expect(error).toMatchObject({ name: "ProviderAuthError", grantRejected: true });
     else {
       expect(error).not.toBeInstanceOf(ProviderAuthError);
       expect(error).toMatchObject({ status, retryable: status === 429 || status >= 500, network: false });

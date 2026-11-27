@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { L } from "@terno/i18n";
 import { openLoopback, pkce } from "./oauth-loopback";
 import { createOAuthSession } from "./oauth-session";
@@ -95,6 +95,37 @@ describe("the shared refresh session (plan 259)", () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]!.clientSecret).toBeNull();
     expect(durable).toBe("refresh-2");
+    session.close();
+  });
+
+  it("plan 293 (CASA 2.2.1): a dead grant (invalid_grant) keeps no access token, and the context hears it to delete the refresh token", async () => {
+    let now = Date.now();
+    const answers: (() => Promise<{ accessToken: string; refreshToken: string; expiresAt: number; refreshAt: number }>)[] = [
+      async () => ({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: now + 3_600_000, refreshAt: now + 1 }),
+      async () => { throw new ProviderAuthError(L("errors.gmail.revoked"), undefined, { grantRejected: true }); },
+      async () => { throw new ProviderError(L("errors.gmail.refreshFailed", { status: 503 }), true); },
+    ];
+    const reported: ProviderAuthError[] = [];
+    const exchanged: string[] = [];
+    const ctx = {
+      getSecret: async () => "refresh-1",
+      replaceSecret: async () => true,
+      oauthClient: async () => ({ clientId: "client", clientSecret: null }),
+      tokenResult: async (_generation: number, error?: ProviderAuthError) => void (error && reported.push(error)),
+    } as unknown as ProviderContext;
+    const session = createOAuthSession(ctx, { token: { endpoint: "oauth-token", purpose: "refresh" }, messages: words, exchange: async (input) => (exchanged.push(input.refreshToken), answers.shift()!()) });
+    expect(await session.get()).toBe("access-1");
+    // the access token is due: the refresh is refused for good
+    now += 10;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    await expect(session.get()).rejects.toMatchObject({ grantRejected: true });
+    expect(reported).toEqual([expect.objectContaining({ grantRejected: true })]);
+    // nothing cached is handed out after it: the next demand goes back to the token endpoint
+    await expect(session.get()).rejects.toMatchObject({ retryable: true });
+    expect(exchanged).toEqual(["refresh-1", "refresh-1", "refresh-1"]);
+    // a transient failure is not a dead grant: nothing more reported
+    expect(reported).toHaveLength(1);
+    vi.restoreAllMocks();
     session.close();
   });
 
