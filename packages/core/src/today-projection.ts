@@ -1,4 +1,4 @@
-import { ANSWERED_KINDS, datedGroup, datedGroupAt, dayKeyOf, displayBucket, promiseBroken, promiseDay, promiseDeferred, promiseGroupAt, shownEarly, todayCounted, type BrokenPromise, type DatedRow, type TaskPlace, type TodayGroupKind } from "./dated";
+import { ANSWERED_KINDS, datedGroup, datedGroupAt, dayKeyOf, displayBucket, promiseActFrom, promiseBroken, promiseDay, promiseDeferred, promiseGroupAt, shownEarly, showsFrom, todayCounted, type BrokenPromise, type DatedRow, type TaskPlace, type TodayGroupKind } from "./dated";
 import type { FollowupRow } from "./followups";
 import type { PartOfDay } from "./part-of-day";
 import { addressKey } from "./people";
@@ -443,6 +443,15 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
     // round 15's second morning: put off with Later, it says when it's back, never "since …" or its own day
     if (!o.count && at.group === "comingUp" && lead.row.deferredUntil != null && lead.row.deferredUntil > f.now) why.back = lead.row.deferredUntil;
     const came = lead.source === "dated" ? lead.row.arrivedAt : lead.row.sentAt;
+    if (!o.count) {
+      // plan 281 (owner, 2026-11-26): what People reads of this placement, one source for both views. Behind Coming up: until
+      // it shows (its time to act, or Later's back if that's later; Codex's critique: never its heading's day, which is its
+      // deadline). Shown now: when its time to act came, if after it came, so it's open since then, never since the mail
+      // (never ahead either: a broken promise shows at once though its new day's lead is weeks off)
+      const from = lead.source === "dated" ? showsFrom(lead.row) : promiseActFrom(lead.row, f.now);
+      if (at.group === "comingUp") why.ahead = Math.max(why.back ?? 0, from);
+      else if (from > came && from <= f.now) why.from = from;
+    }
     // (fields set as they apply, not spread: this runs over the 1,000-item bound on every read)
     const row: Placed = { id: item.id, threadId: lead.row.threadId, group: at.group, day: at.day, why, dueAt: why.dueAt ?? lead.row.dueAt, came };
     if (seen?.first) row.first = true;
@@ -483,7 +492,7 @@ export function projectRows(items: readonly PlacedItem[], f: Pick<ProjectionFact
     const row: Placed = deferred
       ? (() => {
           const day = dayKeyOf(w.deferredUntil!);
-          why.back = w.deferredUntil!;
+          why.back = why.ahead = w.deferredUntil!;
           return { id: waitingRowId(w.id), threadId: w.id, group: "comingUp" as const, day, bucket: bucketOf(day), why, waiting: true, dueAt: w.deferredUntil!, came: w.lastDate };
         })()
       : { id: waitingRowId(w.id), threadId: w.id, group: "today", day: null, why, waiting: true, part: "waiting", dueAt: w.lastDate, came: w.lastDate };

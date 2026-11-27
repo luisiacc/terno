@@ -1,4 +1,4 @@
-import { isPersonRequest, personItemBack, personItemId, personItemThread, type PersonItem } from "@terno/core";
+import { isPersonRequest, personItemAhead, personItemBack, personItemId, personItemThread, type PersonItem } from "@terno/core";
 import { t } from "@terno/i18n";
 import { Button } from "@terno/ui/components/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from "@terno/ui/components/dropdown-menu";
@@ -78,8 +78,8 @@ export function waited(since: number, now = Date.now()): { text: string; said: s
 
 /**
  * When, in the list's words: What matters' own column for its items (its tone, Missed's red); a reply owed, when you'll
- * follow up (its Later moves that, as in Follow-ups), else when you asked; one put off with Later, when it's back
- * (`later`: drawn quieter).
+ * follow up (its Later moves that, as in Follow-ups), else when you asked; one put off with Later, when it's back. `later`:
+ * not open yet (put off, or behind What matters' Coming up: owner, 2026-11-26), drawn quieter, under the page's Later.
  */
 export function itemWhen(item: PersonItem, now = Date.now()): { text: string | null; late: boolean; later: boolean } {
   const back = personItemBack(item, now);
@@ -87,7 +87,7 @@ export function itemWhen(item: PersonItem, now = Date.now()): { text: string | n
   if (item.kind === "awaiting")
     return { text: item.row.dueAt > now ? t("people.followUpOn", { when: listDate(item.row.dueAt, now) }) : t("people.askedOn", { when: listDate(item.row.sentAt, now) }), late: false, later: false };
   const when = todayWhen(item.item, now);
-  return { text: when.text, late: when.tone === "missed", later: false };
+  return { text: when.text, late: when.tone === "missed", later: personItemAhead(item, now) !== null };
 }
 
 /**

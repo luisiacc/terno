@@ -22,7 +22,8 @@ afterEach(async () => {
 
 async function setup(o: { provider?: "fake" | "none"; followups?: boolean } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "terno-people-"));
-  const backend = new Backend({ dbPath: join(dir, "a.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, demoAi: true, now: () => NOW });
+  const clock = { now: NOW };
+  const backend = new Backend({ dbPath: join(dir, "a.db"), version: "t", cipher: plaintextCipher, providers: demoRegistry, autoSync: false, demoAi: true, now: () => clock.now });
   await backend.store.ready;
   const [c, s] = createMemoryTransportPair();
   backend.connect(s, { clientId: "r", origin: "renderer" });
@@ -65,7 +66,7 @@ async function setup(o: { provider?: "fake" | "none"; followups?: boolean } = {}
       NOW + DAY,
       NOW - 3 * DAY,
     );
-  return { backend, client, raw, account, from, to, owed };
+  return { backend, client, raw, account, clock, from, to, owed };
 }
 
 describe("who has something open with you", () => {
@@ -133,6 +134,49 @@ describe("who has something open with you", () => {
       ["bea@people.test", NOW - DAY],
       ["ana@people.test", null],
     ]);
+  });
+
+  it("the owner's renewal (2026-11-26): what What matters keeps under Coming up isn't open yet, its person last, under Later, not counted", async () => {
+    const { backend, client, raw, clock, from, to } = await setup();
+    const bea = await from("Bea", "bea@people.test");
+    raw.run("UPDATE threads SET waiting_since = ? WHERE id = ?", NOW - DAY, bea);
+    // Gonzalo, whom you write to, mailed a week ago: renew the registered agent by Jan 12, its time to act a week before
+    await to("Gonzalo", "gonzalo@people.test");
+    const renewal = await from("Gonzalo", "gonzalo@people.test", { waiting: false });
+    const due = new Date(2027, 0, 12, 23, 59).getTime();
+    raw.run(
+      "INSERT INTO dated_items (thread_id, message_id, item, kind, text, quote, sender_key, due_day, due_at, act_at, arrived_at, state, created_at) VALUES (?, (SELECT id FROM messages WHERE thread_id = ? LIMIT 1), 0, 'renew', 'Renew the registered agent', 'antes del 13/01/2027', 'gonzalo@people.test', '2027-01-12', ?, ?, ?, 'open', ?)",
+      renewal,
+      renewal,
+      due,
+      new Date(2027, 0, 5, 9).getTime(),
+      NOW - 7 * DAY,
+      NOW,
+    );
+    backend.today.changed();
+    // What matters keeps it under Coming up, so People has it as not yet: Gonzalo last, his search hit counting nothing open
+    const placed = async () => (await client.call("today.list", { held: [] })).sections.find((x) => x.items.some((i) => i.thread.id === renewal))?.kind;
+    expect(await placed()).toBe("comingUp");
+    const { open } = await client.call("people.list", {});
+    expect(open.map((p) => [p.key, p.since])).toEqual([
+      ["bea@people.test", NOW - DAY],
+      ["gonzalo@people.test", null],
+    ]);
+    const item = open[1]!.items[0]!;
+    const shows = item.kind === "today" ? item.item.why.ahead! : 0;
+    expect(item.kind === "today" && [item.item.why.kind, item.item.why.back]).toEqual(["dated", undefined]);
+    expect(shows).toBeGreaterThan(NOW);
+    expect(shows).toBeLessThan(due);
+    expect(await client.call("people.ready", {})).toEqual({ index: "ready" });
+    expect((await client.call("people.search", { query: "gonz" })).hits.map((h) => [h.key, h.open])).toEqual([["gonzalo@people.test", 0]]);
+    // its time to act comes: in What matters and People alike, open now, since that moment (never since the mail)
+    clock.now = shows + 3_600_000;
+    backend.today.changed();
+    expect(await placed()).not.toBe("comingUp");
+    // (Bea's conversation is long past waiting on you by January)
+    const later = await client.call("people.list", {});
+    expect(later.open.map((p) => [p.key, p.since])).toEqual([["gonzalo@people.test", shows]]);
+    expect((await client.call("people.search", { query: "gonz" })).hits.map((h) => [h.key, h.open])).toEqual([["gonzalo@people.test", 1]]);
   });
 
   it("a person's items: what's open now, longest waiting first, then what's put off", async () => {

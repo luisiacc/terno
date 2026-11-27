@@ -55,6 +55,16 @@ export interface TodayWhy {
   came?: number;
   /** round 15's second morning: put off with Later, when it's back (what its row says if it's ever drawn before then) */
   back?: number;
+  /**
+   * plan 281 (owner, 2026-11-26): the projection's own word that it's behind Coming up (put off, or its time to act still
+   * ahead), for whoever else lists it (People): when it shows again, the later of its time to act and Later's `back`
+   */
+  ahead?: number;
+  /**
+   * plan 281 (owner, 2026-11-26): shown now, when its time to act came (its lead before its day; a promise with none, when it
+   * came due), only when after it came: open since then
+   */
+  from?: number;
   /** a waiting row: you've written in this conversation (else it's new, from someone you write to: `needsYou`'s two reasons) */
   wrote?: boolean;
   /**

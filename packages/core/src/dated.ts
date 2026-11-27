@@ -299,7 +299,7 @@ export function shownFrom(day: Date, leadDays: number | null, stored = Infinity)
  * before its mail came (as `datedTiming`). An alert, a delivery and what has no day keep their stored moment. Plan 210
  * (iteration 3): within its seven days whatever its lead (`shownFrom`); one that lapses unless renewed on an expiry's lead.
  */
-function showsFrom(r: Pick<DatedRow, "kind" | "dueDay" | "dated" | "actAt" | "arrivedAt" | "early" | "lapses">): number {
+export function showsFrom(r: Pick<DatedRow, "kind" | "dueDay" | "dated" | "actAt" | "arrivedAt" | "early" | "lapses">): number {
   // plan 210 (iteration 2): shown early, read from the item (a move keeps it): a person's request from its arrival (a
   // delivery that needs someone there showed from the day before: the seven days hold that now)
   if (r.early && r.dated && r.kind === "respond") return r.arrivedAt;
@@ -538,9 +538,20 @@ const promiseMissedUntil = (r: PromiseFacts): number => missedUntil({ dueDay: da
  * (iteration 3): within the seven days as a dated item is (`shownFrom`).
  */
 const promiseShowsAt = (r: PromiseFacts): number => {
-  const lead = shownFrom(new Date(startOfDay(r.dueAt)), DATED_LEAD_DAYS.respond);
+  const lead = promiseLead(r);
   return r.deferredUntil != null ? Math.max(lead, r.deferredUntil) : lead;
 };
+
+const promiseLead = (r: PromiseFacts): number => shownFrom(new Date(startOfDay(r.dueAt)), DATED_LEAD_DAYS.respond);
+
+/**
+ * Plan 281 (owner, 2026-11-26): when a promise of yours comes to act on, Later aside: its lead before the day it sits under
+ * (as `promiseShowsAt`), or for one with no day, when it comes due (`promiseDue`).
+ */
+export function promiseActFrom(r: PromiseFacts, now: number): number {
+  r = effective(r, now);
+  return r.dated ? promiseLead(r) : r.dueAt;
+}
 
 /**
  * Codex code review: past Missed's days a dated promise is the Earlier tab's (plan 205), never Needs you's again. The fifth

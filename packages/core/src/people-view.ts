@@ -25,7 +25,7 @@ export type PersonItem = { kind: "today"; item: TodayItem } | { kind: "awaiting"
 
 /**
  * A person with something open, their items in People's order (`sortPersonItems`: what's open now, longest waiting first,
- * then what's put off with Later, soonest back first).
+ * then what's not yet, put off with Later or behind What matters' Coming up, soonest first).
  */
 export interface PersonOpen {
   /** `personKey` of the address: who they are, however their address is spelled */
@@ -34,8 +34,8 @@ export interface PersonOpen {
   name: string;
   items: PersonItem[];
   /**
-   * since when the longest of what's open now with them has waited (Open's order: longest waiting first); null when all
-   * of it is put off with Later (they sit at Open's end, not counted with it)
+   * since when the longest of what's open now with them has waited (Open's order: longest waiting first); null when none
+   * of it is open yet, put off with Later or behind What matters' Coming up (they sit at Open's end, not counted with it)
    */
   since: number | null;
 }
@@ -104,24 +104,35 @@ export const personItemId = (i: PersonItem): string => (i.kind === "today" ? i.i
 
 /**
  * Since when an item has waited: a promise since you made it, a conversation since it began waiting on your answer, a
- * request since it came, a reply owed to you since you asked (each its conversation's last date when that isn't known).
+ * request since it came, a reply owed to you since you asked (each its conversation's last date when that isn't known);
+ * never before its time to act came (owner, 2026-11-26: a renewal due in January isn't open since its November mail).
  */
 export function personItemSince(i: PersonItem): number {
   if (i.kind === "awaiting") return i.row.sentAt;
   const { why, thread } = i.item;
-  const at = why.kind === "waiting" ? (why.reply?.since ?? thread.waitingSince) : why.kind === "promise" ? why.sentAt : why.came;
-  return at ?? thread.lastDate;
+  const at = (why.kind === "waiting" ? (why.reply?.since ?? thread.waitingSince) : why.kind === "promise" ? why.sentAt : why.came) ?? thread.lastDate;
+  return why.from !== undefined && why.from > at ? why.from : at;
 }
 
-/** When an item put off with Later is back, while that's ahead (it's still open, further on); else null. */
+/** When an item put off with Later is back, while that's ahead: what its line says ("Back Dec 30"); else null. */
 export function personItemBack(i: PersonItem, now: number): number | null {
   const at = i.kind === "awaiting" ? i.row.deferredUntil : i.item.why.back;
   return at != null && at > now ? at : null;
 }
 
-/** People's order of a person's items: what's open now, longest waiting first; then what's put off, soonest back first. */
+/**
+ * Not open yet: until when. What matters' own word for its items (owner, 2026-11-26: one source of truth), what it keeps
+ * behind Coming up, put off with Later or its time to act still ahead (`TodayWhy.ahead`); a reply owed put off, while that
+ * is ahead. Null: open now.
+ */
+export function personItemAhead(i: PersonItem, now: number): number | null {
+  if (i.kind === "today") return i.item.why.ahead ?? null;
+  return personItemBack(i, now);
+}
+
+/** People's order of a person's items: what's open now, longest waiting first; then what's not yet, soonest first. */
 export function sortPersonItems(items: readonly PersonItem[], now: number): PersonItem[] {
-  const keyed = items.map((i) => ({ i, back: personItemBack(i, now), since: personItemSince(i) }));
+  const keyed = items.map((i) => ({ i, back: personItemAhead(i, now), since: personItemSince(i) }));
   keyed.sort((a, b) => {
     if ((a.back === null) !== (b.back === null)) return a.back === null ? -1 : 1;
     return (a.back ?? 0) - (b.back ?? 0) || a.since - b.since;
@@ -132,12 +143,12 @@ export function sortPersonItems(items: readonly PersonItem[], now: number): Pers
 /** Since when the longest of what's open now has waited (`PersonOpen.since`), of items in People's order. */
 export function personSince(items: readonly PersonItem[], now: number): number | null {
   const first = items[0];
-  return first && personItemBack(first, now) === null ? personItemSince(first) : null;
+  return first && personItemAhead(first, now) === null ? personItemSince(first) : null;
 }
 
-/** Open's order: who's waited longest first; those with only what's put off last, soonest back first. */
+/** Open's order: who's waited longest first; those with only what's not yet last, soonest first. */
 export function sortPeopleOpen(people: PersonOpen[], now: number): PersonOpen[] {
-  const back = (p: PersonOpen) => (p.items[0] ? (personItemBack(p.items[0], now) ?? 0) : 0);
+  const back = (p: PersonOpen) => (p.items[0] ? (personItemAhead(p.items[0], now) ?? 0) : 0);
   return people.sort((a, b) => {
     if ((a.since === null) !== (b.since === null)) return a.since === null ? 1 : -1;
     return (a.since ?? back(a)) - (b.since ?? back(b)) || a.key.localeCompare(b.key);

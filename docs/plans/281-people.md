@@ -258,3 +258,32 @@ Round 7, a small one: level. "Before this one" was wrong once the card's convers
 After round 7 (owner): "Last email" is one date everywhere, a person's last conversation as their page heads with it (its newest, never in Spam or Trash): Everyone's and a search's rows ask it for the rows drawn (`people.lastEmails`, one indexed search each, at most 60 at once, again when mail changes), never the recipient index's last date.
 
 After round 7 (owner): Done and Later at each item's side on the page and the card alike (A + D of the mockups), shown on hover only (or while the keyboard is on the item, or Later's menu is open).
+
+## After the owner, 2026-11-26: Coming up isn't open now
+
+> ok so on the new people menu i see this […] this item showed as the first becaus it was the oldest, but as you cna see on the picture, i had previously marked it to do later on january 12, if i marked something todo later already, i feel it shouldn't be here first because its action i said i will do later, for me it doesn't make sense for it to be first
+
+> lets follow what matters, these things should all be centralized so they obey one source of truth, any action i do on the "People" or "What matters" should take that action on both, so it makes sense they get the info truth from a single place.
+
+**What happened** (the owner's own mailbox): Gonzalo's reminder to renew a registered agent ("antes del 13/01/2027") came Nov 13. On Nov 24 the owner put the conversation off with Later in What matters (its waiting row, until Dec 30); an hour later the dated items read the renewal out of it as its own item (due Jan 12, time to act Jan 5), which carries no Later. What matters shows neither: the waiting row is put off, and the renewal waits under Coming up until Jan 5. People asked only "is it put off with Later?" (`personItemBack`), so the renewal counted as open now, waiting since Nov 13, and Gonzalo led Open with "13 days".
+
+**The rule:** People takes "open now or not yet" from What matters' projection, never from its own reading of an item. What the projection places under Coming up (put off with Later, or its time to act still ahead) is not yet in People: under the page's Later, the person after everyone with something open now, the row saying its when instead of an age. What's open now counts from when its time to act came, never from before What matters showed it (on Jan 5 the renewal is "Today", not "7 weeks").
+
+**Design:**
+- `TodayWhy.ahead` (core): the projection sets it on every Coming up row, when What matters shows it again: the later of its time to act and Later's `back`. It's the projection's own verdict, carried to whoever reads its items. `back` stays Later's moment, for the words ("Back Dec 30").
+- `TodayWhy.from` (core): on a row shown now, its time to act (What matters' lead before its day, Later aside: `showsFrom`, `promiseActFrom`, the functions the placement uses; a promise with no day, when it came due), set only when that's after the item came and not ahead of now.
+- `personItemAhead` replaces `personItemBack` in People's order, Open's `since`, the open counts and the page's split: Coming up's `ahead` (its presence is the verdict, its value the order), or a reply owed put off (`deferredUntil`). `personItemSince` is the later of what it was and `from`.
+- `itemWhen`: put off with Later says "Back …" as before; not yet without a Later says What matters' own when ("Jan 12, 2027"), drawn quieter as Later's are.
+- What matters is unchanged: the two fields are read by People alone; the count's pass (`o.count`) sets neither.
+
+**Not in this change:** a Later on a conversation covering items read from it afterwards (the owner chose following What matters as it is).
+
+**Tests:** core: the projection sets `ahead` on a Coming up dated item, a put-off promise and a put-off waiting row, never on a row shown now nor in the count's pass; `from` on a dated item whose lead is after its arrival, absent when not. People's order: a person whose only item is Coming up sits after everyone open now; a person's item Coming up sorts after one open now; `since` of an item shown now from its lead. Renderer: `itemWhen` of a not-yet item without Later. An e2e isn't needed: the split and the quieter line are Later's, already covered.
+
+**Revisions after the Codex review** (of the plan, 11 points):
+1. `ahead` was the start of the heading's day, which for a deadline is its due day: a renewal due Jan 12 that shows Jan 5 would sort after one that shows Jan 8. It's now when it shows (the later of its time to act and Later's back).
+2. A broken promise given a new day weeks off is Today's at once: its lead is ahead, so `from` is never set ahead of now.
+3. A promise with no day shows when it comes due (three days after you wrote): `from` is that, not nothing.
+11. The backend test is clock-driven: What matters and People before the renewal's time to act (Coming up; Gonzalo last, his search hit counting nothing open) and after it (open since that moment, counted).
+
+Not taken: a missed item or a conversation back from Later keeping its first age (4: Later never resets an age, as before); `keepDeferred`'s order against a reply's other promises (5), the Spam/Trash fallback's first live member (6), an ask's Later past its window (7), the held row (9) and an open card's snapshot (10) are as they were, outside this change; a reply owed's Later moves when you'll follow up and keeps it open (8, by design: "Later on a reply owed … moves when you'll follow up, now shown").

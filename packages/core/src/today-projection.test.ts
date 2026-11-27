@@ -764,3 +764,56 @@ describe("plans 218, 277: a promise whose conversation is in Trash or Spam", () 
     expect(item!.item.entries).toHaveLength(1);
   });
 });
+
+describe("plan 281 (owner, 2026-11-26): what People reads of where What matters has an item", () => {
+  it("behind Coming up, until it shows: put off, its Later's moment; not yet, its time to act (never its day, Codex's critique); nothing on a row shown now", () => {
+    // Gonzalo's renewal: mailed Nov 13, due Jan 12, its time to act a week before
+    const renew = dated("renew", "2027-01-12", { threadId: 1, arrivedAt: at(2026, 11, 13, 6) });
+    const mine = promise(at(2027, 1, 12, 9), { threadId: 2 });
+    const off = { ...dated("respond", "2026-11-18", { threadId: 3 }), deferredUntil: at(2026, 11, 20, 9) };
+    const bill = dated("pay", "2026-11-18", { threadId: 4 });
+    const waiting = [{ id: 5, lastDate: NOW - 5, hasSent: false, waitingSince: NOW - 5, message: 50, rev: 0, deferredUntil: at(2026, 11, 21, 9) }];
+    const { rows } = projectToday(facts({ dated: [renew, off, bill], promises: [mine], waiting }));
+    const by = new Map(rows.map((r) => [r.id, r]));
+    // the moment each shows, as What matters will show it
+    const shows = (r: DatedRow | FollowupRow, id: string) => projectToday(facts({ now: at(2027, 1, 10), ...("arrivedAt" in r ? { dated: [r] } : { promises: [r] }) })).rows.find((x) => x.id === id)!.why.from;
+    expect([`dated:${renew.id}`, `promise:${mine.id}`, `dated:${off.id}`, "waiting:5", `dated:${bill.id}`].map((id) => [by.get(id)!.group, by.get(id)!.why.ahead ?? null, by.get(id)!.why.back ?? null])).toEqual([
+      ["comingUp", shows(renew, `dated:${renew.id}`), null],
+      ["comingUp", shows(mine, `promise:${mine.id}`), null],
+      ["comingUp", at(2026, 11, 20, 9), at(2026, 11, 20, 9)],
+      ["comingUp", at(2026, 11, 21, 9), at(2026, 11, 21, 9)],
+      ["today", null, null],
+    ]);
+  });
+
+  it("when its time to act came, only when after it came: the renewal's lead, the promise's; never a bill that showed as it came", () => {
+    const renew = dated("renew", "2027-01-12", { threadId: 1, arrivedAt: at(2026, 11, 13, 6) });
+    const mine = promise(at(2027, 1, 12, 9), { threadId: 2 });
+    const bill = dated("pay", "2026-11-18", { threadId: 4 });
+    // a promise with no day, from when it came due (What matters shows it then), not since you wrote it
+    const asked = promise(NOW - 1000, { threadId: 6, dated: false });
+    const early = dated("respond", "2026-12-20", { threadId: 7, early: true, arrivedAt: at(2026, 11, 17, 9) });
+    const { rows } = projectToday(facts({ dated: [renew, bill, early], promises: [mine, asked] }));
+    const from = (id: string) => rows.find((r) => r.id === id)!.why.from ?? null;
+    const ahead = (id: string) => rows.find((r) => r.id === id)!.why.ahead ?? 0;
+    // not yet: until their leads before Jan 12, well after November's mail
+    for (const id of [`dated:${renew.id}`, `promise:${mine.id}`]) {
+      expect(ahead(id)).toBeGreaterThan(at(2026, 12, 1));
+      expect(ahead(id)).toBeLessThan(at(2027, 1, 12));
+      expect(from(id)).toBeNull();
+    }
+    expect(from(`dated:${bill.id}`)).toBeNull();
+    expect(from(`promise:${asked.id}`)).toBe(NOW - 1000);
+    // a person's request shown from its arrival, past the seven days: open now (Ahead), since it came
+    expect(rows.find((r) => r.id === `dated:${early.id}`)).toMatchObject({ group: "ahead", why: { came: early.arrivedAt } });
+    expect(rows.find((r) => r.id === `dated:${early.id}`)!.why.ahead).toBeUndefined();
+    expect(from(`dated:${early.id}`)).toBeNull();
+    // a promise broken and given a new day weeks off is Today's at once: never open since a moment still ahead
+    const broken = promise(at(2026, 12, 20, 9), { threadId: 8, brokenDueAt: at(2026, 11, 17, 9) });
+    const row = projectToday(facts({ promises: [broken] })).rows[0]!;
+    expect([row.group, row.why.ahead, row.why.from]).toEqual(["today", undefined, undefined]);
+    // once it's shown (Jan 6), it's open since that same moment
+    const jan6 = projectToday(facts({ now: at(2027, 1, 6, 10), dated: [renew] })).rows[0]!;
+    expect([jan6.group, jan6.why.ahead ?? null, jan6.why.from]).toEqual(["day", null, ahead(`dated:${renew.id}`)]);
+  });
+});

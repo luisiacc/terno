@@ -1,4 +1,4 @@
-import { addressKey, addressOnly, isPersonRequest, PEOPLE_EVERYONE_MAX, PEOPLE_SEARCH_MAX, PERSON_CONVERSATIONS_MAX, personKey, personItemBack, personSince, senderIsPerson, sortPeopleOpen, sortPersonItems, type FollowupRow, type PeopleList, type PeopleSearch, type PersonItem, type PersonOpen, type PersonPage, type ThreadSummary, type TodayItem } from "@terno/core";
+import { addressKey, addressOnly, isPersonRequest, PEOPLE_EVERYONE_MAX, PEOPLE_SEARCH_MAX, PERSON_CONVERSATIONS_MAX, personKey, personItemAhead, personSince, senderIsPerson, sortPeopleOpen, sortPersonItems, type FollowupRow, type PeopleList, type PeopleSearch, type PersonItem, type PersonOpen, type PersonPage, type ThreadSummary, type TodayItem } from "@terno/core";
 import type { BackendCore as Backend } from "./core";
 import { readSettings } from "./settings";
 
@@ -63,7 +63,7 @@ export class PeopleService {
     const index = this.b.autocomplete.peopleIndex();
     if (!index) return { hits: [], index: this.indexState() };
     const now = this.b.now();
-    const open = new Map((await this.open()).map((p) => [p.key, p.items.filter((i) => personItemBackNow(i, now)).length]));
+    const open = new Map((await this.open()).map((p) => [p.key, p.items.filter((i) => openNow(i, now)).length]));
     const mine = await this.mine();
     // (asked for more than are shown: senders that aren't people are left out after)
     const found = index.people(query, PEOPLE_SEARCH_MAX * 4);
@@ -261,8 +261,8 @@ export class PeopleService {
   }
 }
 
-/** Open now: not put off with Later. */
-const personItemBackNow = (i: PersonItem, now: number): boolean => personItemBack(i, now) === null;
+/** Open now: not put off with Later, nor behind What matters' Coming up. */
+const openNow = (i: PersonItem, now: number): boolean => personItemAhead(i, now) === null;
 
 /**
  * Whom a What matters item is between you and: a promise's person (whom you promised), a waiting conversation's sender
