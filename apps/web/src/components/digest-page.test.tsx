@@ -17,6 +17,8 @@ let undoFails = false;
 // plan 166: what the list's cap dropped, when the page says a sender isn't a newsletter
 let evicted: { id: string; email: string; name: string; at: number }[] = [];
 const calls: { method: string; params: unknown }[] = [];
+// plan 286: what the page listens for, so a test can have the backend say the digest changed
+const listeners = new Map<string, () => void>();
 vi.mock("~/rpc/connection", () => ({
   client: {
     call: vi.fn(async (method: string, params: unknown) => {
@@ -31,7 +33,10 @@ vi.mock("~/rpc/connection", () => ({
       }
       return served;
     }),
-    on: () => () => {},
+    on: (event: string, fn: () => void) => {
+      listeners.set(event, fn);
+      return () => listeners.delete(event);
+    },
     connectionVersion: 1,
   },
 }));
@@ -40,6 +45,7 @@ const { default: DigestPage } = await import("./digest-page");
 const { useToday } = await import("~/state/today");
 const { dismissSnack: dismissSnackNow, undoNow, useSnack } = await import("~/lib/snack");
 const { getApp } = await import("~/state/app");
+const { digestKeys } = await import("~/state/today");
 
 /** plan 162: the page's own Undo shows once the snack carrying the same one is gone: the snack goes, then it's pressed */
 async function undoInline() {
@@ -57,10 +63,10 @@ const ticks = () => [...host.querySelectorAll<HTMLElement>("[data-testid=digest-
 const page = () => host.querySelector<HTMLElement>("[data-testid=digest-page]")!;
 /** ai-r03: the pane scrolls, not the page in it (the page had no height to scroll in) */
 const scroller = () => host.querySelector<HTMLElement>("[data-testid=digest-scroller]")!;
-async function show(row: DigestRow) {
+async function show(row: DigestRow | null, place: "page" | "column" = "page") {
   served = row;
   await act(async () => useToday.setState({ digest: row }));
-  await act(async () => root.render(<DigestPage key={Math.random()} />));
+  await act(async () => root.render(<DigestPage key={Math.random()} place={place} />));
 }
 const unmount = () => act(() => root.render(<></>));
 
@@ -583,5 +589,55 @@ describe("plan 166: Not a newsletter", () => {
     calls.length = 0;
     await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-archive]")!.click());
     expect((calls.find((c) => c.method === "today.digestArchive")!.params as { items: { fromEmail?: string }[] }).items.map((i) => i.fromEmail)).toEqual(["news@sender1.test", "news@sender2.test", "news@sender3.test"]);
+  });
+});
+
+describe("plan 286: nothing left to review is clear skies", () => {
+  const clear = () => host.querySelector<HTMLElement>("[data-testid=digest-page][data-empty]");
+
+  it("no row: the kite, its words and the page's ×; a later read with rows replaces it on the same mount", async () => {
+    await show(null);
+    expect(clear()).not.toBeNull();
+    expect(clear()!.textContent).toContain("Clear skies.");
+    expect(clear()!.textContent).toContain("No automated mail to review right now.");
+    expect(host.querySelector("[data-testid=digest-clear-kite]")!.getAttribute("aria-hidden")).toBe("true");
+    expect(host.querySelector("[data-testid=digest-close]")).not.toBeNull();
+    served = digestOf("2026-10-25", true);
+    await act(async () => listeners.get("todayDigest")!());
+    expect(clear()).toBeNull();
+    expect(host.querySelectorAll("[data-testid=digest-item]")).toHaveLength(3);
+  });
+
+  it("beside, on the column's surface with no ×, and the keys land on its title", async () => {
+    await show(null, "column");
+    expect(clear()!.dataset.place).toBe("column");
+    expect(clear()!.classList.contains("bg-pane")).toBe(true);
+    expect(host.querySelector("[data-testid=digest-close]")).toBeNull();
+    expect(digestKeys.current!.focus()).toBe(true);
+    expect(document.activeElement).toBe(host.querySelector("[data-testid=digest-clear-title]"));
+  });
+
+  it("every sender hidden brings it before the backend's next read; Undo brings the rows back", async () => {
+    const row: DigestRow = { ...digestOf("2026-10-25", true), liveIds: [1, 2, 3] };
+    await show(row);
+    await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-tick-all]")!.click());
+    await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-hide]")!.click());
+    expect(clear()).not.toBeNull();
+    await act(async () => undoNow(useSnack.getState().current!.action!.undo!));
+    // the list's reload after the Undo
+    await act(async () => useToday.setState({ digest: { ...row } }));
+    expect(clear()).toBeNull();
+    expect(host.querySelectorAll("[data-testid=digest-item]")).toHaveLength(3);
+  });
+
+  it("archiving the last row keeps the finished state and its words, not the scene", async () => {
+    archived = { undoId: 6, archived: 3, archivedIds: [1, 2, 3], changed: 0, spared: 0 };
+    await show(digestOf("2026-10-25", true));
+    await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-tick-all]")!.click());
+    await act(async () => host.querySelector<HTMLElement>("[data-testid=digest-archive]")!.click());
+    served = { ...digestOf("2026-10-25", true), liveIds: [], readIds: [] };
+    await act(async () => useToday.setState({ digest: served }));
+    expect(clear()).toBeNull();
+    expect(host.querySelector("[data-testid=digest-all-done]")).not.toBeNull();
   });
 });

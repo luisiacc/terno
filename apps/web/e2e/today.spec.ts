@@ -274,11 +274,25 @@ test.describe("What matters and its digest (plan 145)", () => {
     }
     await page.keyboard.press("Escape");
     await expect(menu).toHaveCount(0);
-    // its × at the top right closes it as Esc does: the feed has the room again
+    // plan 286: every sender hidden leaves nothing to review: clear skies, axe-clean both ways, the × still on its bar
+    await page.getByTestId("digest-tick-all").click();
+    await expect(page.getByTestId("digest-tick-all")).toHaveText("Tick all");
+    await page.getByTestId("digest-tick-all").click();
+    await page.getByTestId("digest-hide").click();
+    const clear = page.locator("[data-testid=digest-page][data-empty]");
+    await expect(clear).toContainText("Clear skies.");
+    for (const mode of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: mode });
+      if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-automated-clear-${mode}.png` });
+      const results = await new AxeBuilder({ page }).include("[data-testid=digest-page]").analyze();
+      expect(results.violations.map((v) => `${mode} ${v.id}: ${v.nodes[0]?.html.slice(0, 120)}`)).toEqual([]);
+    }
+    // its × at the top right closes it as Esc does: the feed has the room again, with no way in left (nothing automated)
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-automated-close.png` });
     await page.getByTestId("digest-close").click();
     await expect(page.getByTestId("digest-page")).toHaveCount(0);
-    await expect(page.locator(DIGEST)).toBeVisible();
+    await expect(page.locator(FEED)).toBeVisible();
+    await expect(page.locator(DIGEST)).toHaveCount(0);
   });
 
   test("plan 166: Not a newsletter, by the row's control or its menu, leaves the digest at once with an exact Undo, and Settings lists the sender to let back in", async ({ app: page, server }) => {

@@ -31,6 +31,7 @@ import { openSettings } from "~/lib/settings-place";
 import { reloadList } from "~/state/list";
 import { digestKeys, digestMorph, digestPick, keepDigestPick, leaveOut, letBackIn, openFromDigest, senderKey, useToday, withoutSenders } from "~/state/today";
 import { AiProvenance } from "~/components/ai-provenance";
+import { AutomatedClear } from "~/components/automated-clear";
 
 /** Plan 247: the digest's switch is What matters' (Once a day): Settings opens there, at the switch. */
 function openDigestSettings() {
@@ -535,12 +536,13 @@ export default function DigestPage({ place = "page" }: { place?: "page" | "colum
   /** Plan 235: what a row's menu acts on: the ticked rows when it's one of several ticked, else the row. */
   const menuTargets = (i: DigestItem) => (stateOf(i) === "archive" && chosen.length > 1 ? chosen : [i]);
   const sendersIn = (targets: readonly DigestItem[]) => new Set(targets.filter((i) => i.fromEmail).map(senderKey)).size;
-  if (!row)
+  // plan 286: nothing left to review (no row, or a ready one whose rows all went before this page archived any: every sender
+  // hidden, a kept digest's mail gone): clear skies, in either form, the column's on its own surface
+  if (!row || (row.state === "ready" && shown.length === 0 && !batches?.length))
     return (
-      <div className="relative p-8 text-sm text-muted-foreground" data-testid="digest-page">
+      <AutomatedClear heading={heading} className={beside ? "bg-pane" : undefined} data-testid="digest-page" data-empty="" {...(beside ? { "data-place": "column" } : {})}>
         {!beside && <DigestClose />}
-        {t("today.digest.none")}
-      </div>
+      </AutomatedClear>
     );
   const done = batches?.length ? { count: batches.reduce((n, b) => n + b.ids.length, 0), undo: batches.at(-1)!.undo } : null;
   const finished = done !== null;
