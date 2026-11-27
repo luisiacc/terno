@@ -35,7 +35,7 @@ import { BUILD_ID, BUILD_VERSION } from "./diag/build-info";
 import { mainDiag } from "./diag/main";
 import { RestartPolicy } from "./diag/supervisor";
 import { backendEnv, devModeOf, takeDevAiEnv } from "./dev-mode";
-import { devToolsAllowed } from "./debugging";
+import { devToolsAllowed, packagedApp } from "./debugging";
 import { rendererFile } from "./renderer-path";
 import type { BackendToMain, MainToBackend } from "./ipc";
 import { readLegacySecrets } from "./keychain-helper";
@@ -73,9 +73,10 @@ try {
 
 // main.ts named the app and set userData (profile.ts) before loading this
 /** the dev server's page, never in a packaged app: there TERNO_DEV_URL would put a foreign page behind the preload (plan 283) */
-const isDev = devModeOf({ devUrl: process.env.TERNO_DEV_URL, packaged: app.isPackaged });
+const packaged = packagedApp(app.isPackaged, __dirname);
+const isDev = devModeOf({ devUrl: process.env.TERNO_DEV_URL, packaged });
 /** plan 283: DevTools exist only in an unpackaged run; every window takes this */
-const devTools = devToolsAllowed(app.isPackaged);
+const devTools = devToolsAllowed(packaged);
 const demo = process.env.TERNO_DEMO === "1" || process.argv.includes("--demo");
 // plan 146's keys, out of main's environment before anything is spawned: only the backend gets them, in Dev mode
 const devAiEnv = takeDevAiEnv(process.env);

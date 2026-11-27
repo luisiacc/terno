@@ -81,8 +81,9 @@ describe("release: Electron's fuses (plan 283)", () => {
     expect(readFileSync(join(scripts, "package.mjs"), "utf8")).toContain('assertFuses(app, { platform: "darwin", shipped });');
     expect(readFileSync(join(scripts, "package-linux.mjs"), "utf8")).toContain('assertFuses(join(dir, executableName), { platform: "linux", shipped });');
     const release = readFileSync(join(scripts, "release.mjs"), "utf8");
-    expect(release).toContain('assertShipped(app, "darwin");');
-    expect(release).toContain('assertShipped(join(dir, "opt/Terno/terno"), "linux");');
+    expect(release).toContain('assertFuses(app, { platform: "darwin", shipped: true });');
+    expect(release).toContain('assertFuses(join(dir, "Terno.app"), { platform: "darwin", shipped: true });');
+    expect(release.match(/assertFuses\(join\(dir, "opt\/Terno\/terno"\), \{ platform: "linux", shipped: true \}\)/g)).toHaveLength(2);
     expect(release).toContain("env: { ...process.env, ...STEP_ENV }");
   });
 });

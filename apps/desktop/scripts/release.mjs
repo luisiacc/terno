@@ -48,24 +48,31 @@ const step = (cmd, args, cwd) => {
   if (r.status !== 0) fail(`${cmd} ${args.join(" ")} failed`);
 };
 const out = join(root, "release");
+// the packagers would write elsewhere, and this would check and draft what's here (Codex review)
+if (process.env.TERNO_PACKAGE_OUT) fail("TERNO_PACKAGE_OUT is set: a release packages into apps/desktop/release");
 
-/** Plan 283: what users get can't be started with a debugger. Read back from the final binary; the release stops otherwise. */
-function assertShipped(path, platform) {
-  try {
-    assertFuses(path, { platform, shipped: true });
-  } catch (error) {
-    fail(error.message);
-  }
-}
-
-/** Plan 283: `fn` with a scratch directory that's gone afterwards. */
-function inScratch(fn) {
+/**
+ * Plan 283: `check(dir)` in a scratch directory that's gone afterwards; what users get can't be started with a
+ * debugger, so a check that throws stops the release (after the cleanup).
+ */
+function verify(check) {
   const dir = mkdtempSync(join(tmpdir(), "terno-release-check-"));
+  let problem = null;
   try {
-    return fn(dir);
+    check(dir);
+  } catch (error) {
+    problem = error.message;
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+  if (problem) fail(problem);
+}
+
+/** Runs `cmd`, throwing `message` unless it succeeds. */
+function must(cmd, args, message, o = {}) {
+  const r = run(cmd, args, o);
+  if (r.status !== 0) throw new Error(`${message}: ${(r.stderr ?? "").trim()}`);
+  return r;
 }
 
 /** The signed app and its update files, checked; never touches GitHub. */
@@ -85,16 +92,19 @@ function buildMac() {
   if (!existsSync(join(app, "Contents/Resources/app-update.yml"))) fail("app-update.yml missing from the app");
   // plan 283: the app, the hardened runtime that keeps a native debugger out, and the update zip users download
   // (package.mjs checks the DMG's copy): fused for users, the zip's copy still sealed by its signature
-  assertShipped(app, "darwin");
-  if (/Authority=Developer ID Application/.test(signature)) {
-    if (!/flags=0x[0-9a-f]*\(runtime\)/.test(signature)) fail("the app isn't signed with the hardened runtime");
-    if (run("codesign", ["-d", "--entitlements", "-", "--xml", app]).stdout.includes("get-task-allow")) fail("the app may be debugged (get-task-allow)");
-  }
-  inScratch((dir) => {
+  verify((dir) => {
+    assertFuses(app, { platform: "darwin", shipped: true });
+    if (/Authority=Developer ID Application/.test(signature)) {
+      if (!/flags=0x[0-9a-f]*\(runtime\)/.test(signature)) throw new Error("the app isn't signed with the hardened runtime");
+      const plist = join(dir, "entitlements.plist");
+      must("codesign", ["-d", "--entitlements", plist, "--xml", app], "couldn't read the app's entitlements");
+      const entitlements = existsSync(plist) ? JSON.parse(must("plutil", ["-convert", "json", "-o", "-", plist], "couldn't read the app's entitlements").stdout) : {};
+      if (entitlements["com.apple.security.get-task-allow"] === true) throw new Error("the app may be debugged (get-task-allow)");
+    }
     const zip = join(out, releaseAssets(version, ["mac"]).find((f) => f.endsWith("-mac.zip")));
-    if (run("ditto", ["-x", "-k", zip, dir]).status !== 0) fail(`couldn't unpack ${zip}`);
-    if (run("codesign", ["--verify", "--deep", "--strict", join(dir, "Terno.app")]).status !== 0) fail(`the app in ${zip} doesn't verify`);
-    assertShipped(join(dir, "Terno.app"), "darwin");
+    must("ditto", ["-x", "-k", zip, dir], `couldn't unpack ${zip}`);
+    must("codesign", ["--verify", "--deep", "--strict", join(dir, "Terno.app")], `the app in ${zip} doesn't verify`);
+    assertFuses(join(dir, "Terno.app"), { platform: "darwin", shipped: true });
   });
   checkFiles([out], ["mac"]);
 }
@@ -106,13 +116,13 @@ function buildLinux() {
   step("node", [join(here, "package-linux.mjs")], root);
   // plan 283: the executable inside each package users download (CI checks the installed copy too, release.yml)
   for (const [deb, rpm] of LINUX_ARCHES.map((a) => linuxPackages(version, a.arch).map((f) => join(out, f)))) {
-    inScratch((dir) => {
-      if (run("dpkg-deb", ["-x", deb, dir]).status !== 0) fail(`couldn't unpack ${deb}`);
-      assertShipped(join(dir, "opt/Terno/terno"), "linux");
+    verify((dir) => {
+      must("dpkg-deb", ["-x", deb, dir], `couldn't unpack ${deb}`);
+      assertFuses(join(dir, "opt/Terno/terno"), { platform: "linux", shipped: true });
     });
-    inScratch((dir) => {
-      if (run("sh", ["-c", 'rpm2cpio "$1" | cpio -idm --quiet', "sh", rpm], { cwd: dir }).status !== 0) fail(`couldn't unpack ${rpm}`);
-      assertShipped(join(dir, "opt/Terno/terno"), "linux");
+    verify((dir) => {
+      must("sh", ["-c", 'rpm2cpio "$1" | cpio -idm --quiet', "sh", rpm], `couldn't unpack ${rpm}`, { cwd: dir });
+      assertFuses(join(dir, "opt/Terno/terno"), { platform: "linux", shipped: true });
     });
   }
   checkFiles([out], ["linux"]);

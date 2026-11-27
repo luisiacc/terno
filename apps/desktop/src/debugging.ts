@@ -3,6 +3,14 @@
  * (scripts/fuses.mjs); these rules cover what no fuse does: DevTools, and Chromium's DevTools protocol.
  */
 
+/**
+ * Whether this is a packaged app. Electron's `app.isPackaged` reads only the executable's name (an executable renamed
+ * `electron` reads as unpackaged), so loading from an asar counts too: a renamed package keeps every rule here.
+ */
+export function packagedApp(isPackaged: boolean, mainDir: string): boolean {
+  return isPackaged || mainDir.split(/[\\/]/).includes("app.asar");
+}
+
 /** Chromium's switches that serve the DevTools protocol, which drives every page as fully as an inspector drives main. */
 export const PROTOCOL_SWITCHES = ["remote-debugging-port", "remote-debugging-pipe"] as const;
 

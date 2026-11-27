@@ -11,13 +11,13 @@ import "./test-build";
 import { url as inspectorUrl } from "node:inspector";
 import { app } from "electron";
 import { adoptLegacyEnv } from "@terno/core/legacy-env";
-import { refusedProtocolSwitch } from "./debugging";
+import { packagedApp, refusedProtocolSwitch } from "./debugging";
 import { mainDiag } from "./diag/main";
 import { KEYCHAIN_HELPER_FLAG, runKeychainHelper } from "./keychain-helper";
 import { prepareProfile } from "./profile";
 
 // before ready, so before Chromium starts serving the protocol
-const refused = refusedProtocolSwitch({ packaged: app.isPackaged, inspectorUrl: inspectorUrl(), hasSwitch: (s) => app.commandLine.hasSwitch(s) });
+const refused = refusedProtocolSwitch({ packaged: packagedApp(app.isPackaged, __dirname), inspectorUrl: inspectorUrl(), hasSwitch: (s) => app.commandLine.hasSwitch(s) });
 if (refused) {
   process.stderr.write(`Terno doesn't open the DevTools protocol (--${refused}) in a packaged build.\n`);
   app.exit(1);

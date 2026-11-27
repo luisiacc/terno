@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { devToolsAllowed, PROTOCOL_SWITCHES, refusedProtocolSwitch } from "./debugging";
+import { devToolsAllowed, packagedApp, PROTOCOL_SWITCHES, refusedProtocolSwitch } from "./debugging";
 
 // Plan 283 (CASA 6.2.1): a packaged Terno opens neither DevTools nor the DevTools protocol.
 describe("main: no debugging in a packaged app", () => {
@@ -16,6 +16,13 @@ describe("main: no debugging in a packaged app", () => {
       expect(refusedProtocolSwitch({ packaged: false, inspectorUrl: undefined, hasSwitch: switches(s) })).toBeNull();
     }
     expect(refusedProtocolSwitch({ packaged: true, inspectorUrl: undefined, hasSwitch: switches() })).toBeNull();
+  });
+
+  it("a package renamed `electron` (which Electron reads as unpackaged) is still packaged: it loads from the asar (Codex review)", () => {
+    expect(packagedApp(true, "/Applications/Terno.app/Contents/Resources/app.asar/dist")).toBe(true);
+    expect(packagedApp(false, "/home/u/copy/resources/app.asar/dist")).toBe(true);
+    expect(packagedApp(false, "C:\\copy\\resources\\app.asar\\dist")).toBe(true);
+    expect(packagedApp(false, "/Users/u/emailclient/apps/desktop/dist")).toBe(false);
   });
 
   it("opens DevTools only in an unpackaged run", () => {
@@ -39,6 +46,6 @@ describe("main: no debugging in a packaged app", () => {
       });
     });
     expect(windows.map((w) => w.file).sort()).toEqual(["app.ts", "app.ts", "print.ts"]);
-    for (const w of windows) expect(w.options, w.file).toMatch(/devTools(: devToolsAllowed\(app\.isPackaged\))?[,\s}]/);
+    for (const w of windows) expect(w.options, w.file).toMatch(/devTools(: devToolsAllowed\(packagedApp\(app\.isPackaged, __dirname\)\))?[,\s}]/);
   });
 });

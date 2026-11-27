@@ -11,7 +11,7 @@ import { basename, dirname, join } from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, session, shell, type IpcMainInvokeEvent, type Session } from "electron";
 import { captureError, log } from "@terno/core/diag";
 import { t } from "@terno/i18n";
-import { devToolsAllowed } from "./debugging";
+import { devToolsAllowed, packagedApp } from "./debugging";
 import { footerTemplate, parsePrintJob, PrintTimeoutError, PDF_MARGINS, PDF_PAGE, pageReady, pdfFileName, printCsp, printOutcome, readyOrDestroyed, requestAllowed, tempSibling, withHead, type PrintJob, type PrintResult } from "./print-policy";
 
 const PARTITION = "terno-print";
@@ -76,7 +76,7 @@ async function load(job: PrintJob): Promise<BrowserWindow> {
     show: false,
     width: 900,
     height: 1200,
-    webPreferences: { session: ses, sandbox: true, contextIsolation: true, nodeIntegration: false, devTools: devToolsAllowed(app.isPackaged), javascript: false, webgl: false, spellcheck: false, backgroundThrottling: false },
+    webPreferences: { session: ses, sandbox: true, contextIsolation: true, nodeIntegration: false, devTools: devToolsAllowed(packagedApp(app.isPackaged, __dirname)), javascript: false, webgl: false, spellcheck: false, backgroundThrottling: false },
   });
   const wc = win.webContents;
   wc.setWindowOpenHandler(() => ({ action: "deny" }));

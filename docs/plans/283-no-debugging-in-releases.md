@@ -1,6 +1,6 @@
 # Plan 283: No debugging in a release (CASA 6.2.1)
 
-- **Status:** plan.
+- **Status:** built (macOS verified locally, inspectable and shipped; the Linux steps run in the release workflow).
 - **Why:** a CASA security assessment of the released v0.1.9 macOS build found debug modes reachable in production (control 6.2.1, "debug modes are disabled in production").
 
 ## The request (verbatim)
@@ -119,3 +119,17 @@ Codex read the plan against the code and Electron 45's source. What changed:
 10. **A connector with its own identity** (a separate helper bundle, or a standalone executable) would avoid the LaunchServices collision. Running Electron's own helper bundle as a browser process isn't documented behaviour, and a standalone Node is another 100 MB; both go to the follow-up plan.
 11. **The assessor claim is scoped to debugging the app provides.** A native debugger is the OS's business: the release requires the hardened runtime without `get-task-allow` (point 6); Linux follows its ptrace policy.
 12. **`app://` decoding:** a malformed escape (`%E0%A4%A`) used to throw inside the handler; it's a 400 now. `rendererFile` takes the decoded URL path, slash first, as the handler gives it.
+
+## What the Codex code review changed
+
+1. **A package renamed `electron` read as unpackaged** (Electron's `app.isPackaged` reads only the executable's name), which would have reopened DevTools, the DevTools protocol and `TERNO_DEV_URL`. `packagedApp(isPackaged, __dirname)` also counts code loaded from an asar; main, the windows and print use it.
+2. **`pnpm release --local` with `TERNO_PACKAGE_OUT`** would have checked and drafted `apps/desktop/release` while packaging elsewhere: the release refuses the variable.
+3. **The probe could reach the Terno you're running:** an inherited `TERNO_SOCKET` or `TERNO_TOKEN_FILE` outranks `TERNO_USER_DATA` in the connector. The probe sets both inside its own profile.
+4. **The probe's processes:** every child is bounded, drained through `close`, and stopped with what it started before the scratch tree goes; MCP output is parsed only once complete. The launch test asks the connector until it answers, since the token is written a moment before the socket listens.
+5. **A shipped run never passes by skipping:** a missing app or a missing Electron binary for the NODE_OPTIONS control fails it.
+6. **Entitlements are parsed** (`codesign -d --entitlements <file> --xml`, then `plutil`), and a failed read fails the release; only `get-task-allow: true` is refused.
+7. **Scratch extractions are removed before a failed check stops the release** (`verify` throws, cleans up, then fails).
+
+Not taken: checking the draft phase's inputs again. The workflow feeds it only the gated build jobs' artifacts; the draft runner has no `ditto` or `rpm2cpio`, and it's a maintainer running `release.mjs draft` by hand with other files that it would catch.
+
+Found while testing: `native-reload.smoke.ts` had been failing on main since plan 207. The seeded mailbox gets the first-screen question, and its tests clicked behind it. It now dismisses the question as `people` and `update` smoke do (its own commit).
