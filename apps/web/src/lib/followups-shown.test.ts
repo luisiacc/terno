@@ -42,6 +42,20 @@ describe("follow-ups shown in the reader (plan 296)", () => {
     expect((await load()).useFollowupsShown.getState().shown).toBe(true);
   });
 
+  it("another window's choice is followed (a web tab taking over keeps its page)", async () => {
+    const m = await load();
+    const listeners: ((e: { key: string }) => void)[] = [];
+    vi.stubGlobal("addEventListener", (type: string, fn: (e: { key: string }) => void) => type === "storage" && listeners.push(fn));
+    const live = await load();
+    store.map.set("terno:followupsShown", "hidden");
+    for (const fn of listeners) fn({ key: "terno:followupsShown" });
+    expect(live.useFollowupsShown.getState().shown).toBe(false);
+    for (const fn of listeners) fn({ key: "terno:other" });
+    expect(live.useFollowupsShown.getState().shown).toBe(false);
+    expect(m.useFollowupsShown.getState().shown).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
   it("storage refused: shown, and a choice holds for the session", async () => {
     store.refuse = true;
     const m = await load();

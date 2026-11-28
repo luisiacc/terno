@@ -114,6 +114,8 @@ export function useReaderItems(detail: ThreadDetail): ReaderModel {
   const asked = target.length > 0 || waitingRow !== null ? targetKey : null;
   const [hiddenAsked, setHiddenAsked] = useState<{ threadId: number; key: string } | null>(null);
   const shown = pref || (asked !== null && !(hiddenAsked?.threadId === threadId && hiddenAsked.key === asked));
+  // hidden by hand for that one opening: the feed opening another row, or this one again later, asks again (Codex code review)
+  useEffect(() => setHiddenAsked(null), [asked, threadId]);
   const setShown = (next: boolean) => {
     setFollowupsShown(next);
     setHiddenAsked(next || asked === null ? null : { threadId, key: asked });

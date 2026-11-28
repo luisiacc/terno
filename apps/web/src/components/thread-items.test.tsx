@@ -149,6 +149,9 @@ describe("the reader's items, read (plan 210, iteration 3)", () => {
     expect(seen!.shown).toBe(false);
     await act(async () => useFeedRow.setState({ opened: "dated:1" }));
     expect(seen!.shown).toBe(true);
+    // hidden for that one opening: opened again, it shows again (Codex code review)
+    await act(async () => useFeedRow.setState({ opened: "dated:2" }));
+    expect(seen!.shown).toBe(true);
     // Show: the reader's choice again, for every conversation
     await act(async () => seen!.setShown(true));
     await act(async () => useFeedRow.setState({ opened: null }));

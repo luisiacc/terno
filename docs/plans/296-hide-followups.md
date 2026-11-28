@@ -60,3 +60,9 @@ Codex read the plan against the code (11 points). What changed:
 9. **The summary:** hidden, it no longer leaves out what the item lines say (`said` is empty), so nothing is in neither place.
 10. Opening a conversation still counts as seeing its follow-up for the Inbox's top, hidden or not; the count on the line says it's there. Hide and Show change nothing stored.
 11. **Tests:** a two-message conversation with a promise and a wait (count 2, Done → 1, Undo → 2), a one-message one, a reload, and the placement in every design's `@design` run.
+
+## What the Codex code review changed
+
+1. **Hidden for one opening.** A What matters item hidden by hand, then another row of the same conversation opened, then the first again: it showed hidden (the reader stays mounted and the key matched again). The hand's hide now holds for that one opening (`useReaderItems` lets it go when the open row changes); unit test A → B → A.
+2. **Another window's choice.** A web tab that takes the mailbox over keeps its page and the value it read at load; the store now follows `storage` events for its key (unit test).
+3. (Declined: in a narrow reader with a long account name, Expand all can wrap under the account before the name truncates. That's the chips line's existing wrapping, which this only makes a little likelier; the control stays on the first line.)

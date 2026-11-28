@@ -16,6 +16,11 @@ function stored(): boolean {
 
 export const useFollowupsShown = create<{ shown: boolean }>(() => ({ shown: stored() }));
 
+// another window's choice (a web tab taking the mailbox over keeps the page it had): this one follows (Codex code review)
+globalThis.addEventListener?.("storage", (e: StorageEvent) => {
+  if (e.key === KEY) useFollowupsShown.setState({ shown: stored() });
+});
+
 export function setFollowupsShown(shown: boolean): void {
   useFollowupsShown.setState({ shown });
   try {
