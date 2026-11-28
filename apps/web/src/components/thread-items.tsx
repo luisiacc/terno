@@ -10,6 +10,7 @@ import { aiAllowed, followupsOffered } from "~/lib/ai";
 import { changeItem, changeOfItem, proposalSaid, whenSaid, type ChangeTarget } from "~/lib/change";
 import { itemLaterWindow, laterNote, laterPresets, laterStart, laterWindow, type LaterWindow, type TodayTask } from "~/lib/dated";
 import { keysOnTo } from "~/lib/feed-leave";
+import { setFollowupsShown, useFollowupsShown } from "~/lib/followups-shown";
 import { readerItems, readerLine, readerText, waitingLine, type ReaderItem, type ReaderItems } from "~/lib/reader-items";
 import { presetLabel, presetWhen } from "~/lib/reminders";
 import { handTo, seenOfReaderItem } from "~/lib/hand-to";
@@ -32,6 +33,12 @@ export interface ReaderModel extends ReaderItems {
   waitingRow: FeedRow | null;
   /** plan 216: the waiting line chosen from the Also line: it leads again (the choice and its Later menu let go) */
   chooseWaiting: () => void;
+  /**
+   * plan 296: the conversation's follow-up cards shown: the reader's choice, or the feed's open row asking for one of them
+   * (an item opened from What matters shows, until hidden there)
+   */
+  shown: boolean;
+  setShown: (shown: boolean) => void;
 }
 
 /**
@@ -102,7 +109,17 @@ export function useReaderItems(detail: ThreadDetail): ReaderModel {
   });
   // (code review) the choice leads with no feed row of its own: D, b, ⇧D and the palette act on it, not the open row's item;
   // whichever member of its line shows (Codex review of plan 216, #3)
-  const held = ready && items.chose && items.top?.open ? items.top : null;
+  // plan 296: hidden, the choice goes with its card (no keys for a line that isn't there)
+  const pref = useFollowupsShown((s) => s.shown);
+  const asked = target.length > 0 || waitingRow !== null ? targetKey : null;
+  const [hiddenAsked, setHiddenAsked] = useState<{ threadId: number; key: string } | null>(null);
+  const shown = pref || (asked !== null && !(hiddenAsked?.threadId === threadId && hiddenAsked.key === asked));
+  const setShown = (next: boolean) => {
+    setFollowupsShown(next);
+    setHiddenAsked(next || asked === null ? null : { threadId, key: asked });
+    if (!next) closeReaderLater();
+  };
+  const held = shown && ready && items.chose && items.top?.open ? items.top : null;
   useEffect(() => {
     const was = useReaderChoice.getState().held;
     const same = held ? was?.threadId === threadId && was.item.key === held.key && was.item.row.revision === held.row.revision : was === null;
@@ -125,7 +142,7 @@ export function useReaderItems(detail: ThreadDetail): ReaderModel {
     closeReaderLater();
     setChosen(null);
   };
-  return { ...items, ready, choose, waitingRow, chooseWaiting };
+  return { ...items, ready, choose, waitingRow, chooseWaiting, shown, setShown };
 }
 
 /**
@@ -293,6 +310,16 @@ function outcomeOf(item: ReaderItem): string {
 /** The Also line's key for the waiting line (plan 216): what the keys go to when it's chosen there. */
 const WAITING_KEY = "waiting";
 
+/** (a waiting row held after an act elsewhere is words only: nothing to say or do here for it) */
+const waitingTaskOf = (row: FeedRow | null) => (row?.task?.kind === "waiting" ? row.task : null);
+
+/** Plan 296: how many lines `ThreadItems` draws (the lead and its Also line), by the same conditions; 0, nothing drawn. */
+export function readerItemCount({ ready, top, others, waiting, waitingRow }: ReaderModel): number {
+  const task = waitingTaskOf(waitingRow);
+  if (!ready || (waiting === "top" ? !task : !top)) return 0;
+  return 1 + others.length + (waiting === "also" && task ? 1 : 0);
+}
+
 /**
  * Plan 210 (iteration 3, Codex revision 10): the conversation's items on the AI card's surface at its top, one line on top in
  * one design for a dated item and a promise of yours ("Due Friday · Pay the electricity bill", "Due today · You told Jess
@@ -302,7 +329,7 @@ const WAITING_KEY = "waiting";
  * same design ("Lucas is waiting on your reply · since Oct 21") with the row's own Done, Later and Remove.
  */
 export default function ThreadItems({ detail, items }: { detail: ThreadDetail; items: ReaderModel }) {
-  const { top, others, targeted, ready, choose, waiting, waitingRow, chooseWaiting } = items;
+  const { top, others, targeted, choose, waiting, waitingRow, chooseWaiting } = items;
   const threadId = detail.thread.id;
   const alsoId = useId();
   const doneRef = useRef<HTMLButtonElement>(null);
@@ -315,9 +342,8 @@ export default function ThreadItems({ detail, items }: { detail: ThreadDetail; i
       doneRef.current?.focus({ preventScroll: true });
     }
   }, [leadKey]);
-  // (a waiting row held after an act elsewhere is words only: nothing to say or do here for it)
-  const task = waitingRow?.task?.kind === "waiting" ? waitingRow.task : null;
-  if (!ready || (waiting === "top" ? !task : !top)) return null;
+  const task = waitingTaskOf(waitingRow);
+  if (!readerItemCount(items)) return null;
   const now = Date.now();
   return (
     // the summary card's surface and inset (plan 181): a model's reading, not the sender's words

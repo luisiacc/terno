@@ -27,7 +27,7 @@ const local = (ms: number) => {
 const row = (over: Partial<DatedRow> = {}): DatedRow =>
   ({ id: 4, threadId: 7, messageId: 1, item: 0, kind: "respond", text: "Send Elena the signed slip", quote: "", senderKey: "s", dueDay: local(NOW + 3 * DAY), dueAt: NOW + 3 * DAY, timed: false, dated: true, actAt: NOW - 1, deferredUntil: null, arrivedAt: NOW - 1, state: "open", closedReason: null, closedAt: null, fromScan: false, revision: 2, model: null, provider: null, createdAt: NOW - 1, ...over }) as DatedRow;
 const detail = { thread: { id: 7, inTrash: false, inSpam: false }, messages: [] } as unknown as ThreadDetail;
-const model = (r: DatedRow, open = r.state === "open") => ({ top: { key: `dated:${r.id}`, ref: { source: "dated" as const, id: r.id }, open, missed: false, dueAt: r.dueAt, source: "dated" as const, row: r }, others: [], targeted: true, chose: false, waiting: null, waitingRow: null, ready: true, choose: () => {}, chooseWaiting: () => {} });
+const model = (r: DatedRow, open = r.state === "open") => ({ top: { key: `dated:${r.id}`, ref: { source: "dated" as const, id: r.id }, open, missed: false, dueAt: r.dueAt, source: "dated" as const, row: r }, others: [], targeted: true, chose: false, waiting: null, waitingRow: null, ready: true, choose: () => {}, chooseWaiting: () => {}, shown: true, setShown: () => {} });
 
 let root: ReturnType<typeof createRoot> | null = null;
 let host: HTMLElement;

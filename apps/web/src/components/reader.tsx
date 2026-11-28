@@ -18,7 +18,7 @@ import { TernoMark } from "@terno/ui/brand/terno-mark";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@terno/ui/components/tooltip";
 import { cn } from "@terno/ui/lib/utils";
 import { useReplies } from "~/lib/replies";
-import { Archive, AlarmClock, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, Paperclip, PinTop, Printer, Reply, ReplyAll, SquarePen, Star, SummaryDoc, Trash2, X } from "@terno/ui/icons";
+import { Archive, AlarmClock, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Ellipsis, Eye, EyeOff, FileDown, Forward, Inbox, Layers, Mail, OctagonAlert, Paperclip, PinTop, Printer, Reply, ReplyAll, SquarePen, Star, SummaryDoc, Trash2, X } from "@terno/ui/icons";
 import { type ReactNode, type RefCallback, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@terno/ui/components/popover";
 import { reminderShort, useReminders, useRemindPopover } from "~/lib/reminders";
@@ -78,8 +78,8 @@ import { noteShown, summarizable, summarize, useSummaries } from "~/lib/summarie
 import { RemindPicker } from "./remind-picker";
 import DigestPage from "./digest-page";
 import ReplyReady, { replyAllTo } from "./reply-ready";
-import ThreadFollowups from "./thread-followups";
-import ThreadItems, { useReaderItems } from "./thread-items";
+import ThreadFollowups, { useFollowupCards } from "./thread-followups";
+import ThreadItems, { readerItemCount, useReaderItems, type ReaderModel } from "./thread-items";
 import { readerText } from "~/lib/reader-items";
 import ThreadSummary from "./thread-summary";
 
@@ -894,7 +894,7 @@ function MessageCount({ count, fold }: { count: number; fold: Fold }) {
 }
 
 /** The account, the categories (with why and how to undo) and the engine's suggestions (y / n): the same in every design. */
-function ThreadChips({ detail, account, cats, fold, className }: { detail: ThreadDetail; account: Account | undefined; cats: Category[]; fold: Fold; className?: string }) {
+function ThreadChips({ detail, account, cats, fold, followups, className }: { detail: ThreadDetail; account: Account | undefined; cats: Category[]; fold: Fold; followups: Followups; className?: string }) {
   const categories = useApp((s) => s.categories);
   /** plan 80: in a category's Review list, its chip is the one y and n answer, and an answer takes the row out of the list */
   const reviewing = useApp((s) => s.reviewCategoryId);
@@ -902,8 +902,12 @@ function ThreadChips({ detail, account, cats, fold, className }: { detail: Threa
     categoryId === reviewing ? answerReview(detail.thread.id, categoryId, yes) : yes ? acceptSuggestion(detail.thread.id, categoryId) : rejectSuggestion(detail.thread.id, categoryId);
   const keyed = (i: number, categoryId: number) => (reviewing !== null && detail.categorization?.suggestions.some((x) => x.categoryId === reviewing) ? categoryId === reviewing : i === 0);
   const thread = detail.thread;
+  const chipped = cats.length > 0 || !!detail.categorization?.suggestions.length;
   return (
-    <div data-testid="thread-chips" className={cn("flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-xs text-muted-foreground", className)}>
+    // plan 296: Hide follow-ups at the end of the first line, whatever wraps under it; the line's own height (a design's
+    // min-h) is the chips' and the control's too
+    <div data-testid="thread-chips" className={cn("flex items-start gap-x-2.5 text-xs text-muted-foreground", className)}>
+    <div className="flex min-h-[inherit] min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-1.5">
       {account && <ThreadAccount account={account} />}
       {detail.messages.length > 1 && <MessageCount count={detail.messages.length} fold={fold} />}
       {cats.map((c) => {
@@ -967,8 +971,29 @@ function ThreadChips({ detail, account, cats, fold, className }: { detail: Threa
         );
       })}
     </div>
+      {followups.count > 0 && <FollowupsToggle {...followups} chipped={chipped} />}
+    </div>
   );
 }
+
+/**
+ * Plan 296: the conversation's follow-up cards hidden or shown, for every conversation (as the summary's disclosure is), at
+ * the chips line's end; the count says what's there while they're hidden. Nothing about the follow-ups changes.
+ */
+function FollowupsToggle({ count, shown, setShown, chipped }: Followups & { chipped: boolean }) {
+  return (
+    // centred on the first line: a chip's 24 px when there's one (the first fits beside the account), else the line's own
+    <span className={cn("flex min-h-[inherit] shrink-0 items-center", chipped && "h-6")}>
+      <Button variant="link-secondary" size="xs" aria-expanded={shown} onClick={() => setShown(!shown)} data-testid="followups-toggle" className="gap-1 font-normal whitespace-nowrap text-foreground-soft tabular hover:text-foreground [&_svg]:size-3.5">
+        {shown ? <EyeOff aria-hidden /> : <Eye aria-hidden />}
+        {t(shown ? "reader.followups.hide" : "reader.followups.show", { count })}
+      </Button>
+    </span>
+  );
+}
+
+/** Plan 296: the conversation's follow-up cards, counted as drawn, and whether they show. */
+type Followups = { count: number } & Pick<ReaderModel, "shown" | "setShown">;
 
 /** When a message was sent: the list's short form, the full date for the tooltip and screen readers. */
 function MessageDate({ ms, className }: { ms: number; className?: string }) {
@@ -985,7 +1010,7 @@ function MessageDate({ ms, className }: { ms: number; className?: string }) {
 const HEADER = PANE_TITLE_AFTER;
 
 /** The subject, chips and (Lumen, one message) sender above the conversation: the design arranges the same parts, and the mail starts soon after them. */
-function ReaderHeader({ detail, account, cats, fold }: { detail: ThreadDetail; account: Account | undefined; cats: Category[]; fold: Fold }) {
+function ReaderHeader({ detail, account, cats, fold, followups }: { detail: ThreadDetail; account: Account | undefined; cats: Category[]; fold: Fold; followups: Followups }) {
   const design = useDesign();
   const subject = detail.thread.subject || t("common.noSubject");
   const marks = useSearchMarks()?.subject;
@@ -999,7 +1024,7 @@ function ReaderHeader({ detail, account, cats, fold }: { detail: ThreadDetail; a
   const titled = (
     <>
       {heading}
-      <ThreadChips detail={detail} account={account} cats={cats} fold={fold} className="mt-1.5" />
+      <ThreadChips detail={detail} account={account} cats={cats} fold={fold} followups={followups} className="mt-1.5" />
       {why}
     </>
   );
@@ -1012,7 +1037,7 @@ function ReaderHeader({ detail, account, cats, fold }: { detail: ThreadDetail; a
       <div className={HEADER}>
         {/* plan 160: one chips line, 20 px at rest whatever it holds (a line with a category's chip takes its 24), so the titles
             of panes without chips keep the subject's line (--pane-title-lead); no taller than it was */}
-        <ThreadChips detail={detail} account={account} cats={cats} fold={fold} className="mb-1 min-h-5" />
+        <ThreadChips detail={detail} account={account} cats={cats} fold={fold} followups={followups} className="mb-1 min-h-5" />
         {heading}
         {why}
         {people}
@@ -1137,14 +1162,17 @@ function Thread({ detail, account, cats, summaryShown }: { detail: ThreadDetail;
   const cardHeader = useDesign().variants.readerHeader === "sender-card";
   // plan 210 (iteration 3): the conversation's items resolved once, for their line and for what the summary leaves out
   const items = useReaderItems(detail);
-  const shownItems = items.ready && items.top?.open ? [items.top, ...items.others] : items.others;
+  // plan 296: every card above the conversation, counted as drawn; hidden, the summary says what they would have
+  const cards = useFollowupCards(detail);
+  const followups: Followups = { count: readerItemCount(items) + cards.waits.length, shown: items.shown, setShown: items.setShown };
+  const shownItems = !items.shown ? [] : items.ready && items.top?.open ? [items.top, ...items.others] : items.others;
   return (
     <MessageMenu threadId={detail.thread.id}>
       <div data-conversation-menu>
         {/* inside the menu: Lumen's card can stand for the message (plan 59) */}
-        <ReaderHeader detail={detail} account={account} cats={cats} fold={fold} />
-        <ThreadItems detail={detail} items={items} />
-        <ThreadFollowups detail={detail} />
+        <ReaderHeader detail={detail} account={account} cats={cats} fold={fold} followups={followups} />
+        {items.shown && <ThreadItems detail={detail} items={items} />}
+        {items.shown && <ThreadFollowups detail={detail} cards={cards} />}
         {summaryShown && <ThreadSummary detail={detail} said={shownItems.map(readerText)} />}
         <ThreadAttachments messages={detail.messages} />
         <Conversation threadId={detail.thread.id} messages={detail.messages} fold={fold} icons={iconsFor(detail.thread)} people={detail.thread.person === true} headless={cardHeader} />

@@ -1291,6 +1291,8 @@ const es = {
   "reader.messageCount": { one: "# mensaje", other: "# mensajes" },
   "reader.expandAll": "Expandir todo",
   "reader.collapseAll": "Contraer todo",
+  "reader.followups.hide": "Ocultar seguimientos ({count})",
+  "reader.followups.show": "Mostrar seguimientos ({count})",
   "reader.message.actions": "Este mensaje",
   "reader.message.reply": "Responder a este mensaje",
   "reader.message.more": "Más para este mensaje",

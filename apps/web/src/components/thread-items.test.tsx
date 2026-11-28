@@ -12,7 +12,7 @@ vi.mock("~/rpc/connection", () => ({ client: { call: vi.fn(), on: vi.fn((name: s
 const { client } = await import("~/rpc/connection");
 const { useApp } = await import("~/state/app");
 const { useToday, useFeedRow, useReaderChoice } = await import("~/state/today");
-const { useReaderItems } = await import("./thread-items");
+const { readerItemCount, useReaderItems } = await import("./thread-items");
 type Model = ReturnType<typeof useReaderItems>;
 
 /** Plan 210 (iteration 3, Codex revision 10): the reader model's reads, as the reader holds them. */
@@ -124,5 +124,52 @@ describe("the reader's items, read (plan 210, iteration 3)", () => {
     expect(useReaderChoice.getState().held).toMatchObject({ threadId: 7, item: { key: "dated:1" } });
     await render(8);
     expect(useReaderChoice.getState().held).toBeNull();
+  });
+
+  it("plan 296: hidden, a choice leaves the keys and the reader's Later closes; an item the feed opens shows until hidden there", async () => {
+    const { setFollowupsShown } = await import("~/lib/followups-shown");
+    const { openReaderLater } = await import("~/lib/today-task");
+    await render(7);
+    await answer(0, [dated(1, 7, "Send Jess your draft", NOW + 2 * DAY), dated(2, 7, "Board meeting", NOW + DAY)]);
+    expect(seen!.shown).toBe(true);
+    await act(async () => seen!.choose(seen!.others[0]!));
+    await act(async () => openReaderLater());
+    await act(async () => seen!.setShown(false));
+    expect(seen!.shown).toBe(false);
+    expect(useReaderChoice.getState()).toMatchObject({ held: null, later: false });
+    expect(useApp.getState().menuOpen).toBe(false);
+    // What matters opens one of its items: shown for it, and hidden there again by hand; another row asks again
+    await act(async () => {
+      useApp.setState({ today: true });
+      useToday.setState({ rows: [{ id: "dated:2", threadId: 7, task: { kind: "dated", item: { id: 2 } } }, { id: "dated:1", threadId: 7, task: { kind: "dated", item: { id: 1 } } }] as never });
+      useFeedRow.setState({ opened: "dated:2" });
+    });
+    expect(seen!.shown).toBe(true);
+    await act(async () => seen!.setShown(false));
+    expect(seen!.shown).toBe(false);
+    await act(async () => useFeedRow.setState({ opened: "dated:1" }));
+    expect(seen!.shown).toBe(true);
+    // Show: the reader's choice again, for every conversation
+    await act(async () => seen!.setShown(true));
+    await act(async () => useFeedRow.setState({ opened: null }));
+    expect(seen!.shown).toBe(true);
+    setFollowupsShown(true);
+  });
+});
+
+describe("plan 296: the reader's count of what the items card draws", () => {
+  const item = { key: "a" } as never;
+  const waitingRow = (task: unknown) => ({ id: "w", task }) as never;
+  const model = (m: Partial<Model>): Model => ({ ready: true, top: null, others: [], targeted: false, chose: false, waiting: null, waitingRow: null, choose() {}, chooseWaiting() {}, shown: true, setShown() {}, ...m });
+  it("nothing until it's read; then the lead and its Also line", () => {
+    expect(readerItemCount(model({ ready: false, top: item, others: [item] }))).toBe(0);
+    expect(readerItemCount(model({}))).toBe(0);
+    expect(readerItemCount(model({ top: item, others: [item, item] }))).toBe(3);
+  });
+  it("a person waiting: counted where its line is drawn, never with no task to show", () => {
+    expect(readerItemCount(model({ waiting: "top", waitingRow: waitingRow({ kind: "waiting" }), others: [item] }))).toBe(2);
+    expect(readerItemCount(model({ waiting: "top", waitingRow: waitingRow(null) }))).toBe(0);
+    expect(readerItemCount(model({ waiting: "also", top: item, waitingRow: waitingRow({ kind: "waiting" }) }))).toBe(2);
+    expect(readerItemCount(model({ waiting: "also", top: item, waitingRow: waitingRow(null) }))).toBe(1);
   });
 });

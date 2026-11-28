@@ -159,17 +159,32 @@ function Line({ row, messages }: { row: FollowupRow; messages: readonly MessageD
   );
 }
 
+const NO_ROWS: readonly FollowupRow[] = [];
+
+export interface FollowupCards {
+  shown: readonly FollowupRow[] | undefined;
+  waits: readonly FollowupRow[];
+}
+
+/**
+ * The conversation's follow-ups the reader may show (`shown`: none while they're off for its account, or it's in Trash or
+ * Spam), and the ones with a card of their own here (`waits`): a wait, and (plan 280) what's owed to you. Plan 296: the
+ * reader's count reads the same, resolved once in `Thread`.
+ */
+export function useFollowupCards(detail: ThreadDetail): FollowupCards {
+  const enabled = useApp((s) => followupsOffered(s, detail.thread.accountId));
+  const rows = useFollowups((s) => s.byThread.get(detail.thread.id));
+  const shown = enabled && !detail.thread.inTrash && !detail.thread.inSpam ? rows : undefined;
+  return { shown, waits: shown?.filter((r) => r.kind === "awaiting" || r.kind === "theirs") ?? NO_ROWS };
+}
+
 /**
  * Plan 142 §7: a quiet card for each wait in this conversation, above its summary; plan 280, for each promise of theirs. Plan 210 (iteration 3, Codex revision
  * 10): a promise of yours is one of the conversation's items, on the reader's line with its dated ones (`ThreadItems`); a
  * nudge (waiting on their reply) isn't a task, and keeps its card here.
  */
-export default function ThreadFollowups({ detail }: { detail: ThreadDetail }) {
-  const enabled = useApp((s) => followupsOffered(s, detail.thread.accountId));
-  const rows = useFollowups((s) => s.byThread.get(detail.thread.id));
-  const shown = enabled && !detail.thread.inTrash && !detail.thread.inSpam ? rows : undefined;
-  // plan 280: and what's owed to you, each with its own card
-  const waits = shown?.filter((r) => r.kind === "awaiting" || r.kind === "theirs") ?? [];
+export default function ThreadFollowups({ detail, cards }: { detail: ThreadDetail; cards: FollowupCards }) {
+  const { shown, waits } = cards;
   const tipFor = usePendingTip("followups-first");
   const fresh = shown?.some((r) => !r.fromScan);
   useEffect(() => {

@@ -1308,6 +1308,8 @@ const en = {
   "reader.messageCount": { one: "# message", other: "# messages" },
   "reader.expandAll": "Expand all",
   "reader.collapseAll": "Collapse all",
+  "reader.followups.hide": "Hide follow-ups ({count})",
+  "reader.followups.show": "Show follow-ups ({count})",
   "reader.message.actions": "This message",
   "reader.message.reply": "Reply to this message",
   "reader.message.more": "More for this message",

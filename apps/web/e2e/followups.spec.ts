@@ -53,6 +53,28 @@ async function owedTracked(server: DevServerFixture, subject: string, o: { firm:
   return threadId;
 }
 
+/** Plan 296: a promise of yours (the items card) and a wait (its own card) in one conversation of two messages. */
+async function trackedBoth(server: DevServerFixture, subject: string) {
+  await ingestConversation(server, { subject, count: 2, now: E2E_NOW });
+  const store = server.backend.store;
+  const { items } = await store.threads.searchText({ query: `subject:"${subject}"`, limit: 1, now: E2E_NOW });
+  const threadId = items[0]!.id;
+  const message = (await store.threads.get(threadId))!.messages.at(-1)!;
+  await store.followups.marks.queueScan([message.id], E2E_NOW);
+  const row = { text: "send the contract", personName: "Tom Reed", personEmail: "tom.reed@example.com", dueAt: E2E_NOW - 1000, dated: false };
+  await store.followups.finish({ messageId: message.id, threadId, fromScan: false, rows: [{ ...row, kind: "promise", item: 0, quote: "I'll send the contract" }, { ...row, kind: "awaiting", item: 100, quote: null }], kept: [], now: E2E_NOW, model: "demo", provider: "fake", promptVersion: 1, clearGeneration: store.followups.clearGeneration() });
+  await server.backend.followups.look();
+  return threadId;
+}
+
+/** Plan 296: Hide follow-ups sits on the chips line's first row, its right edge on the subject's. */
+async function toggleOnFirstLine(page: Page) {
+  const box = async (id: string) => (await page.getByTestId(id).first().boundingBox())!;
+  const [toggle, subject, account] = [await box("followups-toggle"), await box("reader-subject"), await box("reader-account")];
+  expect(Math.abs(toggle.x + toggle.width - (subject.x + subject.width))).toBeLessThanOrEqual(1);
+  expect(Math.abs(toggle.y + toggle.height / 2 - (account.y + account.height / 2))).toBeLessThanOrEqual(1);
+}
+
 test.describe("follow-ups (plan 142)", () => {
   test("a due promise: on the Inbox's top with its line, opening ends the row and the list keeps it, Done and Undo, the thread's line", async ({ app: page, server }) => {
     await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, followups: { enabled: true } });
@@ -340,6 +362,8 @@ test.describe("follow-ups (plan 142)", () => {
     await fresh(page);
     await rows(page).first().click();
     await expect(page.getByTestId("followup-line")).toBeVisible();
+    // plan 296: Hide follow-ups on the chips line's first row in every reader header
+    await toggleOnFirstLine(page);
     // ai-r02: Later's menu (Reschedule's then) was its trigger's 128 px, and cut "Later today" to "Lat…" and Next week to nothing
     for (const scheme of ["light", "dark"] as const) {
       await page.emulateMedia({ colorScheme: scheme });
@@ -470,6 +494,67 @@ test.describe("follow-ups (plan 142)", () => {
       await page.getByTestId("nav-inbox").click();
       await expect(row("Draft budget")).toBeVisible();
       await expect(page.getByTestId("row-late")).toHaveCount(0);
+    });
+  });
+
+  test("plan 296: Hide follow-ups: every card counted, at the first line's end; hidden for every conversation and across a reload; Show brings them back", async ({ app: page, server }) => {
+    await settingUp(page, server, { ai: { provider: "fake", model: "demo" }, followups: { enabled: true } });
+    await trackedBoth(server, "The contract");
+    await owedTracked(server, "Signed contract", { firm: true });
+    await fresh(page);
+    const toggle = page.getByTestId("followups-toggle");
+    const open = (subject: string) => page.getByTestId("thread-row").filter({ has: page.getByTestId("row-subject").getByText(subject, { exact: true }) }).first().click();
+
+    await scenario("both cards, counted together, the control on Expand all's line at its end; Done and Undo move the count", async () => {
+      await open("The contract");
+      await expect(page.getByTestId("thread-dated-item")).toBeVisible();
+      await expect(page.getByTestId("followup-line")).toHaveCount(1);
+      await expect(toggle).toHaveText("Hide follow-ups (2)");
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
+      await expect(page.getByTestId("expand-all")).toBeVisible();
+      await toggleOnFirstLine(page);
+      await page.getByTestId("thread-dated-done").click();
+      await expect(toggle).toHaveText("Hide follow-ups (1)");
+      await page.locator("[data-testid=snack]").getByRole("button", { name: /undo/i }).click();
+      await expect(toggle).toHaveText("Hide follow-ups (2)");
+    });
+
+    await scenario("hidden: the cards go, nothing about them changes, focus stays on the control", async () => {
+      await toggle.click();
+      await expect(page.getByTestId("thread-dated")).toHaveCount(0);
+      await expect(page.getByTestId("thread-followups")).toHaveCount(0);
+      await expect(toggle).toHaveText("Show follow-ups (2)");
+      await expect(toggle).toHaveAttribute("aria-expanded", "false");
+      await expect(toggle).toBeFocused();
+      expect((await server.backend.store.followups.active()).filter((r) => r.state === "open" || r.state === "due")).toHaveLength(3);
+      for (const scheme of ["light", "dark"] as const) {
+        await page.emulateMedia({ colorScheme: scheme });
+        expect((await new AxeBuilder({ page }).setLegacyMode().include("[data-testid=thread-chips]").analyze()).violations).toEqual([]);
+        if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-hidden-${scheme}.png` });
+      }
+      await page.emulateMedia({ colorScheme: "light" });
+    });
+
+    await scenario("one message: hidden there too, the control at the account's line end; after a reload too", async () => {
+      await open("Signed contract");
+      await expect(toggle).toHaveText("Show follow-ups (1)");
+      await expect(page.getByTestId("followup-line")).toHaveCount(0);
+      await expect(page.getByTestId("expand-all")).toHaveCount(0);
+      await toggleOnFirstLine(page);
+      await fresh(page);
+      await open("Signed contract");
+      await expect(toggle).toHaveText("Show follow-ups (1)");
+      await expect(page.getByTestId("followup-line")).toHaveCount(0);
+    });
+
+    await scenario("Show: back, here and in the other conversation", async () => {
+      await toggle.click();
+      await expect(page.getByTestId("followup-line")).toHaveAttribute("data-kind", "theirs");
+      await expect(toggle).toHaveText("Hide follow-ups (1)");
+      if (SHOTS) await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-shown-light.png` });
+      await open("The contract");
+      await expect(page.getByTestId("thread-dated-item")).toBeVisible();
+      await expect(toggle).toHaveText("Hide follow-ups (2)");
     });
   });
 });
